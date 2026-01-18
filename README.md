@@ -427,7 +427,63 @@ npm run dev
 
 METAMORPH evolves through Ralph Loop iterations:
 
-### Ralph Iteration 4 (Current)
+### Ralph Iteration 11 (Current)
+- **Cross-Model Stance Transfer**: Export/import stance configurations between LLMs with compatibility scoring
+- **Stance-Aware Memory Prioritization**: Memory importance scoring, forgetting curves, consolidation
+- **Dynamic Coherence Thresholds**: Context-adaptive coherence floors, phase detection, recovery strategies
+- **Predictive Operator Suggestions**: Conversation trajectory analysis and proactive recommendations
+- **Stance Archetype Library**: Historical figures, cultural archetypes, philosophical traditions, blending
+- **Multiplayer Stance Editing**: Real-time collaboration, conflict resolution, permission zones
+
+### Ralph Iteration 10
+- **Custom Training Data Export**: Fine-tuning dataset generation from stance patterns
+- **Multi-Language Support**: Stance-aware translation and locale-specific frame mappings
+- **Community Preset Marketplace**: User-submitted preset verification and discovery
+- **Performance Benchmarking Suite**: Automated regression testing and profiling
+- **Emotional Tone Detection**: Real-time sentiment analysis and mood-based operator selection
+- **Autonomous Goal Pursuit**: Self-directed objectives with minimal intervention mode
+
+### Ralph Iteration 9
+- **VR/AR Stance Visualization**: Immersive 3D stance exploration with WebXR
+- **Automatic Documentation Generation**: Stance evolution docs and decision narratives
+- **A/B Testing Framework**: Operator effectiveness comparison with statistical testing
+- **Context-Aware Prompt Rewriting**: Stance-influenced prompt enhancement
+- **Stance Diffing and Merge**: Visual diff tools and three-way merge strategies
+- **External Workflow Integration**: Slack/Discord bots, webhooks, Zapier connectors
+
+### Ralph Iteration 8
+- **Voice/Audio Interface**: Speech-to-text input with frame-based voice modulation
+- **IDE Integration**: VS Code extension and JetBrains plugins with stance sidebar
+- **Stance-Aware Code Generation**: Frame-influenced code style and review feedback
+- **Federated Learning**: Privacy-preserving shared stance evolution patterns
+- **OAuth/SSO Authentication**: OAuth 2.0, SAML, and role-based access control
+- **Cross-Platform Sync**: Real-time stance sync with conflict resolution
+
+### Ralph Iteration 7
+- **Semantic Memory Compression**: Hierarchical memory structures and concept clustering
+- **Real-Time Telemetry Dashboard**: Live stance evolution and operator heatmaps
+- **Knowledge Graph Integration**: External graph connections with entity linking
+- **Plugin Development SDK**: Type-safe plugin API with hot reloading
+- **Adaptive Response Streaming**: Token-level confidence and dynamic generation
+- **Stance Evolution Replay**: Record, replay, and compare conversation outcomes
+
+### Ralph Iteration 6
+- **Persistent Memory Storage**: Export, backup, deduplication, external vector DB
+- **Natural Language Config**: Configure operators using natural language
+- **Conversation Branching**: Non-linear exploration with time travel
+- **Dynamic Operator Discovery**: LLM-suggested new operators
+- **Multi-Agent Orchestration**: Federation, shared memory, debate mode
+- **Personality Marketplace**: Exportable presets with community sharing
+
+### Ralph Iteration 5
+- **Multi-Modal Memory**: Image storage and visual analysis with Claude vision
+- **Cross-Session Identity**: Checkpoints, drift reconciliation, core values persistence
+- **Real-Time Collaboration**: WebSocket sync, presence, turn-taking
+- **Proactive Memory Injection**: Automatic relevant memory surfacing
+- **Adaptive Streaming with Coherence Gates**: Token-by-token coherence monitoring
+- **Plugin Architecture**: Hot-reload plugins with marketplace concept
+
+### Ralph Iteration 4
 - Semantic memory embeddings (TF-IDF + Voyage AI ready)
 - Autonomous evolution triggers (self-initiated introspection)
 - Creative D3.js web visualization for stance/transformation graphs
