@@ -53,6 +53,11 @@ export default function Chat({ sessionId, onSessionChange, onResponse, onStanceU
   const [activeTools, setActiveTools] = useState<ToolUseEvent[]>([]);
   const toolsRef = useRef<Map<string, ToolUseEvent>>(new Map());
 
+  // Input history for up/down arrow navigation
+  const [inputHistory, setInputHistory] = useState<string[]>([]);
+  const [historyIndex, setHistoryIndex] = useState(-1);
+  const savedInputRef = useRef<string>('');
+
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [messages, streamingText]);
@@ -311,9 +316,37 @@ export default function Chat({ sessionId, onSessionChange, onResponse, onStanceU
     inputRef.current?.focus();
   }, []);
 
-  // Handle keyboard navigation in command palette
+  // Handle keyboard navigation in command palette and input history
   const handleKeyDown = useCallback((e: React.KeyboardEvent) => {
-    if (!showPalette) return;
+    // Handle input history when palette is closed
+    if (!showPalette) {
+      if (e.key === 'ArrowUp' && inputHistory.length > 0) {
+        e.preventDefault();
+        if (historyIndex === -1) {
+          // Save current input before navigating history
+          savedInputRef.current = input;
+          setHistoryIndex(inputHistory.length - 1);
+          setInput(inputHistory[inputHistory.length - 1]);
+        } else if (historyIndex > 0) {
+          setHistoryIndex(historyIndex - 1);
+          setInput(inputHistory[historyIndex - 1]);
+        }
+        return;
+      }
+      if (e.key === 'ArrowDown' && historyIndex !== -1) {
+        e.preventDefault();
+        if (historyIndex < inputHistory.length - 1) {
+          setHistoryIndex(historyIndex + 1);
+          setInput(inputHistory[historyIndex + 1]);
+        } else {
+          // Return to saved input
+          setHistoryIndex(-1);
+          setInput(savedInputRef.current);
+        }
+        return;
+      }
+      return;
+    }
 
     const filteredCount = input === '/' ? COMMANDS.length : COMMANDS.filter(
       cmd => cmd.name.startsWith(input.slice(1).toLowerCase().split(' ')[0])
@@ -345,13 +378,21 @@ export default function Chat({ sessionId, onSessionChange, onResponse, onStanceU
         setShowPalette(false);
         break;
     }
-  }, [showPalette, input, paletteIndex, handleCommandSelect]);
+  }, [showPalette, input, paletteIndex, handleCommandSelect, inputHistory, historyIndex]);
 
   const handleSubmit = useCallback(async (e: React.FormEvent) => {
     e.preventDefault();
     if (!input.trim() || isLoading) return;
 
     const trimmedInput = input.trim();
+
+    // Add to input history (avoid duplicates of last entry)
+    if (trimmedInput && (inputHistory.length === 0 || inputHistory[inputHistory.length - 1] !== trimmedInput)) {
+      setInputHistory(prev => [...prev, trimmedInput]);
+    }
+    // Reset history navigation
+    setHistoryIndex(-1);
+    savedInputRef.current = '';
 
     // Check if this is a slash command
     if (trimmedInput.startsWith('/')) {
@@ -448,7 +489,7 @@ export default function Chat({ sessionId, onSessionChange, onResponse, onStanceU
         setTimeout(() => setConnectionStatus('connected'), 3000);
       },
     });
-  }, [input, isLoading, sessionId, onResponse, onStanceUpdate, onSessionChange, executeCommand]);
+  }, [input, isLoading, sessionId, onResponse, onStanceUpdate, onSessionChange, executeCommand, inputHistory]);
 
   const handleStop = () => {
     if (abortRef.current) {
