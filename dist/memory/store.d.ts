@@ -105,6 +105,49 @@ export declare class MemoryStore {
      * Get most recently accessed session
      */
     getMostRecentSession(): SessionInfo | null;
+    /**
+     * Record operator performance for learning
+     */
+    recordOperatorPerformance(entry: {
+        operatorName: string;
+        triggerType: string;
+        transformationScore: number;
+        coherenceScore: number;
+        driftCost: number;
+    }): string;
+    /**
+     * Get operator performance statistics
+     */
+    getOperatorStats(operatorName?: string): OperatorStats[];
+    /**
+     * Get weighted operator score for Bayesian selection
+     */
+    getOperatorWeight(operatorName: string, triggerType: string): number;
+    /**
+     * Cache a subagent result
+     */
+    cacheSubagentResult(entry: {
+        subagentName: string;
+        task: string;
+        response: string;
+        keyFindings?: string[];
+        relevance: number;
+        conversationId?: string;
+        expiryHours?: number;
+    }): string;
+    /**
+     * Search for relevant cached subagent results
+     */
+    searchSubagentCache(query: {
+        subagentName?: string;
+        task?: string;
+        minRelevance?: number;
+        limit?: number;
+    }): SubagentResult[];
+    /**
+     * Clean expired subagent results
+     */
+    cleanExpiredSubagentResults(): number;
     close(): void;
     /**
      * Clear all data (for testing)
@@ -120,5 +163,25 @@ export interface SessionInfo {
     messageCount: number;
     currentFrame?: string;
     currentDrift: number;
+}
+export interface OperatorStats {
+    operatorName: string;
+    triggerType: string;
+    usageCount: number;
+    avgEffectiveness: number;
+    avgTransformation: number;
+    avgCoherence: number;
+    avgDrift: number;
+}
+export interface SubagentResult {
+    id: string;
+    subagentName: string;
+    task: string;
+    response: string;
+    keyFindings?: string[];
+    relevance: number;
+    conversationId?: string;
+    timestamp: Date;
+    expiry?: Date;
 }
 //# sourceMappingURL=store.d.ts.map

@@ -14,6 +14,9 @@ import chalk from 'chalk';
 import ora from 'ora';
 import * as readline from 'readline';
 import { MetamorphAgent } from '../agent/index.js';
+import { calculateAvailableBudget, OPERATOR_DRIFT_COSTS } from '../core/coherence-planner.js';
+import { strategyManager, OPERATOR_STRATEGIES } from '../core/strategies.js';
+import { emotionalArcTracker } from '../core/emotional-arc.js';
 import { createGlowStreamBuffer, isGlowAvailable, detectGlow, renderMarkdownSync } from './glow.js';
 const VERSION = '0.1.0';
 // State for abort handling
@@ -398,6 +401,27 @@ async function handleCommand(input, agent, rl, _useStreaming) {
         case 'sessions':
         case 'session':
             await handleSessionCommand(agent, args);
+            break;
+        case 'operator-stats':
+        case 'ops':
+            printOperatorStats(agent, args.length > 0 ? args[0] : undefined);
+            break;
+        case 'coherence':
+        case 'coherence-forecast':
+            printCoherenceForecast(agent);
+            break;
+        case 'strategies':
+        case 'strategy':
+            handleStrategyCommand(agent, args);
+            break;
+        case 'subagent-cache':
+        case 'cache':
+            printSubagentCache(agent, args.length > 0 ? args[0] : undefined);
+            break;
+        case 'mood':
+        case 'emotional-arc':
+        case 'emotion':
+            printEmotionalArc(agent);
             break;
         case 'quit':
         case 'exit':
@@ -797,6 +821,261 @@ async function handleSessionCommand(agent, args) {
             console.log(chalk.gray('  Commands: /sessions list | resume <id> | name <name> | delete <id> | save'));
     }
 }
+function printOperatorStats(agent, operatorFilter) {
+    const memoryStore = agent.getMemoryStore();
+    const stats = memoryStore.getOperatorStats(operatorFilter);
+    console.log(chalk.cyan(`\n  ═══ Operator Performance (Ralph Iteration 3) ═══`));
+    if (stats.length === 0) {
+        console.log(chalk.gray('  No operator performance data recorded yet.'));
+        console.log(chalk.gray('\n  Performance is recorded as you chat and operators are applied.'));
+        return;
+    }
+    // Group by operator
+    const byOperator = new Map();
+    for (const stat of stats) {
+        if (!byOperator.has(stat.operatorName)) {
+            byOperator.set(stat.operatorName, []);
+        }
+        byOperator.get(stat.operatorName).push(stat);
+    }
+    for (const [opName, opStats] of byOperator.entries()) {
+        const totalUsage = opStats.reduce((sum, s) => sum + s.usageCount, 0);
+        const avgEffectiveness = opStats.reduce((sum, s) => sum + s.avgEffectiveness * s.usageCount, 0) / totalUsage;
+        console.log(chalk.cyan(`\n  ${opName}`));
+        console.log(`    Total uses: ${totalUsage}`);
+        console.log(`    Avg effectiveness: ${avgEffectiveness.toFixed(2)}`);
+        console.log(chalk.gray('    By trigger type:'));
+        for (const s of opStats) {
+            const effColor = s.avgEffectiveness >= 1.5 ? chalk.green
+                : s.avgEffectiveness >= 1.0 ? chalk.yellow
+                    : chalk.red;
+            console.log(`      ${s.triggerType}: ${s.usageCount}x, eff=${effColor(s.avgEffectiveness.toFixed(2))}, T=${s.avgTransformation.toFixed(0)}, C=${s.avgCoherence.toFixed(0)}`);
+        }
+    }
+    console.log(chalk.gray('\n  Filter by operator: /operator-stats <operator-name>'));
+}
+function printCoherenceForecast(agent) {
+    const stance = agent.getCurrentStance();
+    const config = agent.getConfig();
+    const availableBudget = calculateAvailableBudget(stance, config);
+    console.log(chalk.cyan('\n  ═══ Coherence Forecast (Ralph Iteration 3) ═══'));
+    console.log(`  Current Drift:       ${stance.cumulativeDrift}`);
+    console.log(`  Coherence Floor:     ${config.coherenceFloor}%`);
+    console.log(`  Reserve Budget:      ${config.coherenceReserveBudget}%`);
+    console.log(`  Available Budget:    ${availableBudget.toFixed(1)}`);
+    // Show estimated coherence
+    const estimatedCoherence = Math.max(0, 100 - (stance.cumulativeDrift / 10));
+    const coherenceColor = estimatedCoherence >= 70 ? chalk.green
+        : estimatedCoherence >= 50 ? chalk.yellow
+            : estimatedCoherence >= 30 ? chalk.red
+                : chalk.bgRed;
+    console.log(`  Estimated Coherence: ${coherenceColor(estimatedCoherence.toFixed(0) + '%')}`);
+    // Risk level
+    const ratio = stance.cumulativeDrift / (config.driftBudget || 100);
+    const riskLevel = ratio <= 0.3 ? chalk.green('LOW')
+        : ratio <= 0.6 ? chalk.yellow('MEDIUM')
+            : ratio <= 0.8 ? chalk.red('HIGH')
+                : chalk.bgRed('CRITICAL');
+    console.log(`  Risk Level:          ${riskLevel}`);
+    console.log(chalk.cyan('\n  Operator Drift Costs:'));
+    const operators = Object.entries(OPERATOR_DRIFT_COSTS)
+        .sort(([, a], [, b]) => b - a);
+    for (const [name, cost] of operators) {
+        const costColor = cost < 0 ? chalk.green
+            : cost <= 8 ? chalk.gray
+                : cost <= 12 ? chalk.yellow
+                    : chalk.red;
+        const bar = cost >= 0 ? '█'.repeat(Math.round(cost / 2)) : '▼'.repeat(Math.abs(cost) / 2);
+        console.log(`    ${name.padEnd(22)} ${costColor(bar.padEnd(10))} ${cost > 0 ? '+' : ''}${cost}`);
+    }
+    console.log(chalk.gray('\n  Planning: ' + (config.enableCoherencePlanning ? chalk.green('ENABLED') : chalk.red('DISABLED'))));
+}
+function handleStrategyCommand(agent, args) {
+    const subcommand = args[0] || 'list';
+    const conversationId = agent.getConversationId();
+    switch (subcommand) {
+        case 'list':
+            console.log(chalk.cyan('\n  ═══ Operator Strategies (Ralph Iteration 3) ═══'));
+            for (const strategy of OPERATOR_STRATEGIES) {
+                console.log(chalk.cyan(`\n  ${strategy.name}`));
+                console.log(chalk.gray(`    ${strategy.description}`));
+                console.log(`    Steps: ${strategy.steps.join(' → ')}`);
+                console.log(chalk.gray(`    Triggers: ${strategy.triggers.join(', ')}`));
+                console.log(chalk.gray(`    Min intensity: ${strategy.minIntensity}% | Cooldown: ${strategy.cooldownTurns} turns`));
+            }
+            console.log(chalk.gray('\n  Commands: /strategies list | engage <name> | status | cancel'));
+            break;
+        case 'engage':
+            const strategyName = args[1];
+            if (!strategyName) {
+                console.log(chalk.yellow('  Usage: /strategies engage <strategy-name>'));
+                console.log(chalk.gray('  Available: ' + OPERATOR_STRATEGIES.map(s => s.name).join(', ')));
+                return;
+            }
+            const state = strategyManager.startStrategy(conversationId, strategyName);
+            if (state) {
+                const strategy = OPERATOR_STRATEGIES.find(s => s.name === strategyName);
+                console.log(chalk.green(`  Strategy engaged: ${strategyName}`));
+                console.log(chalk.gray(`    Steps: ${strategy?.steps.join(' → ')}`));
+                console.log(chalk.gray('    The strategy will unfold over the next few turns.'));
+            }
+            else {
+                const inCooldown = strategyManager.isInCooldown(conversationId, strategyName);
+                if (inCooldown) {
+                    console.log(chalk.yellow(`  Strategy '${strategyName}' is in cooldown. Try again later.`));
+                }
+                else if (!OPERATOR_STRATEGIES.find(s => s.name === strategyName)) {
+                    console.log(chalk.red(`  Unknown strategy: ${strategyName}`));
+                }
+                else {
+                    console.log(chalk.yellow('  Cannot start strategy (another may be active).'));
+                }
+            }
+            break;
+        case 'status':
+            const progress = strategyManager.getStrategyProgress(conversationId);
+            if (progress) {
+                console.log(chalk.cyan('\n  ═══ Active Strategy ═══'));
+                console.log(`  Strategy: ${chalk.bold(progress.name)}`);
+                console.log(`  Progress: ${progress.current}/${progress.total} steps`);
+                if (progress.completedOps.length > 0) {
+                    console.log(chalk.green(`    Completed: ${progress.completedOps.join(' → ')}`));
+                }
+                if (progress.nextOp) {
+                    console.log(chalk.yellow(`    Next: ${progress.nextOp}`));
+                }
+            }
+            else {
+                console.log(chalk.gray('  No active strategy.'));
+            }
+            break;
+        case 'cancel':
+            const activeProgress = strategyManager.getStrategyProgress(conversationId);
+            if (activeProgress) {
+                strategyManager.cancelStrategy(conversationId);
+                console.log(chalk.yellow(`  Strategy '${activeProgress.name}' cancelled.`));
+            }
+            else {
+                console.log(chalk.gray('  No active strategy to cancel.'));
+            }
+            break;
+        default:
+            console.log(chalk.yellow(`  Unknown strategy command: ${subcommand}`));
+            console.log(chalk.gray('  Commands: /strategies list | engage <name> | status | cancel'));
+    }
+}
+function printSubagentCache(agent, subagentFilter) {
+    const memoryStore = agent.getMemoryStore();
+    const results = memoryStore.searchSubagentCache({
+        subagentName: subagentFilter,
+        limit: 15
+    });
+    console.log(chalk.cyan(`\n  ═══ Subagent Cache (Ralph Iteration 3) ═══`));
+    if (results.length === 0) {
+        console.log(chalk.gray('  No cached subagent results.'));
+        console.log(chalk.gray('\n  Results are cached when subagents complete tasks.'));
+        console.log(chalk.gray('  Use: /explore, /reflect, /dialectic, /verify to generate.'));
+        return;
+    }
+    // Group by subagent
+    const bySubagent = new Map();
+    for (const result of results) {
+        if (!bySubagent.has(result.subagentName)) {
+            bySubagent.set(result.subagentName, []);
+        }
+        bySubagent.get(result.subagentName).push(result);
+    }
+    for (const [name, subResults] of bySubagent.entries()) {
+        const nameColor = name === 'explorer' ? chalk.cyan
+            : name === 'verifier' ? chalk.yellow
+                : name === 'reflector' ? chalk.magenta
+                    : chalk.blue;
+        console.log(nameColor(`\n  ${name.toUpperCase()} (${subResults.length} cached)`));
+        for (const r of subResults.slice(0, 5)) {
+            const taskPreview = r.task.slice(0, 50) + (r.task.length > 50 ? '...' : '');
+            const age = Math.round((Date.now() - r.timestamp.getTime()) / 60000);
+            const ageStr = age < 60 ? `${age}m ago` : `${Math.round(age / 60)}h ago`;
+            const relevance = r.relevance ? chalk.gray(` rel=${r.relevance.toFixed(2)}`) : '';
+            console.log(`    "${taskPreview}"`);
+            console.log(chalk.gray(`      ${ageStr}${relevance}`));
+            if (r.keyFindings && r.keyFindings.length > 0) {
+                const findingPreview = r.keyFindings[0].slice(0, 60);
+                console.log(chalk.gray(`      → ${findingPreview}...`));
+            }
+        }
+        if (subResults.length > 5) {
+            console.log(chalk.gray(`      ... and ${subResults.length - 5} more`));
+        }
+    }
+    console.log(chalk.gray('\n  Filter by subagent: /cache explorer | verifier | reflector | dialectic'));
+}
+function printEmotionalArc(agent) {
+    const conversationId = agent.getConversationId();
+    const arc = emotionalArcTracker.getFullArc(conversationId);
+    const state = emotionalArcTracker.getCurrentState(conversationId);
+    console.log(chalk.cyan('\n  ═══ Emotional Arc (Ralph Iteration 3) ═══'));
+    if (!arc || arc.points.length === 0) {
+        console.log(chalk.gray('  No emotional data recorded yet.'));
+        console.log(chalk.gray('\n  Emotional tracking begins as you chat.'));
+        return;
+    }
+    // Current state
+    if (state.current) {
+        const valenceColor = state.current.valence > 20 ? chalk.green
+            : state.current.valence < -20 ? chalk.red
+                : chalk.yellow;
+        const arousalColor = state.current.arousal > 60 ? chalk.red
+            : state.current.arousal < 40 ? chalk.blue
+                : chalk.yellow;
+        console.log(chalk.cyan('\n  Current State:'));
+        console.log(`    Emotion:   ${chalk.bold(state.current.primaryEmotion)}`);
+        console.log(`    Sentiment: ${state.current.sentiment}`);
+        console.log(`    Valence:   ${valenceColor(state.current.valence.toString().padStart(4))} (negative ← → positive)`);
+        console.log(`    Arousal:   ${arousalColor(state.current.arousal.toString().padStart(4))} (calm ← → excited)`);
+        console.log(`    Dominance: ${state.current.dominance.toString().padStart(4)} (passive ← → assertive)`);
+        const trendEmoji = state.trend === 'improving' ? '↗' : state.trend === 'declining' ? '↘' : '→';
+        const trendColor = state.trend === 'improving' ? chalk.green : state.trend === 'declining' ? chalk.red : chalk.gray;
+        console.log(`    Trend:     ${trendColor(trendEmoji + ' ' + state.trend)}`);
+    }
+    // Emotional timeline
+    if (arc.points.length >= 2) {
+        console.log(chalk.cyan('\n  Timeline:'));
+        // ASCII graph of valence
+        const width = 40;
+        for (const p of arc.points.slice(-8)) {
+            const normalized = (p.valence + 100) / 200; // 0 to 1
+            const pos = Math.round(normalized * width);
+            const bar = ' '.repeat(pos) + (p.valence >= 0 ? chalk.green('●') : chalk.red('●'));
+            const emotion = p.primaryEmotion.slice(0, 8).padEnd(8);
+            console.log(`    T${p.turn.toString().padStart(2)} ${emotion} |${bar.padEnd(width + 10)}|`);
+        }
+        console.log(chalk.gray(`    ${''.padEnd(12)}-100${''.padStart(width - 8)}+100`));
+    }
+    // Patterns
+    if (arc.patterns.length > 0) {
+        console.log(chalk.cyan('\n  Detected Patterns:'));
+        for (const pattern of arc.patterns.slice(-3)) {
+            const typeColor = pattern.type === 'escalation' ? chalk.red
+                : pattern.type === 'de-escalation' ? chalk.green
+                    : pattern.type === 'volatile' ? chalk.yellow
+                        : chalk.gray;
+            console.log(`    ${typeColor(`[${pattern.type}]`)} ${pattern.description}`);
+            if (pattern.suggestedIntervention) {
+                console.log(chalk.gray(`      → Suggested: ${pattern.suggestedIntervention}`));
+            }
+        }
+    }
+    // Insights
+    if (state.recentInsights.length > 0) {
+        console.log(chalk.cyan('\n  Insights:'));
+        for (const insight of state.recentInsights) {
+            console.log(`    • ${insight}`);
+        }
+    }
+    if (state.suggestedIntervention) {
+        console.log(chalk.yellow(`\n  Suggested intervention: ${state.suggestedIntervention}`));
+    }
+}
 function printHelp() {
     console.log(chalk.cyan('\n  ═══ METAMORPH Commands ═══'));
     console.log(chalk.cyan('\n  Chat & Control:'));
@@ -809,6 +1088,11 @@ function printHelp() {
     console.log(chalk.cyan('\n  Memory & Transformation:'));
     console.log('    /memories [type]  List stored memories (episodic/semantic/identity)');
     console.log('    /transformations  Show transformation history with scores');
+    console.log('    /operator-stats   Show operator performance statistics (or /ops)');
+    console.log('    /coherence        Show coherence forecast and operator drift costs');
+    console.log('    /strategies       Manage multi-turn operator strategies');
+    console.log('    /cache            View cached subagent results');
+    console.log('    /mood             Show emotional arc and sentiment tracking');
     console.log(chalk.cyan('\n  Subagents:'));
     console.log('    /subagents      List available subagents');
     console.log('    /explore <topic>  Deep investigation with explorer agent');

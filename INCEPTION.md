@@ -1110,4 +1110,76 @@ Show stance evolution as conversation progresses:
 - Click to inspect any point in evolution
 - Integration with existing StanceViz animations
 
+---
+
+## Ralph Iteration 3 - Adaptive Learning & Response Validation
+
+Transform METAMORPH from feed-forward to reflective with operator learning, coherence planning, and response validation.
+
+### Feature 1: Operator Performance Learning System
+Track which operators work best in which contexts:
+- New `operator_performance` table: operator, trigger_type, effectiveness_score, usage_count
+- After each turn, measure: (transformation_score - baseline) / drift_cost
+- Bayesian operator selection: weight candidates by historical effectiveness
+- Use verifier subagent to post-hoc evaluate operator intent vs response
+- CLI `/operator-stats` command showing performance per operator
+- Web component: `OperatorTrust.tsx` visualizing trust scores over time
+
+### Feature 2: Proactive Coherence Budget Planning
+Prevent coherence degradation before it happens:
+- New config: `coherenceReserveBudget` (default 20%) - minimum coherence to preserve
+- Pre-turn planning: filter operators whose predicted drift exceeds available budget
+- New `src/core/coherence-planner.ts` for drift prediction
+- Implement actual response regeneration when coherence floor breached (not just warning)
+- CLI `/coherence-forecast` to preview operator impact before applying
+- Web `CoherenceMeter.tsx` showing real-time budget status
+
+### Feature 3: Multi-Turn Operator Strategies
+Enable complex transformations requiring sequences:
+- Define `operatorStrategies`: named multi-turn sequences
+  - Example: "synthesis_journey" = [Reframe → SynthesizeDialectic → IdentityEvolve]
+- Strategy state machine: track which steps completed
+- Store `strategy_state` in memory for persistence across turns
+- Planner activates strategies for complex triggers
+- CLI commands: `/strategies list`, `/strategies engage <name>`
+- Web: Strategy progress indicator during multi-turn sequences
+
+### Feature 4: Response Quality Triage with Verifier Integration
+Leverage verifier subagent in main response loop:
+- After response generation, invoke verifier to check:
+  - Did response reflect intended operator effects?
+  - Is coherence subjectively maintained (not just regex)?
+  - Any tone/context mismatches?
+- If verifier score < threshold AND coherence allows, trigger regeneration
+- Store verifier feedback for learning system
+- CLI `/verify` command for manual verification
+- Web `VerifierFeedback.tsx` showing why response was regenerated
+
+### Feature 5: Subagent Result Caching & Autonomous Dispatch
+Make subagent insights persistent and accessible:
+- New `subagent_results` table: name, task, response, key_findings, relevance, expiry
+- Query before invoking: "have we explored this before?"
+- Include relevant cached findings in system prompt
+- Autonomous dispatch: if trigger matches subagent expertise, auto-invoke
+  - E.g., consciousness_exploration → auto-reflect before responding
+- CLI `/subagent-cache` showing cached insights
+- Results decay over time based on importance
+
+### Feature 6: Emotional Arc & Sentiment Tracking
+Track conversation emotional trajectory:
+- Extend Stance with `emotionalTrajectory`: [{turn, sentiment, valence, arousal}]
+- Analyze response text for emotional markers
+- Detect patterns: "5 turns of increasing hostility" → trigger ValueShift
+- Store insights: "pursuing novelty at cost of clarity"
+- Reflector subagent analyzes emotional evolution
+- CLI `/mood` showing emotional arc graph
+- Web `EmotionalArc.tsx` timeline visualization
+
+### Feature 7: Memory Store Integration for Operator Learning
+Research and add support for ElizaOS agents
+ - Discovery of eliza interfaces
+ - Brainstorming integration approaches
+ - Implementation of integration
+
+
 Output <promise>COMPLETE</promise> when done, only when we have no more ideas to be implemented or added to this file. 

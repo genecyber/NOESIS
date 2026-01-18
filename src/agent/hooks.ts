@@ -10,7 +10,8 @@ import {
   TransformationHooks,
   Stance,
   TurnScores,
-  StanceDelta
+  StanceDelta,
+  TriggerResult
 } from '../types/index.js';
 import { buildSystemPrompt } from '../core/prompt-builder.js';
 import {
@@ -22,11 +23,19 @@ import {
 } from '../core/planner.js';
 import { getRegistry } from '../operators/base.js';
 import { scoreTransformation, scoreCoherence, scoreSentience } from '../core/metrics.js';
+import {
+  filterByCoherenceBudget,
+  generateCoherenceForecast
+} from '../core/coherence-planner.js';
+import type { MemoryStore } from '../memory/store.js';
+
+// Track triggers for each turn (used for operator learning)
+let lastTurnTriggers: TriggerResult[] = [];
 
 /**
  * Create the default transformation hooks
  */
-export function createTransformationHooks(): TransformationHooks {
+export function createTransformationHooks(memoryStore?: MemoryStore): TransformationHooks {
   return {
     async preTurn(context: PreTurnContext): Promise<PreTurnResult> {
       const { message, stance, config, conversationHistory, conversationId } = context;
@@ -34,6 +43,9 @@ export function createTransformationHooks(): TransformationHooks {
 
       // 1. Detect triggers in the message
       const triggers = detectTriggers(message, conversationHistory);
+
+      // Store triggers for operator learning (Ralph Iteration 3)
+      lastTurnTriggers = [...triggers];
 
       // 1.5 Check for operator fatigue (Ralph Iteration 2)
       const fatigueTrigger = detectOperatorFatigue(conversationId, config);
@@ -46,10 +58,33 @@ export function createTransformationHooks(): TransformationHooks {
       const fatiguedOperators = getFatiguedOperators(conversationId, config);
 
       // 2. Plan operations based on triggers (avoiding fatigued operators)
-      const operators = planOperations(triggers, stance, {
+      // Ralph Iteration 3: Apply Bayesian weights if memory store available
+      let operators = planOperations(triggers, stance, {
         ...config,
         disabledOperators: [...config.disabledOperators, ...fatiguedOperators]
       }, registry);
+
+      // Apply operator learning weights (Ralph Iteration 3 - Feature 1)
+      if (memoryStore && operators.length > 1 && triggers.length > 0) {
+        const primaryTrigger = triggers[0].type;
+        operators = operators.sort((a, b) => {
+          const weightA = memoryStore.getOperatorWeight(a.name, primaryTrigger);
+          const weightB = memoryStore.getOperatorWeight(b.name, primaryTrigger);
+          return weightB - weightA; // Higher weight = better performance
+        });
+      }
+
+      // 2.5 Filter by coherence budget (Ralph Iteration 3 - Feature 2)
+      if (config.enableCoherencePlanning && operators.length > 0) {
+        const forecast = generateCoherenceForecast(operators, stance, config);
+        if (forecast.riskLevel === 'critical' || forecast.riskLevel === 'high') {
+          const { selected, filtered } = filterByCoherenceBudget(operators, stance, config);
+          if (filtered.length > 0) {
+            console.log(`[METAMORPH] Coherence planning: filtered ${filtered.length} operators (${filtered.map(o => o.name).join(', ')})`);
+          }
+          operators = selected;
+        }
+      }
 
       // 3. Calculate stance changes from operators
       let stanceAfterPlan = { ...stance };
@@ -93,6 +128,22 @@ export function createTransformationHooks(): TransformationHooks {
         sentience: sentienceScore,
         overall: Math.round((transformationScore + coherenceScore + sentienceScore) / 3)
       };
+
+      // Record operator performance for learning (Ralph Iteration 3 - Feature 1)
+      if (memoryStore && operators.length > 0) {
+        const driftCost = operators.length * 5;  // Same formula used for cumulativeDrift
+        const primaryTrigger = lastTurnTriggers.length > 0 ? lastTurnTriggers[0].type : 'unknown';
+
+        for (const op of operators) {
+          memoryStore.recordOperatorPerformance({
+            operatorName: op.name,
+            triggerType: primaryTrigger,
+            transformationScore,
+            coherenceScore,
+            driftCost: driftCost / operators.length  // Split cost among operators
+          });
+        }
+      }
 
       // 2. Determine stance updates based on response
       let stanceAfter = { ...stanceBefore };

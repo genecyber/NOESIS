@@ -177,6 +177,9 @@ export declare const ModeConfigSchema: z.ZodObject<{
     allowAutoOperatorShift: z.ZodDefault<z.ZodBoolean>;
     operatorFatigueThreshold: z.ZodDefault<z.ZodNumber>;
     operatorFatigueLookback: z.ZodDefault<z.ZodNumber>;
+    coherenceReserveBudget: z.ZodDefault<z.ZodNumber>;
+    enableCoherencePlanning: z.ZodDefault<z.ZodBoolean>;
+    maxRegenerationAttempts: z.ZodDefault<z.ZodNumber>;
 }, z.core.$strip>;
 export type ModeConfig = z.infer<typeof ModeConfigSchema>;
 export declare const OperatorNameSchema: z.ZodEnum<{

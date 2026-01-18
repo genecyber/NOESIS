@@ -157,7 +157,12 @@ export const ModeConfigSchema = z.object({
 
   // Threshold for operator fatigue (same operator N times in last M turns)
   operatorFatigueThreshold: z.number().min(2).max(10).default(3),
-  operatorFatigueLookback: z.number().min(5).max(20).default(10)
+  operatorFatigueLookback: z.number().min(5).max(20).default(10),
+
+  // Ralph Iteration 3 - Proactive coherence budget planning
+  coherenceReserveBudget: z.number().min(0).max(50).default(20),  // Minimum coherence to preserve (%)
+  enableCoherencePlanning: z.boolean().default(true),  // Filter operators by predicted drift
+  maxRegenerationAttempts: z.number().min(0).max(5).default(2)  // Times to regenerate on coherence failure
 });
 
 export type ModeConfig = z.infer<typeof ModeConfigSchema>;

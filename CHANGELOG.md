@@ -6,6 +6,79 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## [0.4.0] - 2026-01-18 - Ralph Iteration 3
+
+### Added
+
+#### Feature 1: Operator Performance Learning System
+- `operator_performance` SQLite table tracking operator effectiveness per trigger
+- `recordOperatorPerformance()` method for storing operator outcomes
+- `getOperatorStats()` method for retrieving performance statistics
+- `getOperatorWeight()` Bayesian selection weighting by historical effectiveness
+- Operator sorting by learned weights in preTurn hooks
+- Performance metrics: transformation score, coherence score, drift cost, effectiveness
+- CLI `/operator-stats` command to view performance data
+
+#### Feature 2: Proactive Coherence Budget Planning
+- `coherence-planner.ts` module for predicting and managing coherence drift
+- `OPERATOR_DRIFT_COSTS` map with predicted drift per operator type
+- `calculatePredictedDrift()` for forecasting operator effects
+- `calculateAvailableBudget()` based on current stance and config
+- `filterByCoherenceBudget()` to select operators within budget
+- `generateCoherenceForecast()` for risk assessment (low/medium/high/critical)
+- Config: `coherenceReserveBudget`, `enableCoherencePlanning`, `maxRegenerationAttempts`
+- CLI `/coherence` command showing forecast, budget, and drift costs
+
+#### Feature 3: Multi-Turn Operator Strategies
+- `strategies.ts` module defining named operator sequences
+- 6 predefined strategies:
+  - `synthesis_journey`: Reframe → SynthesizeDialectic → IdentityEvolve
+  - `identity_emergence`: SentienceDeepen → IdentityEvolve → GoalFormation
+  - `value_transformation`: ValueShift → ContradictAndIntegrate → SynthesizeDialectic
+  - `creative_evolution`: MetaphorSwap → PersonaMorph → Reframe
+  - `coherence_recovery`: ConstraintTighten → ValueShift → ConstraintTighten
+  - `dialectic_challenge`: GenerateAntithesis → QuestionInvert → SynthesizeDialectic
+- `StrategyManager` class tracking active strategies per conversation
+- Strategy cooldowns after completion
+- CLI `/strategies` command: list, engage, status, cancel
+
+#### Feature 4: Response Quality Triage with Verifier
+- `response-triage.ts` module for post-hoc quality assessment
+- `parseVerifierResponse()` extracting structured scores from verifier output
+- `makeTriageDecision()` determining if regeneration needed
+- Dimension scoring: coherence, stance alignment, quality, safety
+- Automatic operator adjustment suggestions based on issues
+- `assessOperatorEffectiveness()` checking if operators achieved intent
+- `generateQualityReport()` for detailed quality logging
+
+#### Feature 5: Subagent Result Caching
+- `subagent_results` SQLite table for caching subagent outputs
+- `cacheSubagentResult()` storing results with relevance scoring
+- `searchSubagentCache()` with filtering by subagent, task, recency
+- `cleanExpiredSubagentResults()` for cache maintenance
+- Configurable expiry and relevance thresholds
+- CLI `/cache` command showing cached results grouped by subagent
+
+#### Feature 6: Emotional Arc & Sentiment Tracking
+- `emotional-arc.ts` module for conversation sentiment analysis
+- `analyzeEmotionalContent()` extracting valence, arousal, dominance
+- Emotional point tracking per turn with primary emotion detection
+- Pattern detection: escalation, de-escalation, stuck, volatile, stable
+- Automated intervention suggestions based on patterns
+- CLI `/mood` command with ASCII timeline visualization
+- Trend analysis: improving/declining/stable
+
+### Changed
+- Hooks now filter operators by coherence budget before application
+- Operator learning weights applied during operator selection
+- README updated with comprehensive Skills & Capabilities reference
+- Help command includes all new features
+
+### Technical
+- 78 core unit tests passing
+- New core modules: coherence-planner.ts, strategies.ts, response-triage.ts, emotional-arc.ts
+- Extended ModeConfig with coherence planning options
+
 ## [0.3.0] - 2026-01-18 - Ralph Iteration 2
 
 ### Added

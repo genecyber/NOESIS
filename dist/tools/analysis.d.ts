@@ -37,9 +37,9 @@ export declare const frameShiftAnalysisTool: import("@anthropic-ai/claude-agent-
 }>;
 export declare const valueAnalysisTool: import("@anthropic-ai/claude-agent-sdk").SdkMcpToolDefinition<{
     focus: z.ZodOptional<z.ZodEnum<{
-        all: "all";
-        high: "high";
         low: "low";
+        high: "high";
+        all: "all";
         imbalanced: "imbalanced";
     }>>;
 }>;
@@ -69,9 +69,9 @@ export declare const analysisTools: (import("@anthropic-ai/claude-agent-sdk").Sd
     topic: z.ZodOptional<z.ZodString>;
 }> | import("@anthropic-ai/claude-agent-sdk").SdkMcpToolDefinition<{
     focus: z.ZodOptional<z.ZodEnum<{
-        all: "all";
-        high: "high";
         low: "low";
+        high: "high";
+        all: "all";
         imbalanced: "imbalanced";
     }>>;
 }> | import("@anthropic-ai/claude-agent-sdk").SdkMcpToolDefinition<{}>)[];

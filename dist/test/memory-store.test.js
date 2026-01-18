@@ -76,8 +76,10 @@ describe('MemoryStore', () => {
             const session = store.getSessionInfo('to-delete');
             expect(session).toBeNull();
         });
-        it('gets most recent session', () => {
+        it('gets most recent session', async () => {
             store.saveSession({ id: 'old-session', name: 'Old' });
+            // Small delay to ensure different timestamps
+            await new Promise(r => setTimeout(r, 10));
             store.saveSession({ id: 'new-session', name: 'New' });
             const mostRecent = store.getMostRecentSession();
             expect(mostRecent).not.toBeNull();
@@ -99,17 +101,20 @@ describe('MemoryStore', () => {
             expect(id).toBeDefined();
             expect(id.length).toBeGreaterThan(0);
         });
-        it('retrieves latest snapshot', () => {
+        it('retrieves latest snapshot', async () => {
             store.saveEvolutionSnapshot(testConvId, { ...testStance, frame: 'poetic' }, 'frame_shift');
+            await new Promise(r => setTimeout(r, 10));
             store.saveEvolutionSnapshot(testConvId, { ...testStance, frame: 'mythic' }, 'frame_shift');
             const latest = store.getLatestSnapshot(testConvId);
             expect(latest).not.toBeNull();
             expect(latest.stance.frame).toBe('mythic');
             expect(latest.trigger).toBe('frame_shift');
         });
-        it('gets evolution timeline', () => {
+        it('gets evolution timeline', async () => {
             store.saveEvolutionSnapshot(testConvId, { ...testStance, cumulativeDrift: 10 }, 'drift_threshold');
+            await new Promise(r => setTimeout(r, 10));
             store.saveEvolutionSnapshot(testConvId, { ...testStance, cumulativeDrift: 20 }, 'drift_threshold');
+            await new Promise(r => setTimeout(r, 10));
             store.saveEvolutionSnapshot(testConvId, { ...testStance, cumulativeDrift: 30 }, 'drift_threshold');
             const timeline = store.getEvolutionTimeline(testConvId);
             expect(timeline.length).toBe(3);
@@ -123,8 +128,9 @@ describe('MemoryStore', () => {
             // Drift increased by 25, threshold is 20
             expect(store.shouldAutoSnapshot(testConvId, 35, 20)).toBe(true);
         });
-        it('gets global latest snapshot', () => {
+        it('gets global latest snapshot', async () => {
             store.saveEvolutionSnapshot('conv-1', testStance, 'manual');
+            await new Promise(r => setTimeout(r, 10));
             store.saveEvolutionSnapshot('conv-2', { ...testStance, frame: 'poetic' }, 'manual');
             const global = store.getGlobalLatestSnapshot();
             expect(global).not.toBeNull();

@@ -72,8 +72,9 @@ export class MetamorphAgent {
         const conversation = this.stanceController.createConversation(this.config);
         this.conversationId = conversation.id;
         // Enable transformation hooks by default
+        // Ralph Iteration 3: Pass memory store for operator learning
         if (options.enableTransformation !== false) {
-            this.hooks = createTransformationHooks();
+            this.hooks = createTransformationHooks(this.memoryStore ?? undefined);
         }
         if (this.verbose) {
             console.log(`[METAMORPH] Initialized with conversation ${this.conversationId}`);

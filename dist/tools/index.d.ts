@@ -82,9 +82,9 @@ export declare const allTools: (import("@anthropic-ai/claude-agent-sdk").SdkMcpT
     topic: import("zod").ZodOptional<import("zod").ZodString>;
 }> | import("@anthropic-ai/claude-agent-sdk").SdkMcpToolDefinition<{
     focus: import("zod").ZodOptional<import("zod").ZodEnum<{
-        all: "all";
-        high: "high";
         low: "low";
+        high: "high";
+        all: "all";
         imbalanced: "imbalanced";
     }>>;
 }> | import("@anthropic-ai/claude-agent-sdk").SdkMcpToolDefinition<{

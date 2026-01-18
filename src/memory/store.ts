@@ -133,6 +133,47 @@ export class MemoryStore {
       CREATE INDEX IF NOT EXISTS idx_sessions_accessed
       ON sessions(last_accessed DESC)
     `);
+
+    // Operator performance table (Ralph Iteration 3 - Feature 1)
+    this.db.exec(`
+      CREATE TABLE IF NOT EXISTS operator_performance (
+        id TEXT PRIMARY KEY,
+        operator_name TEXT NOT NULL,
+        trigger_type TEXT NOT NULL,
+        effectiveness_score REAL NOT NULL,
+        transformation_score INTEGER NOT NULL,
+        coherence_score INTEGER NOT NULL,
+        drift_cost INTEGER NOT NULL,
+        timestamp TEXT NOT NULL
+      )
+    `);
+
+    // Index for operator performance by operator name
+    this.db.exec(`
+      CREATE INDEX IF NOT EXISTS idx_operator_performance
+      ON operator_performance(operator_name, trigger_type)
+    `);
+
+    // Subagent results table (Ralph Iteration 3 - Feature 5)
+    this.db.exec(`
+      CREATE TABLE IF NOT EXISTS subagent_results (
+        id TEXT PRIMARY KEY,
+        subagent_name TEXT NOT NULL,
+        task TEXT NOT NULL,
+        response TEXT NOT NULL,
+        key_findings TEXT,
+        relevance REAL NOT NULL,
+        conversation_id TEXT,
+        timestamp TEXT NOT NULL,
+        expiry TEXT
+      )
+    `);
+
+    // Index for subagent results
+    this.db.exec(`
+      CREATE INDEX IF NOT EXISTS idx_subagent_results
+      ON subagent_results(subagent_name, relevance DESC)
+    `);
   }
 
   // ============================================================================
@@ -732,6 +773,228 @@ export class MemoryStore {
   }
 
   // ============================================================================
+  // Operator Performance Learning (Ralph Iteration 3 - Feature 1)
+  // ============================================================================
+
+  /**
+   * Record operator performance for learning
+   */
+  recordOperatorPerformance(entry: {
+    operatorName: string;
+    triggerType: string;
+    transformationScore: number;
+    coherenceScore: number;
+    driftCost: number;
+  }): string {
+    const id = uuidv4();
+    // Effectiveness = transformation gained per unit of drift cost
+    const effectivenessScore = entry.driftCost > 0
+      ? entry.transformationScore / entry.driftCost
+      : entry.transformationScore;
+
+    this.db.prepare(`
+      INSERT INTO operator_performance
+      (id, operator_name, trigger_type, effectiveness_score, transformation_score, coherence_score, drift_cost, timestamp)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+    `).run(
+      id,
+      entry.operatorName,
+      entry.triggerType,
+      effectivenessScore,
+      entry.transformationScore,
+      entry.coherenceScore,
+      entry.driftCost,
+      new Date().toISOString()
+    );
+
+    return id;
+  }
+
+  /**
+   * Get operator performance statistics
+   */
+  getOperatorStats(operatorName?: string): OperatorStats[] {
+    let sql = `
+      SELECT
+        operator_name,
+        trigger_type,
+        COUNT(*) as usage_count,
+        AVG(effectiveness_score) as avg_effectiveness,
+        AVG(transformation_score) as avg_transformation,
+        AVG(coherence_score) as avg_coherence,
+        AVG(drift_cost) as avg_drift
+      FROM operator_performance
+    `;
+    const params: string[] = [];
+
+    if (operatorName) {
+      sql += ' WHERE operator_name = ?';
+      params.push(operatorName);
+    }
+
+    sql += ' GROUP BY operator_name, trigger_type ORDER BY avg_effectiveness DESC';
+
+    const rows = this.db.prepare(sql).all(...params) as Array<{
+      operator_name: string;
+      trigger_type: string;
+      usage_count: number;
+      avg_effectiveness: number;
+      avg_transformation: number;
+      avg_coherence: number;
+      avg_drift: number;
+    }>;
+
+    return rows.map(row => ({
+      operatorName: row.operator_name,
+      triggerType: row.trigger_type,
+      usageCount: row.usage_count,
+      avgEffectiveness: row.avg_effectiveness,
+      avgTransformation: row.avg_transformation,
+      avgCoherence: row.avg_coherence,
+      avgDrift: row.avg_drift
+    }));
+  }
+
+  /**
+   * Get weighted operator score for Bayesian selection
+   */
+  getOperatorWeight(operatorName: string, triggerType: string): number {
+    const row = this.db.prepare(`
+      SELECT
+        COUNT(*) as usage_count,
+        AVG(effectiveness_score) as avg_effectiveness
+      FROM operator_performance
+      WHERE operator_name = ? AND trigger_type = ?
+    `).get(operatorName, triggerType) as {
+      usage_count: number;
+      avg_effectiveness: number | null;
+    } | undefined;
+
+    if (!row || row.usage_count === 0) {
+      return 1.0; // Default weight for unknown operators (neutral prior)
+    }
+
+    // Bayesian-ish: weight by effectiveness, tempered by confidence (usage count)
+    const confidence = Math.min(row.usage_count / 10, 1.0); // Full confidence after 10 uses
+    const effectiveness = row.avg_effectiveness || 1.0;
+
+    // Blend prior (1.0) with observed effectiveness based on confidence
+    return (1 - confidence) * 1.0 + confidence * effectiveness;
+  }
+
+  // ============================================================================
+  // Subagent Result Caching (Ralph Iteration 3 - Feature 5)
+  // ============================================================================
+
+  /**
+   * Cache a subagent result
+   */
+  cacheSubagentResult(entry: {
+    subagentName: string;
+    task: string;
+    response: string;
+    keyFindings?: string[];
+    relevance: number;
+    conversationId?: string;
+    expiryHours?: number;
+  }): string {
+    const id = uuidv4();
+    const expiry = entry.expiryHours
+      ? new Date(Date.now() + entry.expiryHours * 3600000).toISOString()
+      : null;
+
+    this.db.prepare(`
+      INSERT INTO subagent_results
+      (id, subagent_name, task, response, key_findings, relevance, conversation_id, timestamp, expiry)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `).run(
+      id,
+      entry.subagentName,
+      entry.task,
+      entry.response,
+      entry.keyFindings ? JSON.stringify(entry.keyFindings) : null,
+      entry.relevance,
+      entry.conversationId || null,
+      new Date().toISOString(),
+      expiry
+    );
+
+    return id;
+  }
+
+  /**
+   * Search for relevant cached subagent results
+   */
+  searchSubagentCache(query: {
+    subagentName?: string;
+    task?: string;
+    minRelevance?: number;
+    limit?: number;
+  }): SubagentResult[] {
+    let sql = `
+      SELECT * FROM subagent_results
+      WHERE (expiry IS NULL OR expiry > datetime('now'))
+    `;
+    const params: (string | number)[] = [];
+
+    if (query.subagentName) {
+      sql += ' AND subagent_name = ?';
+      params.push(query.subagentName);
+    }
+
+    if (query.task) {
+      sql += ' AND task LIKE ?';
+      params.push(`%${query.task}%`);
+    }
+
+    if (query.minRelevance !== undefined) {
+      sql += ' AND relevance >= ?';
+      params.push(query.minRelevance);
+    }
+
+    sql += ' ORDER BY relevance DESC, timestamp DESC';
+
+    if (query.limit) {
+      sql += ' LIMIT ?';
+      params.push(query.limit);
+    }
+
+    const rows = this.db.prepare(sql).all(...params) as Array<{
+      id: string;
+      subagent_name: string;
+      task: string;
+      response: string;
+      key_findings: string | null;
+      relevance: number;
+      conversation_id: string | null;
+      timestamp: string;
+      expiry: string | null;
+    }>;
+
+    return rows.map(row => ({
+      id: row.id,
+      subagentName: row.subagent_name,
+      task: row.task,
+      response: row.response,
+      keyFindings: row.key_findings ? JSON.parse(row.key_findings) : undefined,
+      relevance: row.relevance,
+      conversationId: row.conversation_id || undefined,
+      timestamp: new Date(row.timestamp),
+      expiry: row.expiry ? new Date(row.expiry) : undefined
+    }));
+  }
+
+  /**
+   * Clean expired subagent results
+   */
+  cleanExpiredSubagentResults(): number {
+    const result = this.db.prepare(`
+      DELETE FROM subagent_results WHERE expiry IS NOT NULL AND expiry < datetime('now')
+    `).run();
+    return result.changes;
+  }
+
+  // ============================================================================
   // Utility
   // ============================================================================
 
@@ -749,6 +1012,8 @@ export class MemoryStore {
     this.db.prepare('DELETE FROM semantic_memory').run();
     this.db.prepare('DELETE FROM evolution_snapshots').run();
     this.db.prepare('DELETE FROM sessions').run();
+    this.db.prepare('DELETE FROM operator_performance').run();
+    this.db.prepare('DELETE FROM subagent_results').run();
   }
 }
 
@@ -762,4 +1027,28 @@ export interface SessionInfo {
   messageCount: number;
   currentFrame?: string;
   currentDrift: number;
+}
+
+// Operator stats type (Ralph Iteration 3)
+export interface OperatorStats {
+  operatorName: string;
+  triggerType: string;
+  usageCount: number;
+  avgEffectiveness: number;
+  avgTransformation: number;
+  avgCoherence: number;
+  avgDrift: number;
+}
+
+// Subagent result type (Ralph Iteration 3)
+export interface SubagentResult {
+  id: string;
+  subagentName: string;
+  task: string;
+  response: string;
+  keyFindings?: string[];
+  relevance: number;
+  conversationId?: string;
+  timestamp: Date;
+  expiry?: Date;
 }
