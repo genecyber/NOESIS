@@ -6,6 +6,51 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## [0.5.0] - 2026-01-18 - Web UI Enhancement Release
+
+### Added
+
+#### Web UI Features
+- **Timeline Panel**: View operator transformations per turn with scores and frame changes
+- **Evolution Panel**: Visualize stance drift over time with snapshots
+- **Sessions Panel**: Browse, create, switch, and delete sessions
+- **Memories Panel**: Browse episodic, semantic, and identity memories with type filtering
+- **Markdown Rendering**: Full markdown support in chat with streaming (headers, code blocks, lists, blockquotes)
+- **Custom Scrollbars**: Styled scrollbars with gradient themes matching accent colors
+- **Floating Status Indicator**: Connection status floats in upper right of chat area
+
+#### API Endpoints
+- `GET /api/timeline` - Operator transformation history with scores
+- `GET /api/evolution` - Stance evolution snapshots
+- `GET /api/memories` - Memory search with type filtering
+- `GET /api/sessions` - List all active sessions
+- `DELETE /api/session/:id` - Delete a session
+
+#### CLI Improvements
+- `--disallow <tools>` flag to explicitly block specific tools
+- All tools allowed by default with `allowedTools` constant
+
+### Fixed
+
+#### Streaming Fixes
+- **CLI streaming**: Added `includePartialMessages: true` for real-time token streaming
+- **Web SSE parsing**: Fixed event/data line parsing for proper SSE handling
+- **Double response bug**: Added `hasStreamedText` flag to prevent duplicate emissions
+- **Next.js proxy buffering**: Direct connection to port 3001 bypasses proxy for real-time streaming
+- **Server SSE headers**: Added `flushHeaders()` for immediate header transmission
+
+#### Web UI Fixes
+- **Port mismatch**: Server now defaults to port 3001 (was 3000, conflicting with Next.js)
+- **Session race condition**: Chat waits for session initialization before allowing messages
+- **Timeline empty**: Fixed transformation history recording and API endpoint mapping
+- **Scroll issues**: Fixed flexbox layout with `min-height: 0` for proper overflow scrolling
+- **Tool permissions**: Added `allowedTools` array with all built-in tools for proper auto-granting
+
+### Technical
+- React-markdown integration for streaming markdown rendering
+- Proper CSS flex container setup for scrollable chat area
+- Fixed positioning for floating UI elements
+
 ## [0.4.0] - 2026-01-18 - Ralph Iteration 3
 
 ### Added

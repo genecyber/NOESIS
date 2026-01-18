@@ -36,6 +36,43 @@ npm run server
 cd web && npm run dev
 ```
 
+## Web Interface
+
+The web UI provides a full-featured interface for interacting with METAMORPH:
+
+### Panels
+
+| Panel | Description |
+|-------|-------------|
+| **Stance** | Current frame, self-model, objective, values (with bars), and sentience levels |
+| **Config** | Adjust intensity, coherence floor, sentience level, drift settings |
+| **Timeline** | View operators applied per turn with transformation scores |
+| **Evolution** | Visualize stance drift over time with snapshots |
+| **Sessions** | Browse, create, switch, and delete sessions |
+| **Memories** | Browse episodic, semantic, and identity memories |
+
+### Features
+
+- **Real-time Streaming**: Responses stream token-by-token via SSE
+- **Markdown Rendering**: Full markdown support (headers, code blocks, lists, blockquotes)
+- **Custom Scrollbars**: Styled gradient scrollbars matching theme
+- **Connection Status**: Floating indicator shows connection state
+- **Transformation Triggers**: Asking about feelings, identity, or hypotheticals triggers operators
+
+### Running the Web UI
+
+```bash
+# Terminal 1: Start the API server
+npm run server
+
+# Terminal 2: Start the Next.js dev server
+cd web && npm run dev
+
+# Open http://localhost:3000
+```
+
+The server runs on port 3001, and Next.js proxies API requests from port 3000.
+
 ---
 
 ## Skills & Capabilities Reference
