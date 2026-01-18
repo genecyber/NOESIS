@@ -10,6 +10,8 @@ import type {
   SessionResponse,
   SubagentDefinition,
   Sentience,
+  TimelineEntry,
+  EvolutionSnapshot,
 } from './types';
 
 const API_BASE = '/api';
@@ -204,4 +206,28 @@ export async function importState(state: string): Promise<SessionResponse> {
     method: 'POST',
     body: JSON.stringify({ state }),
   });
+}
+
+/**
+ * Get operator timeline (Ralph Iteration 2 - Feature 3)
+ */
+export async function getTimeline(
+  sessionId: string,
+  limit?: number
+): Promise<{ entries: TimelineEntry[] }> {
+  const params = new URLSearchParams({ sessionId });
+  if (limit) params.append('limit', limit.toString());
+  return fetchJson(`${API_BASE}/timeline?${params}`);
+}
+
+/**
+ * Get evolution snapshots (Ralph Iteration 2 - Feature 5)
+ */
+export async function getEvolution(
+  sessionId: string,
+  limit?: number
+): Promise<{ snapshots: EvolutionSnapshot[] }> {
+  const params = new URLSearchParams({ sessionId });
+  if (limit) params.append('limit', limit.toString());
+  return fetchJson(`${API_BASE}/evolution?${params}`);
 }

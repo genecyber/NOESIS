@@ -1066,4 +1066,48 @@ Implement the coherence floor as described in the transformation design:
 - Coherence warnings in CLI and web UI
 - Configurable floor with sensible defaults
 
+## Ralph Iteration 2 - Autonomy & Integration Enhancement
+
+Based on comprehensive analysis of gaps in autonomy, UX, and integration opportunities:
+
+### Feature 1: Autonomous Operator Pattern Detection
+Enable the agent to detect when it's stuck in repetitive patterns:
+- Detect when same operators fire repeatedly (5+ times in 10 turns)
+- Auto-inject diversity prompt when pattern detected
+- New trigger type: `operator_fatigue`
+- Configurable via `allowAutoOperatorShift` flag
+- Log autonomous decisions for transparency
+
+### Feature 2: Session Persistence & Browser
+Allow users to manage multiple sessions:
+- SQLite `sessions` table with metadata (name, created_at, last_accessed)
+- CLI commands: `/sessions list`, `/sessions resume <id>`, `/sessions name <name>`
+- Web UI: Session selector dropdown with search
+- Auto-save sessions on graceful shutdown
+- Session export/import for backup
+
+### Feature 3: Operator Timeline Visualization
+Show transformation operators in real-time:
+- Web component: `OperatorTimeline.tsx` showing operators per turn
+- Each turn displays: message preview → operators → scores
+- Click to expand for full details
+- API endpoint: `GET /api/timeline/:sessionId`
+- CLI command: `/timeline` to view recent operators
+
+### Feature 4: Enhanced Test Coverage
+Address critical test gaps:
+- Memory store unit tests
+- CLI command integration tests
+- Streaming end-to-end tests
+- Web component tests for new features
+- Golden conversation tests from INCEPTION.md
+
+### Feature 5: Real-Time Evolution Visualization in Web
+Show stance evolution as conversation progresses:
+- New component: `EvolutionTimeline.tsx`
+- Animated timeline of stance changes through conversation
+- Visual indicators for major transforms vs minor drifts
+- Click to inspect any point in evolution
+- Integration with existing StanceViz animations
+
 Output <promise>COMPLETE</promise> when done, only when we have no more ideas to be implemented or added to this file. 

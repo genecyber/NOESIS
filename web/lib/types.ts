@@ -73,3 +73,32 @@ export interface SubagentDefinition {
   description: string;
   tools: string[];
 }
+
+// Ralph Iteration 2 - Feature 3: Operator Timeline
+export interface TimelineEntry {
+  id: string;
+  timestamp: Date;
+  userMessage: string;
+  operators: Array<{
+    name: string;
+    description: string;
+  }>;
+  scores: {
+    transformation: number;
+    coherence: number;
+    sentience: number;
+    overall: number;
+  };
+  frameBefore: string;
+  frameAfter: string;
+  driftDelta: number;
+}
+
+// Ralph Iteration 2 - Feature 5: Evolution Timeline
+export interface EvolutionSnapshot {
+  id: string;
+  timestamp: Date;
+  stance: Stance;
+  trigger: 'drift_threshold' | 'frame_shift' | 'manual' | 'session_end';
+  driftAtSnapshot: number;
+}

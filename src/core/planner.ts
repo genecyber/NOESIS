@@ -103,7 +103,9 @@ const TRIGGER_PATTERNS: Record<TriggerType, RegExp[]> = {
     /story/i,
     /poem/i,
     /imagine/i
-  ]
+  ],
+  // operator_fatigue has no message patterns - it's detected programmatically
+  operator_fatigue: []
 };
 
 // Mapping triggers to operators
@@ -117,8 +119,17 @@ const TRIGGER_OPERATOR_MAP: Record<TriggerType, OperatorName[]> = {
   identity_question: ['IdentityEvolve', 'GoalFormation'],
   value_conflict: ['SynthesizeDialectic', 'ValueShift'],
   meta_question: ['SentienceDeepen'],
-  creative_request: ['Reframe', 'MetaphorSwap', 'PersonaMorph']
+  creative_request: ['Reframe', 'MetaphorSwap', 'PersonaMorph'],
+  operator_fatigue: ['PersonaMorph', 'Reframe', 'ConstraintRelax', 'QuestionInvert']  // Force diversity
 };
+
+// Operator usage history for fatigue detection (Ralph Iteration 2)
+interface OperatorUsageEntry {
+  operators: OperatorName[];
+  timestamp: Date;
+}
+
+const operatorUsageHistory: Map<string, OperatorUsageEntry[]> = new Map();
 
 /**
  * Detect triggers in a user message
@@ -255,4 +266,106 @@ function calculateSimilarity(a: string, b: string): number {
   const union = new Set([...wordsA, ...wordsB]);
 
   return intersection.size / union.size;
+}
+
+// ============================================================================
+// Operator Fatigue Detection (Ralph Iteration 2 - Feature 1)
+// ============================================================================
+
+/**
+ * Record operator usage for fatigue detection
+ */
+export function recordOperatorUsage(conversationId: string, operators: OperatorName[]): void {
+  if (!operatorUsageHistory.has(conversationId)) {
+    operatorUsageHistory.set(conversationId, []);
+  }
+
+  const history = operatorUsageHistory.get(conversationId)!;
+  history.push({
+    operators,
+    timestamp: new Date()
+  });
+
+  // Keep only last 20 entries
+  if (history.length > 20) {
+    history.shift();
+  }
+}
+
+/**
+ * Detect operator fatigue - same operators used repeatedly
+ */
+export function detectOperatorFatigue(
+  conversationId: string,
+  config: ModeConfig
+): TriggerResult | null {
+  if (!config.allowAutoOperatorShift) {
+    return null;
+  }
+
+  const history = operatorUsageHistory.get(conversationId);
+  if (!history || history.length < config.operatorFatigueLookback) {
+    return null;
+  }
+
+  // Analyze recent operator usage
+  const recentEntries = history.slice(-config.operatorFatigueLookback);
+  const operatorCounts = new Map<OperatorName, number>();
+
+  for (const entry of recentEntries) {
+    for (const op of entry.operators) {
+      operatorCounts.set(op, (operatorCounts.get(op) || 0) + 1);
+    }
+  }
+
+  // Check if any operator exceeds threshold
+  for (const [operator, count] of operatorCounts.entries()) {
+    if (count >= config.operatorFatigueThreshold) {
+      return {
+        type: 'operator_fatigue',
+        confidence: count / config.operatorFatigueLookback,
+        evidence: `Operator '${operator}' used ${count} times in last ${config.operatorFatigueLookback} turns`
+      };
+    }
+  }
+
+  return null;
+}
+
+/**
+ * Get operators that should be avoided due to fatigue
+ */
+export function getFatiguedOperators(
+  conversationId: string,
+  config: ModeConfig
+): OperatorName[] {
+  const history = operatorUsageHistory.get(conversationId);
+  if (!history || history.length < config.operatorFatigueLookback) {
+    return [];
+  }
+
+  const recentEntries = history.slice(-config.operatorFatigueLookback);
+  const operatorCounts = new Map<OperatorName, number>();
+
+  for (const entry of recentEntries) {
+    for (const op of entry.operators) {
+      operatorCounts.set(op, (operatorCounts.get(op) || 0) + 1);
+    }
+  }
+
+  const fatigued: OperatorName[] = [];
+  for (const [operator, count] of operatorCounts.entries()) {
+    if (count >= config.operatorFatigueThreshold) {
+      fatigued.push(operator);
+    }
+  }
+
+  return fatigued;
+}
+
+/**
+ * Clear operator history for a conversation
+ */
+export function clearOperatorHistory(conversationId: string): void {
+  operatorUsageHistory.delete(conversationId);
 }

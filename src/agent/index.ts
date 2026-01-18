@@ -181,7 +181,8 @@ export class MetamorphAgent {
         message,
         stance: stanceBefore,
         config: this.config,
-        conversationHistory
+        conversationHistory,
+        conversationId: this.conversationId
       };
 
       const preTurnResult = await this.hooks.preTurn(preTurnContext);
@@ -278,7 +279,8 @@ export class MetamorphAgent {
         stanceBefore,
         operators,
         toolsUsed,
-        config: this.config
+        config: this.config,
+        conversationId: this.conversationId
       };
 
       const postTurnResult = this.hooks.postTurn(postTurnContext);
@@ -370,7 +372,8 @@ export class MetamorphAgent {
         message,
         stance: stanceBefore,
         config: this.config,
-        conversationHistory
+        conversationHistory,
+        conversationId: this.conversationId
       };
 
       const preTurnResult = await this.hooks.preTurn(preTurnContext);
@@ -456,7 +459,8 @@ export class MetamorphAgent {
           stanceBefore,
           operators,
           toolsUsed,
-          config: this.config
+          config: this.config,
+          conversationId: this.conversationId
         });
         stanceAfter = postTurnResult.stanceAfter;
         scores = postTurnResult.scores;
@@ -564,6 +568,13 @@ export class MetamorphAgent {
    */
   getSessionId(): string | undefined {
     return this.sessionId;
+  }
+
+  /**
+   * Get the memory store (Ralph Iteration 2 - Feature 2)
+   */
+  getMemoryStore(): MemoryStore {
+    return this.ensureMemoryStore();
   }
 
   /**

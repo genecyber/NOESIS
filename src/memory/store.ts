@@ -112,6 +112,27 @@ export class MemoryStore {
       CREATE INDEX IF NOT EXISTS idx_evolution_conversation
       ON evolution_snapshots(conversation_id)
     `);
+
+    // Sessions table (Ralph Iteration 2 - Feature 2)
+    this.db.exec(`
+      CREATE TABLE IF NOT EXISTS sessions (
+        id TEXT PRIMARY KEY,
+        name TEXT,
+        conversation_id TEXT,
+        last_accessed TEXT NOT NULL,
+        created_at TEXT NOT NULL,
+        message_count INTEGER DEFAULT 0,
+        current_frame TEXT,
+        current_drift INTEGER DEFAULT 0,
+        FOREIGN KEY (conversation_id) REFERENCES conversations(id)
+      )
+    `);
+
+    // Index for sessions by last_accessed
+    this.db.exec(`
+      CREATE INDEX IF NOT EXISTS idx_sessions_accessed
+      ON sessions(last_accessed DESC)
+    `);
   }
 
   // ============================================================================
@@ -525,6 +546,192 @@ export class MemoryStore {
   }
 
   // ============================================================================
+  // Session Management (Ralph Iteration 2 - Feature 2)
+  // ============================================================================
+
+  /**
+   * Session info returned by list/get operations
+   */
+  getSessionInfo(sessionId: string): SessionInfo | null {
+    const row = this.db.prepare(`
+      SELECT id, name, conversation_id, last_accessed, created_at, message_count, current_frame, current_drift
+      FROM sessions WHERE id = ?
+    `).get(sessionId) as {
+      id: string;
+      name: string | null;
+      conversation_id: string | null;
+      last_accessed: string;
+      created_at: string;
+      message_count: number;
+      current_frame: string | null;
+      current_drift: number;
+    } | undefined;
+
+    if (!row) return null;
+
+    return {
+      id: row.id,
+      name: row.name || undefined,
+      conversationId: row.conversation_id || undefined,
+      lastAccessed: new Date(row.last_accessed),
+      createdAt: new Date(row.created_at),
+      messageCount: row.message_count,
+      currentFrame: row.current_frame || undefined,
+      currentDrift: row.current_drift
+    };
+  }
+
+  /**
+   * Create or update a session
+   */
+  saveSession(session: {
+    id: string;
+    name?: string;
+    conversationId?: string;
+    messageCount?: number;
+    currentFrame?: string;
+    currentDrift?: number;
+  }): void {
+    const existing = this.getSessionInfo(session.id);
+    const now = new Date().toISOString();
+
+    if (existing) {
+      // Update existing session
+      this.db.prepare(`
+        UPDATE sessions
+        SET name = COALESCE(?, name),
+            conversation_id = COALESCE(?, conversation_id),
+            last_accessed = ?,
+            message_count = COALESCE(?, message_count),
+            current_frame = COALESCE(?, current_frame),
+            current_drift = COALESCE(?, current_drift)
+        WHERE id = ?
+      `).run(
+        session.name ?? null,
+        session.conversationId ?? null,
+        now,
+        session.messageCount ?? null,
+        session.currentFrame ?? null,
+        session.currentDrift ?? null,
+        session.id
+      );
+    } else {
+      // Create new session
+      this.db.prepare(`
+        INSERT INTO sessions (id, name, conversation_id, last_accessed, created_at, message_count, current_frame, current_drift)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+      `).run(
+        session.id,
+        session.name ?? null,
+        session.conversationId ?? null,
+        now,
+        now,
+        session.messageCount ?? 0,
+        session.currentFrame ?? null,
+        session.currentDrift ?? 0
+      );
+    }
+  }
+
+  /**
+   * List all sessions with metadata
+   */
+  listSessions(options: { limit?: number; search?: string } = {}): SessionInfo[] {
+    let sql = `
+      SELECT id, name, conversation_id, last_accessed, created_at, message_count, current_frame, current_drift
+      FROM sessions
+    `;
+    const params: (string | number)[] = [];
+
+    if (options.search) {
+      sql += ' WHERE name LIKE ? OR id LIKE ?';
+      const searchPattern = `%${options.search}%`;
+      params.push(searchPattern, searchPattern);
+    }
+
+    sql += ' ORDER BY last_accessed DESC';
+
+    if (options.limit) {
+      sql += ' LIMIT ?';
+      params.push(options.limit);
+    }
+
+    const rows = this.db.prepare(sql).all(...params) as Array<{
+      id: string;
+      name: string | null;
+      conversation_id: string | null;
+      last_accessed: string;
+      created_at: string;
+      message_count: number;
+      current_frame: string | null;
+      current_drift: number;
+    }>;
+
+    return rows.map(row => ({
+      id: row.id,
+      name: row.name || undefined,
+      conversationId: row.conversation_id || undefined,
+      lastAccessed: new Date(row.last_accessed),
+      createdAt: new Date(row.created_at),
+      messageCount: row.message_count,
+      currentFrame: row.current_frame || undefined,
+      currentDrift: row.current_drift
+    }));
+  }
+
+  /**
+   * Rename a session
+   */
+  renameSession(sessionId: string, newName: string): boolean {
+    const result = this.db.prepare(`
+      UPDATE sessions SET name = ?, last_accessed = ? WHERE id = ?
+    `).run(newName, new Date().toISOString(), sessionId);
+    return result.changes > 0;
+  }
+
+  /**
+   * Delete a session
+   */
+  deleteSession(sessionId: string): boolean {
+    const result = this.db.prepare('DELETE FROM sessions WHERE id = ?').run(sessionId);
+    return result.changes > 0;
+  }
+
+  /**
+   * Get most recently accessed session
+   */
+  getMostRecentSession(): SessionInfo | null {
+    const row = this.db.prepare(`
+      SELECT id, name, conversation_id, last_accessed, created_at, message_count, current_frame, current_drift
+      FROM sessions
+      ORDER BY last_accessed DESC
+      LIMIT 1
+    `).get() as {
+      id: string;
+      name: string | null;
+      conversation_id: string | null;
+      last_accessed: string;
+      created_at: string;
+      message_count: number;
+      current_frame: string | null;
+      current_drift: number;
+    } | undefined;
+
+    if (!row) return null;
+
+    return {
+      id: row.id,
+      name: row.name || undefined,
+      conversationId: row.conversation_id || undefined,
+      lastAccessed: new Date(row.last_accessed),
+      createdAt: new Date(row.created_at),
+      messageCount: row.message_count,
+      currentFrame: row.current_frame || undefined,
+      currentDrift: row.current_drift
+    };
+  }
+
+  // ============================================================================
   // Utility
   // ============================================================================
 
@@ -541,5 +748,18 @@ export class MemoryStore {
     this.db.prepare('DELETE FROM identity').run();
     this.db.prepare('DELETE FROM semantic_memory').run();
     this.db.prepare('DELETE FROM evolution_snapshots').run();
+    this.db.prepare('DELETE FROM sessions').run();
   }
+}
+
+// Session info type
+export interface SessionInfo {
+  id: string;
+  name?: string;
+  conversationId?: string;
+  lastAccessed: Date;
+  createdAt: Date;
+  messageCount: number;
+  currentFrame?: string;
+  currentDrift: number;
 }

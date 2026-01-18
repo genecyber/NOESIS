@@ -13,7 +13,13 @@ import {
   StanceDelta
 } from '../types/index.js';
 import { buildSystemPrompt } from '../core/prompt-builder.js';
-import { detectTriggers, planOperations } from '../core/planner.js';
+import {
+  detectTriggers,
+  planOperations,
+  detectOperatorFatigue,
+  recordOperatorUsage,
+  getFatiguedOperators
+} from '../core/planner.js';
 import { getRegistry } from '../operators/base.js';
 import { scoreTransformation, scoreCoherence, scoreSentience } from '../core/metrics.js';
 
@@ -23,14 +29,27 @@ import { scoreTransformation, scoreCoherence, scoreSentience } from '../core/met
 export function createTransformationHooks(): TransformationHooks {
   return {
     async preTurn(context: PreTurnContext): Promise<PreTurnResult> {
-      const { message, stance, config, conversationHistory } = context;
+      const { message, stance, config, conversationHistory, conversationId } = context;
       const registry = getRegistry();
 
       // 1. Detect triggers in the message
       const triggers = detectTriggers(message, conversationHistory);
 
-      // 2. Plan operations based on triggers
-      const operators = planOperations(triggers, stance, config, registry);
+      // 1.5 Check for operator fatigue (Ralph Iteration 2)
+      const fatigueTrigger = detectOperatorFatigue(conversationId, config);
+      if (fatigueTrigger) {
+        triggers.push(fatigueTrigger);
+        console.log(`[METAMORPH] Autonomous: ${fatigueTrigger.evidence}`);
+      }
+
+      // Get fatigued operators to avoid
+      const fatiguedOperators = getFatiguedOperators(conversationId, config);
+
+      // 2. Plan operations based on triggers (avoiding fatigued operators)
+      const operators = planOperations(triggers, stance, {
+        ...config,
+        disabledOperators: [...config.disabledOperators, ...fatiguedOperators]
+      }, registry);
 
       // 3. Calculate stance changes from operators
       let stanceAfterPlan = { ...stance };
@@ -53,7 +72,15 @@ export function createTransformationHooks(): TransformationHooks {
     },
 
     postTurn(context: PostTurnContext): PostTurnResult {
-      const { message, response, stanceBefore, operators, config } = context;
+      const { message, response, stanceBefore, operators, config, conversationId } = context;
+
+      // Record operator usage for fatigue detection (Ralph Iteration 2)
+      if (operators.length > 0) {
+        recordOperatorUsage(
+          conversationId,
+          operators.map(op => op.name)
+        );
+      }
 
       // 1. Score the response
       const transformationScore = scoreTransformation(operators, stanceBefore, response);

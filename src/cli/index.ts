@@ -463,6 +463,11 @@ async function handleCommand(
       printTransformations(agent);
       break;
 
+    case 'sessions':
+    case 'session':
+      await handleSessionCommand(agent, args);
+      break;
+
     case 'quit':
     case 'exit':
     case 'q':
@@ -800,6 +805,105 @@ function printTransformations(agent: MetamorphAgent): void {
   }
 }
 
+async function handleSessionCommand(agent: MetamorphAgent, args: string[]): Promise<void> {
+  const subcommand = args[0] || 'list';
+  const memoryStore = agent.getMemoryStore();
+
+  switch (subcommand) {
+    case 'list':
+      const sessions = memoryStore.listSessions({ limit: 10 });
+      console.log(chalk.cyan('\n  ═══ Sessions ═══'));
+      if (sessions.length === 0) {
+        console.log(chalk.gray('  No sessions found.'));
+        console.log(chalk.gray('\n  Sessions are created automatically as you chat.'));
+      } else {
+        sessions.forEach((s, i) => {
+          const name = s.name || chalk.gray('(unnamed)');
+          const current = s.id === agent.getConversationId() ? chalk.green(' ◀ current') : '';
+          const frame = s.currentFrame ? chalk.blue(`[${s.currentFrame}]`) : '';
+          console.log(`  ${i + 1}. ${name} ${frame}${current}`);
+          console.log(chalk.gray(`     ID: ${s.id.slice(0, 8)}... | ${s.messageCount} msgs | ${s.lastAccessed.toLocaleString()}`));
+        });
+      }
+      console.log(chalk.gray('\n  Commands: /sessions list | resume <id> | name <name> | delete <id>'));
+      break;
+
+    case 'resume':
+      const sessionId = args[1];
+      if (!sessionId) {
+        console.log(chalk.yellow('  Usage: /sessions resume <session-id>'));
+        return;
+      }
+      const sessionInfo = memoryStore.getSessionInfo(sessionId);
+      if (!sessionInfo) {
+        // Try partial ID match
+        const allSessions = memoryStore.listSessions();
+        const matched = allSessions.find(s => s.id.startsWith(sessionId));
+        if (matched) {
+          console.log(chalk.yellow(`  Found session: ${matched.id}`));
+          console.log(chalk.yellow('  Session resume requires manual restart with --session flag.'));
+          console.log(chalk.gray(`\n  Run: metamorph chat --session ${matched.id}`));
+        } else {
+          console.log(chalk.red(`  Session not found: ${sessionId}`));
+        }
+        return;
+      }
+      console.log(chalk.yellow('  Session resume requires manual restart.'));
+      console.log(chalk.gray(`\n  Run: metamorph chat --session ${sessionInfo.id}`));
+      break;
+
+    case 'name':
+      const newName = args.slice(1).join(' ');
+      if (!newName) {
+        console.log(chalk.yellow('  Usage: /sessions name <new-name>'));
+        return;
+      }
+      const currentId = agent.getConversationId();
+      memoryStore.saveSession({
+        id: currentId,
+        name: newName,
+        messageCount: agent.getHistory().length,
+        currentFrame: agent.getCurrentStance().frame,
+        currentDrift: agent.getCurrentStance().cumulativeDrift
+      });
+      console.log(chalk.green(`  Session renamed to: ${newName}`));
+      break;
+
+    case 'delete':
+      const deleteId = args[1];
+      if (!deleteId) {
+        console.log(chalk.yellow('  Usage: /sessions delete <session-id>'));
+        return;
+      }
+      if (deleteId === agent.getConversationId()) {
+        console.log(chalk.red('  Cannot delete current session'));
+        return;
+      }
+      const deleted = memoryStore.deleteSession(deleteId);
+      if (deleted) {
+        console.log(chalk.green(`  Session deleted: ${deleteId}`));
+      } else {
+        console.log(chalk.red(`  Session not found: ${deleteId}`));
+      }
+      break;
+
+    case 'save':
+      // Force save current session
+      memoryStore.saveSession({
+        id: agent.getConversationId(),
+        messageCount: agent.getHistory().length,
+        currentFrame: agent.getCurrentStance().frame,
+        currentDrift: agent.getCurrentStance().cumulativeDrift
+      });
+      console.log(chalk.green('  Session saved'));
+      break;
+
+    default:
+      console.log(chalk.yellow(`  Unknown session command: ${subcommand}`));
+      console.log(chalk.gray('  Commands: /sessions list | resume <id> | name <name> | delete <id> | save'));
+  }
+}
+
 function printHelp(): void {
   console.log(chalk.cyan('\n  ═══ METAMORPH Commands ═══'));
   console.log(chalk.cyan('\n  Chat & Control:'));
@@ -818,7 +922,13 @@ function printHelp(): void {
   console.log('    /reflect [focus]  Self-reflection with reflector agent');
   console.log('    /dialectic <thesis>  Thesis/antithesis/synthesis analysis');
   console.log('    /verify <text>  Verify output with verifier agent');
-  console.log(chalk.cyan('\n  Session:'));
+  console.log(chalk.cyan('\n  Session Management:'));
+  console.log('    /sessions list         List all sessions');
+  console.log('    /sessions name <name>  Name current session');
+  console.log('    /sessions resume <id>  Get resume command for session');
+  console.log('    /sessions delete <id>  Delete a session');
+  console.log('    /sessions save         Force save current session');
+  console.log(chalk.cyan('\n  System:'));
   console.log('    /glow           Show glow markdown renderer status');
   console.log('    /quit           Exit the chat (also /exit, /q)');
   console.log('    Ctrl+C          Interrupt current operation');

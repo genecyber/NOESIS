@@ -150,7 +150,14 @@ export const ModeConfigSchema = z.object({
   disabledOperators: z.array(z.string()).default([]),
 
   // Model to use
-  model: z.string().default('claude-sonnet-4-20250514')
+  model: z.string().default('claude-sonnet-4-20250514'),
+
+  // Ralph Iteration 2 - Autonomous operator shift when patterns detected
+  allowAutoOperatorShift: z.boolean().default(true),
+
+  // Threshold for operator fatigue (same operator N times in last M turns)
+  operatorFatigueThreshold: z.number().min(2).max(10).default(3),
+  operatorFatigueLookback: z.number().min(5).max(20).default(10)
 });
 
 export type ModeConfig = z.infer<typeof ModeConfigSchema>;
@@ -212,7 +219,8 @@ export const TriggerTypeSchema = z.enum([
   'identity_question',
   'value_conflict',
   'meta_question',
-  'creative_request'
+  'creative_request',
+  'operator_fatigue'  // Ralph Iteration 2 - autonomous pattern detection
 ]);
 
 export type TriggerType = z.infer<typeof TriggerTypeSchema>;
@@ -275,6 +283,7 @@ export interface PreTurnContext {
   stance: Stance;
   config: ModeConfig;
   conversationHistory: ConversationMessage[];
+  conversationId: string;  // Ralph Iteration 2 - for operator fatigue tracking
 }
 
 export interface PreTurnResult {
@@ -290,6 +299,7 @@ export interface PostTurnContext {
   operators: PlannedOperation[];
   toolsUsed: string[];
   config: ModeConfig;
+  conversationId: string;  // Ralph Iteration 2 - for operator fatigue tracking
 }
 
 export interface PostTurnResult {
