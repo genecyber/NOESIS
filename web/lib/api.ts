@@ -121,28 +121,33 @@ export function chatStream(
 
         buffer += decoder.decode(value, { stream: true });
 
-        // Parse SSE events
+        // Parse SSE events - handle event: and data: lines
         const lines = buffer.split('\n');
         buffer = lines.pop() || '';
 
+        let currentEvent = '';
         for (const line of lines) {
-          if (line.startsWith('data: ')) {
+          if (line.startsWith('event: ')) {
+            currentEvent = line.slice(7).trim();
+          } else if (line.startsWith('data: ')) {
             const data = line.slice(6);
             if (data === '[DONE]') continue;
 
             try {
               const parsed = JSON.parse(data);
 
-              if (parsed.type === 'text' && callbacks.onText) {
-                callbacks.onText(parsed.content);
-              } else if (parsed.type === 'complete' && callbacks.onComplete) {
-                callbacks.onComplete(parsed.data);
-              } else if (parsed.type === 'error' && callbacks.onError) {
+              // Handle based on event type
+              if (currentEvent === 'text' && callbacks.onText) {
+                callbacks.onText(parsed.text);
+              } else if (currentEvent === 'complete' && callbacks.onComplete) {
+                callbacks.onComplete(parsed);
+              } else if (currentEvent === 'error' && callbacks.onError) {
                 callbacks.onError(new Error(parsed.error));
               }
             } catch {
               // Ignore parse errors for incomplete data
             }
+            currentEvent = ''; // Reset after processing data
           }
         }
       }
