@@ -5,9 +5,11 @@ nixPkgs = ["nodejs_20"]
 
 [phases.install]
 cmds = ["npm ci"]
+cacheDirectories = []
 
 [phases.build]
 cmds = ["npm run build"]
+cacheDirectories = []
 
 [start]
 cmd = "npm run server"

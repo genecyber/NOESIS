@@ -5,6 +5,7 @@ nixPkgs = ["nodejs_20"]
 
 [phases.install]
 cmds = ["npm ci"]
+cacheDirectories = []
 
 [phases.build]
 cmds = [
@@ -12,6 +13,7 @@ cmds = [
   "cp -r .next/static .next/standalone/.next/static",
   "cp -r public .next/standalone/public 2>/dev/null || true"
 ]
+cacheDirectories = []
 
 [start]
 cmd = "node .next/standalone/server.js"
