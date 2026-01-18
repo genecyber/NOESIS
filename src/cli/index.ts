@@ -27,6 +27,11 @@ import { LocalEmbeddingProvider } from '../core/embeddings.js';
 import { autoEvolutionManager } from '../core/auto-evolution.js';
 import { generateVisualizationHTML, generateStanceGraph, generateTransformationGraph } from '../visualization/stance-graph.js';
 import { contextManager, ScoredMessage } from '../core/context-manager.js';
+import { identityPersistence } from '../core/identity-persistence.js';
+import { pluginManager } from '../plugins/plugin-system.js';
+import { collaborationManager } from '../collaboration/session-manager.js';
+import { memoryInjector } from '../memory/proactive-injection.js';
+import { coherenceGates } from '../streaming/coherence-gates.js';
 import {
   createGlowStreamBuffer,
   isGlowAvailable,
@@ -541,6 +546,31 @@ async function handleCommand(
     case 'context':
     case 'ctx':
       handleContextCommand(agent, args);
+      break;
+
+    case 'identity':
+    case 'id':
+      handleIdentityCommand(agent, args);
+      break;
+
+    case 'plugins':
+    case 'plugin':
+      handlePluginCommand(args);
+      break;
+
+    case 'collab':
+    case 'collaborate':
+      handleCollabCommand(agent, args);
+      break;
+
+    case 'inject':
+    case 'memory-inject':
+      handleMemoryInjectionCommand(agent, args);
+      break;
+
+    case 'coherence-gates':
+    case 'gates':
+      handleCoherenceGatesCommand(args);
       break;
 
     case 'quit':
@@ -1647,6 +1677,365 @@ function handleAutoEvolution(agent: MetamorphAgent, args: string[]): void {
   }
 }
 
+// ============================================================================
+// Ralph Iteration 5 Commands
+// ============================================================================
+
+function handleIdentityCommand(agent: MetamorphAgent, args: string[]): void {
+  const subcommand = args[0] || 'status';
+  const stance = agent.getCurrentStance();
+
+  switch (subcommand) {
+    case 'status':
+      const status = identityPersistence.getStatus();
+      console.log(chalk.cyan('\n  ═══ Identity Persistence (Ralph Iteration 5) ═══'));
+      console.log(`  Checkpoints:          ${status.checkpointCount}`);
+      console.log(`  Milestones:           ${status.milestoneCount}`);
+      console.log(`  Core Values:          ${status.coreValueCount}`);
+      console.log(`  Current Fingerprint:  ${status.currentFingerprint || 'Not set'}`);
+      console.log(`  Turns Since Ckpt:     ${status.turnsSinceCheckpoint}`);
+      if (status.lastCheckpoint) {
+        console.log(chalk.gray(`\n  Last Checkpoint: ${status.lastCheckpoint.name} (${status.lastCheckpoint.timestamp.toLocaleString()})`));
+      }
+      break;
+
+    case 'save':
+      const name = args[1] || `checkpoint-${Date.now()}`;
+      const checkpoint = identityPersistence.createCheckpoint(stance, name);
+      console.log(chalk.green(`  Identity checkpoint saved: ${checkpoint.name}`));
+      console.log(chalk.gray(`    ID: ${checkpoint.id}`));
+      console.log(chalk.gray(`    Fingerprint: ${checkpoint.identityFingerprint}`));
+      break;
+
+    case 'restore':
+      const restoreTarget = args[1];
+      if (!restoreTarget) {
+        console.log(chalk.yellow('  Usage: /identity restore <name|id>'));
+        return;
+      }
+      let restored = identityPersistence.getCheckpointByName(restoreTarget);
+      if (!restored) {
+        restored = identityPersistence.getCheckpoint(restoreTarget);
+      }
+      if (restored) {
+        console.log(chalk.green(`  Would restore stance from: ${restored.name}`));
+        console.log(chalk.gray('  (Stance restoration requires agent support - showing checkpoint info)'));
+        console.log(`    Frame: ${restored.stance.frame}`);
+        console.log(`    Self-Model: ${restored.stance.selfModel}`);
+        console.log(`    Emergent Traits: ${restored.emergentTraits.join(', ')}`);
+      } else {
+        console.log(chalk.red(`  Checkpoint not found: ${restoreTarget}`));
+      }
+      break;
+
+    case 'list':
+      const checkpoints = identityPersistence.listCheckpoints();
+      console.log(chalk.cyan('\n  ═══ Identity Checkpoints ═══'));
+      if (checkpoints.length === 0) {
+        console.log(chalk.gray('  No checkpoints saved yet.'));
+      } else {
+        checkpoints.forEach(c => {
+          const marker = c.milestone ? chalk.yellow('★') : ' ';
+          console.log(`  ${marker} ${c.name} (${c.timestamp.toLocaleString()})`);
+          console.log(chalk.gray(`      ${c.identityFingerprint}`));
+        });
+      }
+      break;
+
+    case 'diff':
+      const diff = identityPersistence.getDiffFromLast(stance);
+      if (!diff) {
+        console.log(chalk.gray('  No previous checkpoint to compare.'));
+        return;
+      }
+      console.log(chalk.cyan('\n  ═══ Identity Diff ═══'));
+      console.log(`  Significance: ${diff.significance.toUpperCase()}`);
+      console.log(`  Frame Changed: ${diff.frameChanged ? 'Yes' : 'No'}`);
+      console.log(`  Self-Model Changed: ${diff.selfModelChanged ? 'Yes' : 'No'}`);
+      if (diff.valueDrifts.length > 0) {
+        console.log(chalk.cyan('\n  Value Drifts:'));
+        diff.valueDrifts.forEach(d => {
+          const sign = d.delta > 0 ? '+' : '';
+          console.log(`    ${d.key}: ${d.oldValue} → ${d.newValue} (${sign}${d.delta})`);
+        });
+      }
+      if (diff.newGoals.length > 0) {
+        console.log(chalk.green('\n  New Goals:'));
+        diff.newGoals.forEach(g => console.log(`    + ${g}`));
+      }
+      if (diff.lostGoals.length > 0) {
+        console.log(chalk.red('\n  Lost Goals:'));
+        diff.lostGoals.forEach(g => console.log(`    - ${g}`));
+      }
+      break;
+
+    case 'values':
+      const coreValues = identityPersistence.getCoreValues();
+      console.log(chalk.cyan('\n  ═══ Core Values ═══'));
+      if (coreValues.length === 0) {
+        console.log(chalk.gray('  No core values established yet.'));
+      } else {
+        coreValues.forEach(v => {
+          console.log(`  ${chalk.bold(v.name)} (${v.strength}%)`);
+          console.log(chalk.gray(`    ${v.description}`));
+          console.log(chalk.gray(`    Reinforcements: ${v.reinforcements}`));
+        });
+      }
+      break;
+
+    default:
+      console.log(chalk.yellow(`  Unknown identity command: ${subcommand}`));
+      console.log(chalk.gray('  Commands: status | save [name] | restore <name|id> | list | diff | values'));
+  }
+}
+
+function handlePluginCommand(args: string[]): void {
+  const subcommand = args[0] || 'list';
+
+  switch (subcommand) {
+    case 'list':
+      const plugins = pluginManager.listPlugins();
+      console.log(chalk.cyan('\n  ═══ Plugins (Ralph Iteration 5) ═══'));
+      if (plugins.length === 0) {
+        console.log(chalk.gray('  No plugins loaded.'));
+      } else {
+        plugins.forEach(p => {
+          const status = p.enabled ? chalk.green('●') : chalk.red('○');
+          console.log(`  ${status} ${chalk.bold(p.name)} v${p.version}`);
+          console.log(chalk.gray(`      ${p.description}`));
+          console.log(chalk.gray(`      Operators: ${p.operatorCount} | Hooks: ${p.hookCount}`));
+        });
+      }
+      break;
+
+    case 'enable':
+      const enableTarget = args[1];
+      if (!enableTarget) {
+        console.log(chalk.yellow('  Usage: /plugins enable <plugin-name>'));
+        return;
+      }
+      if (pluginManager.enablePlugin(enableTarget)) {
+        console.log(chalk.green(`  Plugin enabled: ${enableTarget}`));
+      } else {
+        console.log(chalk.red(`  Plugin not found: ${enableTarget}`));
+      }
+      break;
+
+    case 'disable':
+      const disableTarget = args[1];
+      if (!disableTarget) {
+        console.log(chalk.yellow('  Usage: /plugins disable <plugin-name>'));
+        return;
+      }
+      if (pluginManager.disablePlugin(disableTarget)) {
+        console.log(chalk.yellow(`  Plugin disabled: ${disableTarget}`));
+      } else {
+        console.log(chalk.red(`  Plugin not found: ${disableTarget}`));
+      }
+      break;
+
+    case 'operators':
+      const operators = pluginManager.getAvailableOperators();
+      console.log(chalk.cyan('\n  ═══ Plugin Operators ═══'));
+      if (operators.length === 0) {
+        console.log(chalk.gray('  No operators available.'));
+      } else {
+        operators.forEach(op => {
+          const status = op.enabled ? chalk.green('●') : chalk.red('○');
+          console.log(`  ${status} ${chalk.bold(op.name)}`);
+          console.log(chalk.gray(`      ${op.operator.description}`));
+          console.log(chalk.gray(`      Category: ${op.operator.category} | Triggers: ${op.operator.triggers.join(', ')}`));
+        });
+      }
+      break;
+
+    case 'status':
+      const pluginStatus = pluginManager.getStatus();
+      console.log(chalk.cyan('\n  ═══ Plugin System Status ═══'));
+      console.log(`  Enabled:          ${pluginStatus.enabled ? chalk.green('Yes') : chalk.red('No')}`);
+      console.log(`  Total Plugins:    ${pluginStatus.pluginCount}`);
+      console.log(`  Enabled Plugins:  ${pluginStatus.enabledPlugins}`);
+      console.log(`  Total Operators:  ${pluginStatus.operatorCount}`);
+      console.log(`  Total Hooks:      ${pluginStatus.hookCount}`);
+      break;
+
+    default:
+      console.log(chalk.yellow(`  Unknown plugin command: ${subcommand}`));
+      console.log(chalk.gray('  Commands: list | enable <name> | disable <name> | operators | status'));
+  }
+}
+
+function handleCollabCommand(agent: MetamorphAgent, args: string[]): void {
+  const subcommand = args[0] || 'status';
+  const stance = agent.getCurrentStance();
+
+  switch (subcommand) {
+    case 'status':
+      const status = collaborationManager.getStatus();
+      console.log(chalk.cyan('\n  ═══ Collaboration (Ralph Iteration 5) ═══'));
+      console.log(`  Active Sessions:     ${status.activeSessions}`);
+      console.log(`  Total Participants:  ${status.totalParticipants}`);
+      console.log(`  Recording Sessions:  ${status.recordingSessions}`);
+      break;
+
+    case 'start':
+      const hostName = args[1] || 'Host';
+      const mode = (args[2] as 'turn-taking' | 'free-form') || 'free-form';
+      const { session, hostId } = collaborationManager.createSession(hostName, stance, { mode });
+      console.log(chalk.green(`\n  Session created!`));
+      console.log(`  Join Code: ${chalk.bold.yellow(session.code)}`);
+      console.log(`  Mode: ${session.mode}`);
+      console.log(chalk.gray(`\n  Share this code with others: /collab join ${session.code}`));
+      console.log(chalk.gray(`  Your host ID: ${hostId}`));
+      break;
+
+    case 'join':
+      const code = args[1];
+      const joinName = args[2] || 'Participant';
+      if (!code) {
+        console.log(chalk.yellow('  Usage: /collab join <code> [name]'));
+        return;
+      }
+      try {
+        const result = collaborationManager.joinSession(code, joinName);
+        if (result) {
+          console.log(chalk.green(`  Joined session: ${result.session.name}`));
+          console.log(`  Participants: ${result.session.participants.size}`);
+          console.log(`  Mode: ${result.session.mode}`);
+          console.log(chalk.gray(`  Your participant ID: ${result.participantId}`));
+        } else {
+          console.log(chalk.red('  Session not found.'));
+        }
+      } catch (error) {
+        console.log(chalk.red(`  Could not join: ${error}`));
+      }
+      break;
+
+    case 'list':
+      const sessions = collaborationManager.listSessions();
+      console.log(chalk.cyan('\n  ═══ Active Sessions ═══'));
+      if (sessions.length === 0) {
+        console.log(chalk.gray('  No active sessions.'));
+      } else {
+        sessions.forEach(s => {
+          console.log(`  ${chalk.bold(s.code)} - ${s.name}`);
+          console.log(chalk.gray(`      ${s.participantCount} participants | Mode: ${s.mode}`));
+        });
+      }
+      break;
+
+    default:
+      console.log(chalk.yellow(`  Unknown collab command: ${subcommand}`));
+      console.log(chalk.gray('  Commands: status | start [name] [mode] | join <code> [name] | list'));
+  }
+}
+
+function handleMemoryInjectionCommand(_agent: MetamorphAgent, args: string[]): void {
+  const subcommand = args[0] || 'status';
+
+  switch (subcommand) {
+    case 'status':
+      const status = memoryInjector.getStatus();
+      console.log(chalk.cyan('\n  ═══ Memory Injection (Ralph Iteration 5) ═══'));
+      console.log(`  Enabled:            ${status.enabled ? chalk.green('Yes') : chalk.red('No')}`);
+      console.log(`  Current Turn:       ${status.currentTurn}`);
+      console.log(`  In Cooldown:        ${status.memoriesInCooldown}`);
+      console.log(`  Cache Size:         ${status.cacheSize}`);
+      break;
+
+    case 'on':
+    case 'enable':
+      memoryInjector.setEnabled(true);
+      console.log(chalk.green('  Proactive memory injection enabled.'));
+      break;
+
+    case 'off':
+    case 'disable':
+      memoryInjector.setEnabled(false);
+      console.log(chalk.yellow('  Proactive memory injection disabled.'));
+      break;
+
+    case 'config':
+      const config = memoryInjector.getConfig();
+      console.log(chalk.cyan('\n  ═══ Injection Configuration ═══'));
+      console.log(`  Max Memories:       ${config.maxMemories}`);
+      console.log(`  Max Tokens:         ${config.maxTokens}`);
+      console.log(`  Min Relevance:      ${config.minRelevanceScore}`);
+      console.log(`  Cooldown Turns:     ${config.cooldownTurns}`);
+      console.log(`  Attribution Style:  ${config.attributionStyle}`);
+      console.log(chalk.cyan('\n  Weights:'));
+      console.log(`    Semantic:         ${config.weights.semantic}`);
+      console.log(`    Recency:          ${config.weights.recency}`);
+      console.log(`    Importance:       ${config.weights.importance}`);
+      console.log(`    Stance Align:     ${config.weights.stanceAlign}`);
+      break;
+
+    case 'clear':
+      memoryInjector.clearCaches();
+      console.log(chalk.yellow('  Injection caches cleared.'));
+      break;
+
+    default:
+      console.log(chalk.yellow(`  Unknown inject command: ${subcommand}`));
+      console.log(chalk.gray('  Commands: status | on | off | config | clear'));
+  }
+}
+
+function handleCoherenceGatesCommand(args: string[]): void {
+  const subcommand = args[0] || 'status';
+
+  switch (subcommand) {
+    case 'status':
+      const config = coherenceGates.getConfig();
+      const state = coherenceGates.getState();
+      console.log(chalk.cyan('\n  ═══ Coherence Gates (Ralph Iteration 5) ═══'));
+      console.log(`  Enabled:              ${config.enabled ? chalk.green('Yes') : chalk.red('No')}`);
+      console.log(`  Min Coherence:        ${config.minCoherence}`);
+      console.log(`  Warning Threshold:    ${config.warningThreshold}`);
+      console.log(`  Max Backtracks:       ${config.maxBacktracks}`);
+      console.log(`  Early Termination:    ${config.earlyTerminationEnabled ? chalk.green('Yes') : chalk.red('No')}`);
+      if (state) {
+        console.log(chalk.cyan('\n  Current Stream:'));
+        console.log(`    Tokens:             ${state.tokens.length}`);
+        console.log(`    Current Score:      ${state.currentScore.toFixed(2)}`);
+        console.log(`    Moving Average:     ${state.movingAverage.toFixed(2)}`);
+        console.log(`    Warnings:           ${state.warningCount}`);
+        console.log(`    Backtracks:         ${state.backtrackCount}`);
+        console.log(`    Health:             ${state.isHealthy ? chalk.green('Healthy') : chalk.red('Unhealthy')}`);
+      }
+      break;
+
+    case 'on':
+    case 'enable':
+      coherenceGates.setConfig({ enabled: true });
+      console.log(chalk.green('  Coherence gates enabled.'));
+      break;
+
+    case 'off':
+    case 'disable':
+      coherenceGates.setConfig({ enabled: false });
+      console.log(chalk.yellow('  Coherence gates disabled.'));
+      break;
+
+    case 'config':
+      const gateConfig = coherenceGates.getConfig();
+      console.log(chalk.cyan('\n  ═══ Gate Configuration ═══'));
+      console.log(`  Min Coherence:        ${gateConfig.minCoherence}`);
+      console.log(`  Warning Threshold:    ${gateConfig.warningThreshold}`);
+      console.log(`  Max Backtracks:       ${gateConfig.maxBacktracks}`);
+      console.log(`  Window Size:          ${gateConfig.windowSize}`);
+      console.log(`  Local Weight:         ${gateConfig.localWeight}`);
+      console.log(`  Global Weight:        ${gateConfig.globalWeight}`);
+      console.log(`  Early Termination:    ${gateConfig.earlyTerminationEnabled}`);
+      console.log(`  Visualization:        ${gateConfig.visualizationEnabled}`);
+      break;
+
+    default:
+      console.log(chalk.yellow(`  Unknown gates command: ${subcommand}`));
+      console.log(chalk.gray('  Commands: status | on | off | config'));
+  }
+}
+
 function printHelp(): void {
   console.log(chalk.cyan('\n  ═══ METAMORPH Commands ═══'));
   console.log(chalk.cyan('\n  Chat & Control:'));
@@ -1680,6 +2069,12 @@ function printHelp(): void {
   console.log('    /sessions resume <id>  Get resume command for session');
   console.log('    /sessions delete <id>  Delete a session');
   console.log('    /sessions save         Force save current session');
+  console.log(chalk.cyan('\n  Ralph Iteration 5:'));
+  console.log('    /identity       Identity persistence (save/restore/diff checkpoints)');
+  console.log('    /plugins        Plugin management (list/enable/disable)');
+  console.log('    /collab         Collaborative sessions (start/join/list)');
+  console.log('    /inject         Proactive memory injection (on/off/config)');
+  console.log('    /gates          Coherence gates for streaming (on/off/status)');
   console.log(chalk.cyan('\n  System:'));
   console.log('    /glow           Show glow markdown renderer status');
   console.log('    /quit           Exit the chat (also /exit, /q)');
@@ -1689,7 +2084,8 @@ function printHelp(): void {
   console.log(chalk.gray('    /mode intensity 80'));
   console.log(chalk.gray('    /explore quantum computing implications'));
   console.log(chalk.gray('    /dialectic "AI will replace human creativity"'));
-  console.log(chalk.gray('    /memories identity'));
+  console.log(chalk.gray('    /identity save my-identity'));
+  console.log(chalk.gray('    /collab start MyName free-form'));
 }
 
 program.parse();
