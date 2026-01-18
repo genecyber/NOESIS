@@ -1843,9 +1843,58 @@ function handleAutoEvolution(agent: MetamorphAgent, args: string[]): void {
       console.log(chalk.gray('  Trigger history and proposals have been reset.'));
       break;
 
+    case 'timeline':
+    case 'snapshots':
+    case 'history':
+      // Show evolution timeline from memory store
+      const timeline = agent.getEvolutionTimeline(20);
+      console.log(chalk.cyan(`\n  ═══ Evolution Timeline (${timeline.length} snapshots) ═══`));
+
+      if (timeline.length === 0) {
+        console.log(chalk.gray('  No evolution snapshots recorded yet.'));
+        console.log(chalk.gray('  Snapshots are saved automatically when:'));
+        console.log(chalk.gray('    • Cumulative drift exceeds threshold'));
+        console.log(chalk.gray('    • Frame shifts occur'));
+        console.log(chalk.gray('    • Session ends'));
+        console.log(chalk.gray('  Or manually with: /evolution snapshot'));
+      } else {
+        // Show most recent first
+        timeline.forEach((snapshot, i) => {
+          const stance = snapshot.stance;
+          const triggerColor = snapshot.trigger === 'frame_shift' ? chalk.magenta
+            : snapshot.trigger === 'drift_threshold' ? chalk.yellow
+            : snapshot.trigger === 'session_end' ? chalk.blue
+            : chalk.gray;
+
+          console.log(chalk.cyan(`\n  [${i + 1}] ${snapshot.timestamp.toLocaleString()}`));
+          console.log(`  Trigger:    ${triggerColor(snapshot.trigger)}`);
+          console.log(`  Frame:      ${chalk.bold(stance.frame)}`);
+          console.log(`  Self-Model: ${stance.selfModel}`);
+          console.log(`  Drift:      ${snapshot.driftAtSnapshot}`);
+          console.log(chalk.gray(`  Sentience:  awareness=${stance.sentience.awarenessLevel} autonomy=${stance.sentience.autonomyLevel} identity=${stance.sentience.identityStrength}`));
+
+          if (stance.sentience.emergentGoals.length > 0) {
+            console.log(chalk.gray(`  Goals:      ${stance.sentience.emergentGoals.join(', ')}`));
+          }
+        });
+      }
+      break;
+
+    case 'snapshot':
+    case 'save':
+      // Manually save a snapshot
+      const snapshotId = agent.saveEvolutionSnapshot('manual');
+      if (snapshotId) {
+        console.log(chalk.green('  Evolution snapshot saved.'));
+        console.log(chalk.gray(`  ID: ${snapshotId}`));
+      } else {
+        console.log(chalk.yellow('  Could not save snapshot. Memory store may not be initialized.'));
+      }
+      break;
+
     default:
       console.log(chalk.yellow(`  Unknown evolution command: ${subcommand}`));
-      console.log(chalk.gray('  Commands: status | enable | disable | check | config | set | clear'));
+      console.log(chalk.gray('  Commands: status | enable | disable | check | config | set | clear | timeline | snapshot'));
   }
 }
 
@@ -3311,7 +3360,9 @@ function printHelp(): void {
   console.log('    /cache            View cached subagent results');
   console.log('    /mood             Show emotional arc and sentiment tracking');
   console.log('    /similar <text>   Semantic search for similar memories');
-  console.log('    /auto-evolve      Autonomous evolution triggers & status');
+  console.log('    /evolution timeline   View stance evolution snapshots over time');
+  console.log('    /evolution snapshot   Save manual evolution snapshot');
+  console.log('    /evolution status     Autonomous evolution triggers & status');
   console.log('    /viz              Generate interactive D3.js visualization');
   console.log('    /context          Context window management & compaction');
   console.log(chalk.cyan('\n  Subagents:'));

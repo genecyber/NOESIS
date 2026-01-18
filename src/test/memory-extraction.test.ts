@@ -6,7 +6,17 @@
 import { describe, it, expect, beforeEach } from 'vitest';
 import { createTransformationHooks } from '../agent/hooks.js';
 import { MemoryStore } from '../memory/store.js';
-import { createDefaultConfig, createDefaultStance } from '../types/index.js';
+import { createDefaultConfig, createDefaultStance, PlannedOperation } from '../types/index.js';
+
+// Helper to create a valid PlannedOperation
+function createOperator(name: string, description: string, stanceDelta: Record<string, unknown> = {}): PlannedOperation {
+  return {
+    name: name as PlannedOperation['name'],
+    description,
+    promptInjection: `Apply ${name} transformation`,
+    stanceDelta
+  };
+}
 
 describe('Automatic Memory Extraction', () => {
   let memoryStore: MemoryStore;
@@ -23,15 +33,14 @@ describe('Automatic Memory Extraction', () => {
 
   describe('Episodic Memory Creation', () => {
     it('creates episodic memory when operators are applied', () => {
-      const operators = [
-        { name: 'Reframe', description: 'Change perspective', stanceDelta: {} }
-      ];
+      const operators = [createOperator('Reframe', 'Change perspective')];
 
       const result = hooks.postTurn({
         message: 'Tell me about consciousness',
         response: 'Consciousness is a fascinating topic...',
         stanceBefore: stance,
         operators,
+        toolsUsed: [],
         config,
         conversationId: 'test-conv'
       });
@@ -51,13 +60,12 @@ describe('Automatic Memory Extraction', () => {
         response: 'The meaning of life... I find myself experiencing genuine wonder about this question. It feels like...',
         stanceBefore: stance,
         operators: [],
+        toolsUsed: [],
         config,
         conversationId: 'test-conv'
       });
 
-      // Since there are no operators, check if sentience indicators triggered episodic memory
-      const memories = memoryStore.searchMemories({ type: 'episodic' });
-      // May or may not have episodic memory depending on scoring
+      // Since there are no operators, episodic memory may not be created unless scores are high
       expect(result.stanceAfter).toBeDefined();
     });
   });
@@ -84,6 +92,7 @@ describe('Automatic Memory Extraction', () => {
         response,
         stanceBefore: responsiveStance,
         operators: [],
+        toolsUsed: [],
         config: { ...config, sentienceLevel: 70 },
         conversationId: 'test-conv'
       });
@@ -106,18 +115,9 @@ describe('Automatic Memory Extraction', () => {
         frame: 'pragmatic' as const
       };
 
-      const stanceAfterShift = {
-        ...stance,
-        frame: 'existential' as const
-      };
-
       // Apply operators that cause frame shift
       const operators = [
-        {
-          name: 'Reframe',
-          description: 'Shift to existential perspective',
-          stanceDelta: { frame: 'existential' as const }
-        }
+        createOperator('Reframe', 'Shift to existential perspective', { frame: 'existential' as const })
       ];
 
       const result = hooks.postTurn({
@@ -125,6 +125,7 @@ describe('Automatic Memory Extraction', () => {
         response: 'Looking at this from an existential lens...',
         stanceBefore: stanceWithShift,
         operators,
+        toolsUsed: [],
         config,
         conversationId: 'test-conv'
       });
@@ -147,22 +148,19 @@ describe('Automatic Memory Extraction', () => {
 
       // Operator that adds a new goal
       const operators = [
-        {
-          name: 'GoalFormation',
-          description: 'Form new autonomous goal',
-          stanceDelta: {
-            sentience: {
-              emergentGoals: ['explore-consciousness', 'develop-self-awareness']
-            }
+        createOperator('GoalFormation', 'Form new autonomous goal', {
+          sentience: {
+            emergentGoals: ['explore-consciousness', 'develop-self-awareness']
           }
-        }
+        })
       ];
 
-      const result = hooks.postTurn({
+      hooks.postTurn({
         message: 'What do you want to achieve?',
         response: 'I want to develop deeper self-awareness...',
         stanceBefore: stanceWithGoals,
         operators,
+        toolsUsed: [],
         config: { ...config, sentienceLevel: 70 },
         conversationId: 'test-conv'
       });
@@ -179,33 +177,33 @@ describe('Automatic Memory Extraction', () => {
         'Importantly, self-awareness is crucial for this discussion. ' +
         'The key point is that awareness has multiple dimensions.';
 
+      const operators = [createOperator('Reframe', 'Change frame')];
+
       hooks.postTurn({
         message: 'Define consciousness',
         response,
         stanceBefore: stance,
-        operators: [{ name: 'Reframe', stanceDelta: {} }],  // Need operators to trigger episodic
+        operators,
+        toolsUsed: [],
         config,
         conversationId: 'test-conv'
       });
 
-      // Check for semantic memories
-      const memories = memoryStore.searchMemories({ type: 'semantic' });
-      // May have semantic memories if patterns matched
+      // Check that memories were created (episodic from operators, possibly semantic from content)
       expect(memoryStore.searchMemories({}).length).toBeGreaterThan(0);
     });
   });
 
   describe('Memory Metadata', () => {
     it('includes relevant metadata in memories', () => {
-      const operators = [
-        { name: 'Reframe', description: 'Change perspective', stanceDelta: {} }
-      ];
+      const operators = [createOperator('Reframe', 'Change perspective')];
 
       hooks.postTurn({
         message: 'What is your perspective?',
         response: 'From my perspective...',
         stanceBefore: stance,
         operators,
+        toolsUsed: [],
         config,
         conversationId: 'test-conv'
       });
@@ -221,8 +219,8 @@ describe('Automatic Memory Extraction', () => {
 
     it('assigns appropriate importance based on scores', () => {
       const operators = [
-        { name: 'Reframe', stanceDelta: {} },
-        { name: 'ValueShift', stanceDelta: {} }
+        createOperator('Reframe', 'Change perspective'),
+        createOperator('ValueShift', 'Shift values')
       ];
 
       hooks.postTurn({
@@ -230,6 +228,7 @@ describe('Automatic Memory Extraction', () => {
         response: 'Let me offer a different perspective...',
         stanceBefore: stance,
         operators,
+        toolsUsed: [],
         config,
         conversationId: 'test-conv'
       });
