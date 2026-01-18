@@ -217,7 +217,8 @@ export class MetamorphAgent {
           systemPrompt: systemPrompt,
           permissionMode: 'acceptEdits',
           resume: this.sessionId,  // Continue session if we have one
-          includePartialMessages: true
+          includePartialMessages: true,
+          allowedTools: ['WebSearch', 'WebFetch', 'Read', 'Glob', 'Grep', 'Task']
         }
       });
 
@@ -402,7 +403,8 @@ export class MetamorphAgent {
           systemPrompt: systemPrompt,
           permissionMode: 'acceptEdits',
           resume: this.sessionId,
-          includePartialMessages: true
+          includePartialMessages: true,
+          allowedTools: ['WebSearch', 'WebFetch', 'Read', 'Glob', 'Grep', 'Task']
         }
       });
 
@@ -645,7 +647,8 @@ export class MetamorphAgent {
           cwd: this.workingDirectory,
           systemPrompt: subagent.systemPrompt,
           permissionMode: 'acceptEdits',
-          includePartialMessages: true
+          includePartialMessages: true,
+          allowedTools: ['WebSearch', 'WebFetch', 'Read', 'Glob', 'Grep', 'Task', 'Bash']
         }
       });
 
