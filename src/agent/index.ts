@@ -136,8 +136,10 @@ export class MetamorphAgent {
     this.conversationId = conversation.id;
 
     // Enable transformation hooks by default
-    // Ralph Iteration 3: Pass memory store for operator learning
+    // Ralph Iteration 3: Pass memory store for operator learning and memory extraction
     if (options.enableTransformation !== false) {
+      // Initialize memory store before creating hooks to enable memory extraction
+      this.ensureMemoryStore();
       this.hooks = createTransformationHooks(this.memoryStore ?? undefined);
     }
 
