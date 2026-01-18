@@ -240,3 +240,47 @@ export async function getEvolution(
   if (limit) params.append('limit', limit.toString());
   return fetchJson(`${API_BASE}/evolution?${params}`);
 }
+
+/**
+ * List all sessions
+ */
+export async function getSessions(): Promise<{
+  sessions: Array<{
+    id: string;
+    stance: Stance;
+    messageCount: number;
+  }>;
+}> {
+  return fetchJson(`${API_BASE}/sessions`);
+}
+
+/**
+ * Delete a session
+ */
+export async function deleteSession(sessionId: string): Promise<{ success: boolean }> {
+  return fetchJson(`${API_BASE}/session/${sessionId}`, {
+    method: 'DELETE',
+  });
+}
+
+/**
+ * Search memories
+ */
+export async function getMemories(
+  sessionId: string,
+  type?: 'episodic' | 'semantic' | 'identity',
+  limit?: number
+): Promise<{
+  memories: Array<{
+    id: string;
+    type: 'episodic' | 'semantic' | 'identity';
+    content: string;
+    importance: number;
+    timestamp: Date;
+  }>;
+}> {
+  const params = new URLSearchParams({ sessionId });
+  if (type) params.append('type', type);
+  if (limit) params.append('limit', limit.toString());
+  return fetchJson(`${API_BASE}/memories?${params}`);
+}

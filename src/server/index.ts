@@ -334,6 +334,58 @@ app.get('/api/history', apiKeyAuth, (req: Request, res: Response) => {
   });
 });
 
+// Get operator timeline (Ralph Iteration 2 - Feature 3)
+app.get('/api/timeline', apiKeyAuth, (req: Request, res: Response) => {
+  const sessionId = req.query.sessionId as string;
+  const limit = parseInt(req.query.limit as string) || 20;
+
+  const agent = getOrCreateAgent(sessionId);
+  const history = agent.getTransformationHistory();
+
+  // Transform to timeline entries format
+  const entries = history.slice(0, limit).map((entry, index) => ({
+    id: `timeline-${index}`,
+    timestamp: entry.timestamp,
+    userMessage: entry.userMessage,
+    operators: entry.operators.map((op: { name: string; description?: string }) => ({
+      name: op.name,
+      description: op.description || ''
+    })),
+    scores: entry.scores,
+    frameBefore: entry.stanceBefore.frame,
+    frameAfter: entry.stanceAfter.frame,
+    driftDelta: entry.stanceAfter.cumulativeDrift - entry.stanceBefore.cumulativeDrift
+  }));
+
+  res.json({ entries });
+});
+
+// Get evolution snapshots (Ralph Iteration 2 - Feature 5)
+app.get('/api/evolution', apiKeyAuth, (req: Request, res: Response) => {
+  const sessionId = req.query.sessionId as string;
+  const limit = parseInt(req.query.limit as string) || 20;
+
+  const agent = getOrCreateAgent(sessionId);
+  const snapshots = agent.getEvolutionTimeline(limit);
+
+  res.json({ snapshots });
+});
+
+// Search memories (INCEPTION Phase 7 - Memory browser)
+app.get('/api/memories', apiKeyAuth, (req: Request, res: Response) => {
+  const sessionId = req.query.sessionId as string;
+  const type = req.query.type as string | undefined;
+  const limit = parseInt(req.query.limit as string) || 50;
+
+  const agent = getOrCreateAgent(sessionId);
+  const memories = agent.searchMemories({
+    type: type as 'episodic' | 'semantic' | 'identity' | undefined,
+    limit
+  });
+
+  res.json({ memories });
+});
+
 // Export conversation state
 app.get('/api/export', apiKeyAuth, (req: Request, res: Response) => {
   const sessionId = req.query.sessionId as string;
