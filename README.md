@@ -427,7 +427,15 @@ npm run dev
 
 METAMORPH evolves through Ralph Loop iterations:
 
-### Ralph Iteration 11 (Current)
+### Ralph Iteration 12 (Current)
+- **Stance Influence Inheritance**: Parent-child stance propagation, nested conversation inheritance, decay mechanisms
+- **Stance Therapy and Debugging**: Automated inconsistency detection, health diagnostics, self-healing mechanisms
+- **Time-Based Stance Scheduling**: Cron-like triggers, calendar profiles, recurring patterns, schedule optimization
+- **Domain-Specific Templates**: Therapy, education, creative writing, business templates with variations
+- **Natural Language Stance Specification**: Prose-to-stance conversion, semantic interpretation, validation
+- **Stance Impact Simulation**: Pre-application preview, coherence scoring, A/B comparison, rollback scenarios
+
+### Ralph Iteration 11
 - **Cross-Model Stance Transfer**: Export/import stance configurations between LLMs with compatibility scoring
 - **Stance-Aware Memory Prioritization**: Memory importance scoring, forgetting curves, consolidation
 - **Dynamic Coherence Thresholds**: Context-adaptive coherence floors, phase detection, recovery strategies
