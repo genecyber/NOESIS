@@ -1441,18 +1441,72 @@ Share and discover personality configurations:
 
 ---
 
-## Ralph Iteration 8 Ideas (Considerations for Future)
+## Ralph Iteration 8 (Next Implementation Cycle)
 
-- Voice/audio interface with speech-to-stance mapping
-- Real-time stance visualization in VR/AR environments
-- Cross-platform synchronization (desktop, mobile, web)
-- OAuth/SSO for secure multi-user deployments
-- Federated learning across METAMORPH instances
+### Feature 1: Voice/Audio Interface
+- Speech-to-text input with stance-aware processing
+- Text-to-speech output with voice modulation based on frame
+- Real-time voice emotion detection mapping to values
+- Voice command shortcuts for operator triggers
+- Audio memory entries with transcription
+- CLI `/voice start|stop|config`
+
+### Feature 2: IDE Integration
+- VS Code extension with stance sidebar
+- JetBrains plugin for IntelliJ/WebStorm
+- Real-time stance indicators in editor
+- Code comment integration with stance context
+- Quick operator actions via editor palette
+- CLI `/ide connect|status|sync`
+
+### Feature 3: Stance-Aware Code Generation
+- Code generation influenced by current frame
+- Pragmatic frame: clean, efficient code
+- Playful frame: creative, exploratory approaches
+- Adversarial frame: defensive, error-handling focus
+- Code review feedback styled by stance
+- CLI `/codegen analyze|generate|review`
+
+### Feature 4: Federated Learning
+- Share anonymized stance evolution patterns
+- Learn effective operator sequences from fleet
+- Privacy-preserving model updates
+- Opt-in federation with consent controls
+- Local model fine-tuning from shared insights
+- CLI `/federate join|status|contribute`
+
+### Feature 5: OAuth/SSO Authentication
+- OAuth 2.0 provider integration (Google, GitHub, etc.)
+- SAML support for enterprise SSO
+- Role-based access control for multi-user
+- Session management across devices
+- Audit logging for compliance
+- CLI `/auth login|logout|status`
+
+### Feature 6: Cross-Platform Synchronization
+- Real-time sync of stance and memory across devices
+- Conflict resolution for concurrent sessions
+- Selective sync (stance only, full, or none)
+- Offline mode with queue and merge
+- Platform-specific UI adaptations
+- CLI `/sync enable|disable|status|resolve`
+
+---
+
+## Ralph Iteration 9 Ideas (Considerations for Future)
+
+- VR/AR stance visualization with immersive dashboards
 - Automatic documentation generation from stance evolution
-- Integration with coding assistants (VS Code, JetBrains)
-- Stance-aware code generation and review
-- Custom training data export for fine-tuning
+- Custom training data export for Claude fine-tuning
 - A/B testing framework for operator combinations
+- Emotional tone detection and sentiment mapping
+- Context-aware prompt rewriting based on stance
+- Multi-language support with stance-aware translation
+- Stance diffing and merge strategies for branches
+- Community preset curation and verification system
+- Performance benchmarking and regression testing suite
+- Stance-based notification and alert system
+- Integration with external workflow tools (Slack, Discord)
 
 ---
 
