@@ -108,6 +108,7 @@ app.get('/api/chat/stream', apiKeyAuth, async (req, res) => {
     res.setHeader('Cache-Control', 'no-cache');
     res.setHeader('Connection', 'keep-alive');
     res.setHeader('X-Accel-Buffering', 'no');
+    res.flushHeaders(); // Send headers immediately to start streaming
     const agent = getOrCreateAgent(sessionId);
     const callbacks = {
         onText: (text) => {
@@ -115,6 +116,9 @@ app.get('/api/chat/stream', apiKeyAuth, async (req, res) => {
         },
         onToolUse: (tool) => {
             res.write(`event: tool\ndata: ${JSON.stringify({ tool })}\n\n`);
+        },
+        onToolEvent: (event) => {
+            res.write(`event: tool_event\ndata: ${JSON.stringify(event)}\n\n`);
         },
         onSubagent: (name, status) => {
             res.write(`event: subagent\ndata: ${JSON.stringify({ name, status })}\n\n`);
@@ -156,6 +160,7 @@ app.post('/api/chat/stream', apiKeyAuth, async (req, res) => {
     res.setHeader('Cache-Control', 'no-cache');
     res.setHeader('Connection', 'keep-alive');
     res.setHeader('X-Accel-Buffering', 'no');
+    res.flushHeaders(); // Send headers immediately to start streaming
     const agent = getOrCreateAgent(sessionId);
     const callbacks = {
         onText: (text) => {
@@ -163,6 +168,9 @@ app.post('/api/chat/stream', apiKeyAuth, async (req, res) => {
         },
         onToolUse: (tool) => {
             res.write(`event: tool\ndata: ${JSON.stringify({ tool })}\n\n`);
+        },
+        onToolEvent: (event) => {
+            res.write(`event: tool_event\ndata: ${JSON.stringify(event)}\n\n`);
         },
         onSubagent: (name, status) => {
             res.write(`event: subagent\ndata: ${JSON.stringify({ name, status })}\n\n`);
@@ -288,6 +296,48 @@ app.get('/api/history', apiKeyAuth, (req, res) => {
         }))
     });
 });
+// Get operator timeline (Ralph Iteration 2 - Feature 3)
+app.get('/api/timeline', apiKeyAuth, (req, res) => {
+    const sessionId = req.query.sessionId;
+    const limit = parseInt(req.query.limit) || 20;
+    const agent = getOrCreateAgent(sessionId);
+    const history = agent.getTransformationHistory();
+    // Transform to timeline entries format
+    const entries = history.slice(0, limit).map((entry, index) => ({
+        id: `timeline-${index}`,
+        timestamp: entry.timestamp,
+        userMessage: entry.userMessage,
+        operators: entry.operators.map((op) => ({
+            name: op.name,
+            description: op.description || ''
+        })),
+        scores: entry.scores,
+        frameBefore: entry.stanceBefore.frame,
+        frameAfter: entry.stanceAfter.frame,
+        driftDelta: entry.stanceAfter.cumulativeDrift - entry.stanceBefore.cumulativeDrift
+    }));
+    res.json({ entries });
+});
+// Get evolution snapshots (Ralph Iteration 2 - Feature 5)
+app.get('/api/evolution', apiKeyAuth, (req, res) => {
+    const sessionId = req.query.sessionId;
+    const limit = parseInt(req.query.limit) || 20;
+    const agent = getOrCreateAgent(sessionId);
+    const snapshots = agent.getEvolutionTimeline(limit);
+    res.json({ snapshots });
+});
+// Search memories (INCEPTION Phase 7 - Memory browser)
+app.get('/api/memories', apiKeyAuth, (req, res) => {
+    const sessionId = req.query.sessionId;
+    const type = req.query.type;
+    const limit = parseInt(req.query.limit) || 50;
+    const agent = getOrCreateAgent(sessionId);
+    const memories = agent.searchMemories({
+        type: type,
+        limit
+    });
+    res.json({ memories });
+});
 // Export conversation state
 app.get('/api/export', apiKeyAuth, (req, res) => {
     const sessionId = req.query.sessionId;
@@ -358,7 +408,8 @@ app.use((err, _req, res, _next) => {
 // Export for use as module
 export { app };
 // Start server if run directly
-const PORT = process.env.PORT || 3000;
+// Default to 3001 to avoid conflict with Next.js dev server (3000)
+const PORT = process.env.PORT || 3001;
 export function startServer(port = Number(PORT)) {
     app.listen(port, () => {
         console.log(`METAMORPH API server running on port ${port}`);

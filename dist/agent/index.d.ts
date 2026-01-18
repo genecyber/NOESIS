@@ -7,6 +7,7 @@ import { Stance, ModeConfig, AgentResponse, PlannedOperation, TurnScores, Conver
 import { type SubagentDefinition } from './subagents/index.js';
 import { MemoryStore } from '../memory/index.js';
 import type { MemoryEntry } from '../types/index.js';
+import { type CommandResult } from '../commands/index.js';
 /**
  * Transformation history entry
  */
@@ -24,10 +25,20 @@ export interface MetamorphAgentOptions {
     verbose?: boolean;
     enableTransformation?: boolean;
     maxRegenerationAttempts?: number;
+    disallowedTools?: string[];
+}
+export interface ToolUseEvent {
+    id: string;
+    name: string;
+    input: Record<string, unknown>;
+    status: 'started' | 'completed' | 'error';
+    result?: string;
+    error?: string;
 }
 export interface StreamCallbacks {
     onText?: (text: string) => void;
     onToolUse?: (tool: string) => void;
+    onToolEvent?: (event: ToolUseEvent) => void;
     onSubagent?: (name: string, status: 'start' | 'end') => void;
     onComplete?: (response: AgentResponse) => void;
     onError?: (error: Error) => void;
@@ -50,6 +61,7 @@ export declare class MetamorphAgent {
     private transformationHistory;
     private memoryStore;
     private coherenceWarnings;
+    private disallowedTools;
     constructor(options?: MetamorphAgentOptions);
     /**
      * Set transformation hooks for pre/post turn processing
@@ -145,6 +157,22 @@ export declare class MetamorphAgent {
      * Record a transformation in history
      */
     private recordTransformation;
+    /**
+     * Detect and execute auto-invoked commands based on message content
+     */
+    private executeAutoCommands;
+    /**
+     * Manually invoke a command (for agent tool use)
+     */
+    invokeCommand(command: string, args?: string[]): CommandResult | null;
+    /**
+     * List available commands for agent use
+     */
+    listCommands(): Array<{
+        name: string;
+        description: string;
+        aliases: string[];
+    }>;
     /**
      * Initialize memory store if not already initialized
      */

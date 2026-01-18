@@ -180,6 +180,11 @@ export declare const ModeConfigSchema: z.ZodObject<{
     coherenceReserveBudget: z.ZodDefault<z.ZodNumber>;
     enableCoherencePlanning: z.ZodDefault<z.ZodBoolean>;
     maxRegenerationAttempts: z.ZodDefault<z.ZodNumber>;
+    enableAutoCommands: z.ZodDefault<z.ZodBoolean>;
+    autoCommandThreshold: z.ZodDefault<z.ZodNumber>;
+    maxAutoCommandsPerTurn: z.ZodDefault<z.ZodNumber>;
+    autoCommandWhitelist: z.ZodDefault<z.ZodArray<z.ZodString>>;
+    autoCommandBlacklist: z.ZodDefault<z.ZodArray<z.ZodString>>;
 }, z.core.$strip>;
 export type ModeConfig = z.infer<typeof ModeConfigSchema>;
 export declare const OperatorNameSchema: z.ZodEnum<{
@@ -277,6 +282,10 @@ export interface PreTurnResult {
     systemPrompt: string;
     operators: PlannedOperation[];
     stanceAfterPlan: Stance;
+    autoInvokedCommands?: Array<{
+        command: string;
+        output: string;
+    }>;
 }
 export interface PostTurnContext {
     message: string;

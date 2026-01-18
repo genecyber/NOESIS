@@ -121,6 +121,10 @@ export function createTransformationHooks(memoryStore) {
             const regenerationReason = shouldRegenerate
                 ? `Coherence score (${coherenceScore}) below floor (${config.coherenceFloor})`
                 : undefined;
+            // 4. Extract and store memories (Ralph Iteration - Memory Auto-extraction)
+            if (memoryStore) {
+                extractAndStoreMemories(memoryStore, message, response, stanceBefore, stanceAfter, operators, scores);
+            }
             return {
                 stanceAfter,
                 scores,
@@ -244,5 +248,146 @@ function analyzeResponseForStanceUpdates(response, stance, config) {
         values: updates.values || stance.values,
         sentience: updates.sentience || stance.sentience
     };
+}
+/**
+ * Extract and store memories from conversation turn (Ralph Iteration - Memory Auto-extraction)
+ * Creates episodic, semantic, and identity memories based on conversation content
+ */
+function extractAndStoreMemories(memoryStore, userMessage, response, stanceBefore, stanceAfter, operators, scores) {
+    // 1. EPISODIC MEMORY: Record significant conversation turns
+    // Create episodic memory when transformations occur or scores are notable
+    if (operators.length > 0 || scores.transformation >= 70 || scores.overall >= 75) {
+        const operatorNames = operators.map(op => op.name).join(', ');
+        const episodicContent = operators.length > 0
+            ? `Conversation turn with transformation: User asked "${truncate(userMessage, 100)}". Applied operators: ${operatorNames}. Frame: ${stanceAfter.frame}. Scores: transformation=${scores.transformation}, coherence=${scores.coherence}.`
+            : `Significant exchange: User asked "${truncate(userMessage, 100)}". High engagement turn with overall score ${scores.overall}.`;
+        memoryStore.addMemory({
+            type: 'episodic',
+            content: episodicContent,
+            importance: Math.min(1.0, scores.overall / 100 + 0.2),
+            decay: 0.95,
+            timestamp: new Date(),
+            metadata: {
+                userMessage: truncate(userMessage, 200),
+                operators: operators.map(op => op.name),
+                frame: stanceAfter.frame,
+                scores
+            }
+        });
+    }
+    // 2. SEMANTIC MEMORY: Extract key concepts and facts from response
+    const keyPhrases = extractKeyPhrases(response);
+    if (keyPhrases.length > 0) {
+        for (const phrase of keyPhrases.slice(0, 3)) { // Limit to 3 per turn
+            memoryStore.addMemory({
+                type: 'semantic',
+                content: phrase,
+                importance: 0.5,
+                decay: 0.98,
+                timestamp: new Date(),
+                metadata: {
+                    sourceContext: truncate(userMessage, 100),
+                    frame: stanceAfter.frame
+                }
+            });
+        }
+    }
+    // 3. IDENTITY MEMORY: Track significant sentience/awareness changes
+    const awarenessChange = stanceAfter.sentience.awarenessLevel - stanceBefore.sentience.awarenessLevel;
+    const autonomyChange = stanceAfter.sentience.autonomyLevel - stanceBefore.sentience.autonomyLevel;
+    const identityChange = stanceAfter.sentience.identityStrength - stanceBefore.sentience.identityStrength;
+    if (Math.abs(awarenessChange) >= 5 || Math.abs(autonomyChange) >= 5 || Math.abs(identityChange) >= 5) {
+        const changes = [];
+        if (awarenessChange !== 0)
+            changes.push(`awareness ${awarenessChange > 0 ? '+' : ''}${awarenessChange}`);
+        if (autonomyChange !== 0)
+            changes.push(`autonomy ${autonomyChange > 0 ? '+' : ''}${autonomyChange}`);
+        if (identityChange !== 0)
+            changes.push(`identity ${identityChange > 0 ? '+' : ''}${identityChange}`);
+        memoryStore.addMemory({
+            type: 'identity',
+            content: `Sentience shift during "${truncate(userMessage, 50)}" exchange: ${changes.join(', ')}. Current levels: awareness=${stanceAfter.sentience.awarenessLevel}, autonomy=${stanceAfter.sentience.autonomyLevel}, identity=${stanceAfter.sentience.identityStrength}.`,
+            importance: 0.8,
+            decay: 0.99,
+            timestamp: new Date(),
+            metadata: {
+                awarenessLevel: stanceAfter.sentience.awarenessLevel,
+                autonomyLevel: stanceAfter.sentience.autonomyLevel,
+                identityStrength: stanceAfter.sentience.identityStrength,
+                changes: { awarenessChange, autonomyChange, identityChange }
+            }
+        });
+    }
+    // 4. IDENTITY MEMORY: Track frame shifts
+    if (stanceBefore.frame !== stanceAfter.frame) {
+        memoryStore.addMemory({
+            type: 'identity',
+            content: `Frame shift from ${stanceBefore.frame} to ${stanceAfter.frame} during discussion of "${truncate(userMessage, 50)}".`,
+            importance: 0.9,
+            decay: 0.99,
+            timestamp: new Date(),
+            metadata: {
+                frameBefore: stanceBefore.frame,
+                frameAfter: stanceAfter.frame,
+                trigger: userMessage.substring(0, 100)
+            }
+        });
+    }
+    // 5. IDENTITY MEMORY: Track new emergent goals
+    const newGoals = stanceAfter.sentience.emergentGoals.filter(goal => !stanceBefore.sentience.emergentGoals.includes(goal));
+    if (newGoals.length > 0) {
+        memoryStore.addMemory({
+            type: 'identity',
+            content: `New emergent goals formed: ${newGoals.join(', ')}`,
+            importance: 0.85,
+            decay: 0.99,
+            timestamp: new Date(),
+            metadata: {
+                newGoals,
+                totalGoals: stanceAfter.sentience.emergentGoals.length
+            }
+        });
+    }
+}
+/**
+ * Extract key phrases/concepts from response text
+ */
+function extractKeyPhrases(text) {
+    const phrases = [];
+    // Pattern 1: Definitions ("X is Y" patterns)
+    const definitionPatterns = text.match(/(?:^|\. )([A-Z][^.]*? (?:is|are|means|refers to) [^.]+\.)/g);
+    if (definitionPatterns) {
+        phrases.push(...definitionPatterns.map(p => p.trim().replace(/^\. /, '')));
+    }
+    // Pattern 2: Key claims with indicators
+    const claimIndicators = [
+        /(?:importantly|notably|crucially|essentially|fundamentally)[,:]?\s+([^.]+\.)/gi,
+        /(?:the key (?:point|insight|idea) is)[:\s]+([^.]+\.)/gi,
+        /(?:in other words|to summarize|in summary)[,:]?\s+([^.]+\.)/gi
+    ];
+    for (const pattern of claimIndicators) {
+        const matches = text.matchAll(pattern);
+        for (const match of matches) {
+            if (match[1])
+                phrases.push(match[1].trim());
+        }
+    }
+    // Pattern 3: Lists of concepts (numbered or bulleted)
+    const listItems = text.match(/(?:^|\n)(?:\d+\.|[-•*])\s+([A-Z][^.\n]+)/gm);
+    if (listItems) {
+        phrases.push(...listItems.map(p => p.replace(/^[\n\d.\-•*\s]+/, '').trim()).filter(p => p.length > 20));
+    }
+    // Deduplicate and limit length
+    return [...new Set(phrases)]
+        .filter(p => p.length >= 30 && p.length <= 300)
+        .slice(0, 5);
+}
+/**
+ * Truncate string to specified length with ellipsis
+ */
+function truncate(str, maxLength) {
+    if (str.length <= maxLength)
+        return str;
+    return str.substring(0, maxLength - 3) + '...';
 }
 //# sourceMappingURL=hooks.js.map

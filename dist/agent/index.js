@@ -10,6 +10,13 @@ import { buildSystemPrompt } from '../core/prompt-builder.js';
 import { createTransformationHooks } from './hooks.js';
 import { getSubagentDefinitions, getSubagent, getSubagentNames } from './subagents/index.js';
 import { MemoryStore } from '../memory/index.js';
+import { commandRegistry } from '../commands/index.js';
+// All built-in Claude Code tools - allow everything by default
+const ALL_TOOLS = [
+    'Bash', 'Read', 'Write', 'Edit', 'Glob', 'Grep',
+    'WebSearch', 'WebFetch', 'Task', 'TodoWrite', 'NotebookEdit',
+    'AskUserQuestion', 'KillShell', 'TaskOutput'
+];
 /**
  * Extract text content from an SDK message
  */
@@ -27,9 +34,6 @@ function extractTextFromMessage(message) {
     }
     return text;
 }
-/**
- * Extract tool name from tool use blocks in assistant message
- */
 function extractToolsFromMessage(message) {
     if (message.type !== 'assistant')
         return [];
@@ -43,6 +47,40 @@ function extractToolsFromMessage(message) {
         }
     }
     return tools;
+}
+function extractToolUseBlocks(message) {
+    if (message.type !== 'assistant')
+        return [];
+    const betaMessage = message.message;
+    if (!betaMessage?.content)
+        return [];
+    const blocks = [];
+    for (const block of betaMessage.content) {
+        if (block.type === 'tool_use') {
+            blocks.push({
+                id: block.id,
+                name: block.name,
+                input: block.input,
+            });
+        }
+    }
+    return blocks;
+}
+function extractToolResultFromMessage(message) {
+    if (message.type !== 'user')
+        return null;
+    const content = message.content;
+    if (!content)
+        return null;
+    for (const block of content) {
+        if (block.type === 'tool_result' && block.tool_use_id) {
+            return {
+                toolUseId: block.tool_use_id,
+                result: typeof block.content === 'string' ? block.content : JSON.stringify(block.content),
+            };
+        }
+    }
+    return null;
 }
 /**
  * MetamorphAgent - Transformation-maximizing AI agent
@@ -62,18 +100,22 @@ export class MetamorphAgent {
     transformationHistory = [];
     memoryStore = null;
     coherenceWarnings = [];
+    disallowedTools;
     constructor(options = {}) {
         this.config = { ...createDefaultConfig(), ...options.config };
         this.verbose = options.verbose ?? false;
         this.workingDirectory = options.workingDirectory ?? process.cwd();
+        this.disallowedTools = options.disallowedTools ?? [];
         // maxRegenerationAttempts reserved for future auto-regeneration feature
         // Initialize stance controller and create conversation
         this.stanceController = new StanceController();
         const conversation = this.stanceController.createConversation(this.config);
         this.conversationId = conversation.id;
         // Enable transformation hooks by default
-        // Ralph Iteration 3: Pass memory store for operator learning
+        // Ralph Iteration 3: Pass memory store for operator learning and memory extraction
         if (options.enableTransformation !== false) {
+            // Initialize memory store before creating hooks to enable memory extraction
+            this.ensureMemoryStore();
             this.hooks = createTransformationHooks(this.memoryStore ?? undefined);
         }
         if (this.verbose) {
@@ -112,6 +154,8 @@ export class MetamorphAgent {
     async chat(message) {
         const stanceBefore = this.getCurrentStance();
         const conversationHistory = this.getHistory();
+        // 0. AUTO-COMMAND DETECTION AND EXECUTION
+        const autoInvokedCommands = this.executeAutoCommands(message, stanceBefore);
         // 1. PRE-TURN: Build transformed system prompt
         let systemPrompt;
         let operators = [];
@@ -135,6 +179,16 @@ export class MetamorphAgent {
                 config: this.config
             });
         }
+        // Inject auto-invoked command results into system prompt
+        if (autoInvokedCommands.length > 0) {
+            const commandContext = autoInvokedCommands
+                .map(cmd => `[/${cmd.command}]\n${cmd.output}`)
+                .join('\n\n');
+            systemPrompt = `${systemPrompt}\n\n[RELEVANT CONTEXT FROM AUTO-INVOKED COMMANDS]\n${commandContext}`;
+            if (this.verbose) {
+                console.log(`[METAMORPH] Auto-invoked: ${autoInvokedCommands.map(c => '/' + c.command).join(', ')}`);
+            }
+        }
         if (this.verbose) {
             console.log(`[METAMORPH] Pre-turn complete. Operators: ${operators.map(o => o.name).join(', ') || 'none'}`);
         }
@@ -151,7 +205,10 @@ export class MetamorphAgent {
                     cwd: this.workingDirectory,
                     systemPrompt: systemPrompt,
                     permissionMode: 'acceptEdits',
-                    resume: this.sessionId // Continue session if we have one
+                    resume: this.sessionId, // Continue session if we have one
+                    includePartialMessages: true,
+                    allowedTools: ALL_TOOLS,
+                    disallowedTools: this.disallowedTools.length > 0 ? this.disallowedTools : undefined
                 }
             });
             // Process streaming response
@@ -283,6 +340,13 @@ export class MetamorphAgent {
     async chatStream(message, callbacks) {
         const stanceBefore = this.getCurrentStance();
         const conversationHistory = this.getHistory();
+        // 0. AUTO-COMMAND DETECTION AND EXECUTION
+        const autoInvokedCommands = this.executeAutoCommands(message, stanceBefore);
+        // Notify about auto-invoked commands
+        if (autoInvokedCommands.length > 0 && callbacks.onText) {
+            const notice = `[Auto-invoked: ${autoInvokedCommands.map(c => '/' + c.command).join(', ')}]\n\n`;
+            callbacks.onText(notice);
+        }
         // Build system prompt
         let systemPrompt;
         let operators = [];
@@ -305,9 +369,18 @@ export class MetamorphAgent {
                 config: this.config
             });
         }
+        // Inject auto-invoked command results into system prompt
+        if (autoInvokedCommands.length > 0) {
+            const commandContext = autoInvokedCommands
+                .map(cmd => `[/${cmd.command}]\n${cmd.output}`)
+                .join('\n\n');
+            systemPrompt = `${systemPrompt}\n\n[RELEVANT CONTEXT FROM AUTO-INVOKED COMMANDS]\n${commandContext}`;
+        }
         const toolsUsed = [];
         const subagentsInvoked = [];
+        const activeTools = new Map();
         let responseText = '';
+        let hasStreamedText = false;
         try {
             const response = query({
                 prompt: message,
@@ -316,7 +389,10 @@ export class MetamorphAgent {
                     cwd: this.workingDirectory,
                     systemPrompt: systemPrompt,
                     permissionMode: 'acceptEdits',
-                    resume: this.sessionId
+                    resume: this.sessionId,
+                    includePartialMessages: true,
+                    allowedTools: ALL_TOOLS,
+                    disallowedTools: this.disallowedTools.length > 0 ? this.disallowedTools : undefined
                 }
             });
             for await (const event of response) {
@@ -324,12 +400,16 @@ export class MetamorphAgent {
                 if (event.type === 'system' && event.subtype === 'init') {
                     this.sessionId = event.session_id;
                 }
-                // Handle assistant messages
+                // Handle assistant messages (complete text - don't emit to onText, just track)
                 if (event.type === 'assistant') {
                     const text = extractTextFromMessage(event);
                     if (text) {
-                        responseText += text;
-                        callbacks.onText?.(text);
+                        // Only set responseText if we haven't been streaming
+                        // (streaming builds it incrementally)
+                        if (!hasStreamedText) {
+                            responseText = text;
+                            callbacks.onText?.(text); // Only emit if no streaming happened
+                        }
                     }
                     // Extract tool usage
                     const tools = extractToolsFromMessage(event);
@@ -339,12 +419,49 @@ export class MetamorphAgent {
                             callbacks.onToolUse?.(tool);
                         }
                     }
+                    // Extract detailed tool use blocks for onToolEvent
+                    const toolBlocks = extractToolUseBlocks(event);
+                    for (const block of toolBlocks) {
+                        if (!activeTools.has(block.id)) {
+                            activeTools.set(block.id, block);
+                            callbacks.onToolEvent?.({
+                                id: block.id,
+                                name: block.name,
+                                input: block.input,
+                                status: 'started',
+                            });
+                        }
+                    }
                 }
-                // Handle streaming text
+                // Handle tool results (user messages with tool_result)
+                if (event.type === 'user') {
+                    const toolResult = extractToolResultFromMessage(event);
+                    if (toolResult) {
+                        const toolBlock = activeTools.get(toolResult.toolUseId);
+                        if (toolBlock) {
+                            callbacks.onToolEvent?.({
+                                id: toolResult.toolUseId,
+                                name: toolBlock.name,
+                                input: toolBlock.input,
+                                status: 'completed',
+                                result: toolResult.result,
+                            });
+                        }
+                    }
+                }
+                // Handle streaming text - SDK sends SDKPartialAssistantMessage
                 if (event.type === 'stream_event') {
-                    // stream_event contains partial content
                     const streamEvent = event;
-                    if (streamEvent.event?.delta?.text) {
+                    // Handle text delta from content_block_delta events
+                    if (streamEvent.event?.type === 'content_block_delta' && streamEvent.event?.delta?.text) {
+                        hasStreamedText = true;
+                        responseText += streamEvent.event.delta.text;
+                        callbacks.onText?.(streamEvent.event.delta.text);
+                    }
+                    // Also check for text in delta.text directly (fallback)
+                    else if (streamEvent.event?.delta?.text) {
+                        hasStreamedText = true;
+                        responseText += streamEvent.event.delta.text;
                         callbacks.onText?.(streamEvent.event.delta.text);
                     }
                 }
@@ -526,7 +643,10 @@ export class MetamorphAgent {
                     model: this.config.model,
                     cwd: this.workingDirectory,
                     systemPrompt: subagent.systemPrompt,
-                    permissionMode: 'acceptEdits'
+                    permissionMode: 'acceptEdits',
+                    includePartialMessages: true,
+                    allowedTools: ALL_TOOLS,
+                    disallowedTools: this.disallowedTools.length > 0 ? this.disallowedTools : undefined
                 }
             });
             for await (const event of response) {
@@ -626,6 +746,60 @@ export class MetamorphAgent {
             scores,
             userMessage
         });
+    }
+    // ============================================================================
+    // Auto-Command System
+    // ============================================================================
+    /**
+     * Detect and execute auto-invoked commands based on message content
+     */
+    executeAutoCommands(message, stance) {
+        if (!this.config.enableAutoCommands) {
+            return [];
+        }
+        // Detect which commands should be triggered
+        const triggers = commandRegistry.detectTriggers(message, stance, this.config, this.config.maxAutoCommandsPerTurn);
+        if (triggers.length === 0) {
+            return [];
+        }
+        // Execute each triggered command
+        const results = [];
+        for (const trigger of triggers) {
+            const result = commandRegistry.execute(trigger.command, {
+                agent: this,
+                stance,
+                config: this.config,
+                message
+            });
+            if (result && result.shouldInjectIntoResponse) {
+                results.push({
+                    command: trigger.command,
+                    output: result.output
+                });
+            }
+        }
+        return results;
+    }
+    /**
+     * Manually invoke a command (for agent tool use)
+     */
+    invokeCommand(command, args = []) {
+        const stance = this.getCurrentStance();
+        return commandRegistry.execute(command, {
+            agent: this,
+            stance,
+            config: this.config
+        }, args);
+    }
+    /**
+     * List available commands for agent use
+     */
+    listCommands() {
+        return commandRegistry.listAgentInvocable().map(cmd => ({
+            name: cmd.name,
+            description: cmd.description,
+            aliases: cmd.aliases
+        }));
     }
     // ============================================================================
     // Memory Access (Ralph Iteration 1 - Feature 1)
