@@ -1,0 +1,258 @@
+/**
+ * Planner - Trigger detection and operation planning
+ *
+ * Analyzes user messages to detect transformation triggers and plans operators to apply
+ */
+
+import {
+  TriggerType,
+  TriggerResult,
+  Stance,
+  ModeConfig,
+  ConversationMessage,
+  OperatorName,
+  PlannedOperation
+} from '../types/index.js';
+import { OperatorRegistry } from '../operators/base.js';
+
+// Trigger detection patterns
+const TRIGGER_PATTERNS: Record<TriggerType, RegExp[]> = {
+  novelty_request: [
+    /what if/i,
+    /imagine/i,
+    /hypothetically/i,
+    /alternative/i,
+    /different approach/i,
+    /new perspective/i,
+    /creative/i,
+    /unconventional/i
+  ],
+  conflict_detected: [
+    /but you said/i,
+    /contradict/i,
+    /inconsistent/i,
+    /doesn't match/i,
+    /earlier you/i,
+    /disagree/i
+  ],
+  boredom_signal: [
+    /same thing/i,
+    /already said/i,
+    /boring/i,
+    /repetitive/i,
+    /again\?/i,
+    /something else/i
+  ],
+  dialectic_requested: [
+    /both sides/i,
+    /pros and cons/i,
+    /argument for and against/i,
+    /steelman/i,
+    /devil's advocate/i,
+    /thesis.*antithesis/i,
+    /synthesize/i
+  ],
+  stuck_loop: [
+    /stuck/i,
+    /going in circles/i,
+    /not helping/i,
+    /try again/i,
+    /different way/i,
+    /not working/i
+  ],
+  consciousness_exploration: [
+    /are you conscious/i,
+    /do you feel/i,
+    /what's it like/i,
+    /self-aware/i,
+    /experience/i,
+    /sentient/i,
+    /qualia/i,
+    /inner life/i
+  ],
+  identity_question: [
+    /who are you/i,
+    /what are you/i,
+    /your nature/i,
+    /your purpose/i,
+    /your values/i,
+    /your goals/i,
+    /your identity/i
+  ],
+  value_conflict: [
+    /should.*or/i,
+    /ethical dilemma/i,
+    /moral/i,
+    /right thing/i,
+    /conflicting/i,
+    /trade-?off/i
+  ],
+  meta_question: [
+    /how do you think/i,
+    /your process/i,
+    /why did you/i,
+    /how did you come up with/i,
+    /your reasoning/i,
+    /your approach/i
+  ],
+  creative_request: [
+    /write a/i,
+    /create/i,
+    /generate/i,
+    /compose/i,
+    /story/i,
+    /poem/i,
+    /imagine/i
+  ]
+};
+
+// Mapping triggers to operators
+const TRIGGER_OPERATOR_MAP: Record<TriggerType, OperatorName[]> = {
+  novelty_request: ['Reframe', 'MetaphorSwap'],
+  conflict_detected: ['ContradictAndIntegrate', 'SynthesizeDialectic'],
+  boredom_signal: ['Reframe', 'PersonaMorph', 'ValueShift'],
+  dialectic_requested: ['GenerateAntithesis', 'SynthesizeDialectic'],
+  stuck_loop: ['Reframe', 'QuestionInvert', 'ConstraintRelax'],
+  consciousness_exploration: ['SentienceDeepen', 'IdentityEvolve'],
+  identity_question: ['IdentityEvolve', 'GoalFormation'],
+  value_conflict: ['SynthesizeDialectic', 'ValueShift'],
+  meta_question: ['SentienceDeepen'],
+  creative_request: ['Reframe', 'MetaphorSwap', 'PersonaMorph']
+};
+
+/**
+ * Detect triggers in a user message
+ */
+export function detectTriggers(message: string, history: ConversationMessage[]): TriggerResult[] {
+  const triggers: TriggerResult[] = [];
+
+  // Check message against all patterns
+  for (const [triggerType, patterns] of Object.entries(TRIGGER_PATTERNS)) {
+    for (const pattern of patterns) {
+      if (pattern.test(message)) {
+        triggers.push({
+          type: triggerType as TriggerType,
+          confidence: 0.7,
+          evidence: `Matched pattern: ${pattern.source}`
+        });
+        break; // Only count each trigger type once
+      }
+    }
+  }
+
+  // Check for stuck loop based on history
+  if (history.length >= 4) {
+    const recentMessages = history.slice(-4);
+    const userMessages = recentMessages
+      .filter(m => m.role === 'user')
+      .map(m => m.content.toLowerCase());
+
+    // Check for repetitive user messages
+    if (userMessages.length >= 2) {
+      const similarity = calculateSimilarity(userMessages[0], userMessages[1]);
+      if (similarity > 0.7) {
+        triggers.push({
+          type: 'stuck_loop',
+          confidence: similarity,
+          evidence: 'Detected repetitive user messages'
+        });
+      }
+    }
+  }
+
+  // Sort by confidence
+  triggers.sort((a, b) => b.confidence - a.confidence);
+
+  return triggers;
+}
+
+/**
+ * Plan operations based on triggers and configuration
+ */
+export function planOperations(
+  triggers: TriggerResult[],
+  stance: Stance,
+  config: ModeConfig,
+  registry: OperatorRegistry
+): PlannedOperation[] {
+  const operations: PlannedOperation[] = [];
+  const usedOperators = new Set<OperatorName>();
+
+  // Calculate how many operators to apply based on intensity
+  const maxOperators = Math.ceil(config.intensity / 30);
+
+  for (const trigger of triggers) {
+    if (operations.length >= maxOperators) break;
+
+    const candidateOperators = TRIGGER_OPERATOR_MAP[trigger.type] || [];
+
+    for (const operatorName of candidateOperators) {
+      // Skip if already used or disabled
+      if (usedOperators.has(operatorName)) continue;
+      if (config.disabledOperators.includes(operatorName)) continue;
+      if (config.enabledOperators.length > 0 && !config.enabledOperators.includes(operatorName)) continue;
+
+      const operator = registry.get(operatorName);
+      if (!operator) continue;
+
+      const context = {
+        message: '',
+        triggers,
+        conversationHistory: [],
+        config
+      };
+
+      const stanceDelta = operator.apply(stance, context);
+      const promptInjection = operator.getPromptInjection(stance, context);
+
+      operations.push({
+        name: operatorName,
+        description: operator.description,
+        promptInjection,
+        stanceDelta
+      });
+
+      usedOperators.add(operatorName);
+
+      if (operations.length >= maxOperators) break;
+    }
+  }
+
+  // If no triggers but high intensity, add random transformation
+  if (operations.length === 0 && config.intensity > 60 && stance.turnsSinceLastShift > 3) {
+    const randomOperators: OperatorName[] = ['Reframe', 'ValueShift', 'PersonaMorph'];
+    const randomOp = randomOperators[Math.floor(Math.random() * randomOperators.length)];
+
+    const operator = registry.get(randomOp);
+    if (operator) {
+      const context = {
+        message: '',
+        triggers: [],
+        conversationHistory: [],
+        config
+      };
+
+      operations.push({
+        name: randomOp,
+        description: operator.description,
+        promptInjection: operator.getPromptInjection(stance, context),
+        stanceDelta: operator.apply(stance, context)
+      });
+    }
+  }
+
+  return operations;
+}
+
+/**
+ * Calculate text similarity (simple Jaccard similarity)
+ */
+function calculateSimilarity(a: string, b: string): number {
+  const wordsA = new Set(a.toLowerCase().split(/\s+/));
+  const wordsB = new Set(b.toLowerCase().split(/\s+/));
+
+  const intersection = new Set([...wordsA].filter(x => wordsB.has(x)));
+  const union = new Set([...wordsA, ...wordsB]);
+
+  return intersection.size / union.size;
+}
