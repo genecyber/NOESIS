@@ -444,11 +444,26 @@ export class MetamorphAgent {
           }
         }
 
-        // Handle streaming text
+        // Handle streaming text - SDK sends SDKPartialAssistantMessage
         if (event.type === 'stream_event') {
-          // stream_event contains partial content
-          const streamEvent = event as { type: 'stream_event'; event?: { delta?: { text?: string } } };
-          if (streamEvent.event?.delta?.text) {
+          const streamEvent = event as {
+            type: 'stream_event';
+            event?: {
+              type?: string;
+              delta?: { type?: string; text?: string };
+              content_block?: { type?: string; text?: string };
+            };
+          };
+          // Debug: Log the stream event structure
+          if (this.verbose) {
+            console.log('[STREAM_EVENT]', JSON.stringify(streamEvent.event, null, 2));
+          }
+          // Handle text delta from content_block_delta events
+          if (streamEvent.event?.type === 'content_block_delta' && streamEvent.event?.delta?.text) {
+            callbacks.onText?.(streamEvent.event.delta.text);
+          }
+          // Also check for text in delta.text directly (fallback)
+          else if (streamEvent.event?.delta?.text) {
             callbacks.onText?.(streamEvent.event.delta.text);
           }
         }
