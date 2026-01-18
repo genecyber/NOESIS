@@ -427,7 +427,15 @@ npm run dev
 
 METAMORPH evolves through Ralph Loop iterations:
 
-### Ralph Iteration 13 (Current)
+### Ralph Iteration 14 (Current)
+- **Biometric-Linked Stance Adjustments**: Heart rate, focus, stress monitoring with automatic stance modulation
+- **Environmental Context Sensing**: Location, device, ambient conditions with adaptive profile switching
+- **Template Composition and Inheritance**: Multi-level hierarchies, diamond inheritance resolution, merge strategies
+- **Stance Testing Framework**: Unit tests, regression tests, coherence assertions, CI/CD integration
+- **Calendar Integration**: Google Calendar, iCal support, scheduled transitions, timezone handling
+- **Competitive Stance Leaderboards**: Community rankings, badges, challenges, tournaments, social sharing
+
+### Ralph Iteration 13
 - **3D Stance Visualization Export**: GLTF/USD format export with animation support, scene composition, WebXR-ready
 - **Cross-Session Identity Continuity**: Persistent identity profiles, session merging, core value preservation, identity verification
 - **AI-Assisted Stance Optimization**: ML-based recommendations, performance pattern learning, coherence auto-tuning, A/B testing
