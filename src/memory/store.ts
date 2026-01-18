@@ -472,6 +472,133 @@ export class MemoryStore {
   }
 
   // ============================================================================
+  // Semantic Search (Ralph Iteration 4 - Feature 1)
+  // ============================================================================
+
+  /**
+   * Add memory with embedding
+   */
+  addMemoryWithEmbedding(entry: Omit<MemoryEntry, 'id'>, embedding: number[]): string {
+    const id = uuidv4();
+
+    const stmt = this.db.prepare(`
+      INSERT INTO semantic_memory (id, type, content, embedding, importance, decay, timestamp, metadata)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+    `);
+
+    stmt.run(
+      id,
+      entry.type,
+      entry.content,
+      Buffer.from(new Float32Array(embedding).buffer),
+      entry.importance,
+      entry.decay,
+      entry.timestamp.toISOString(),
+      JSON.stringify(entry.metadata || {})
+    );
+
+    return id;
+  }
+
+  /**
+   * Get all memories with embeddings for semantic search
+   */
+  getMemoriesWithEmbeddings(): Array<MemoryEntry & { embedding: number[] }> {
+    const rows = this.db.prepare(`
+      SELECT * FROM semantic_memory WHERE embedding IS NOT NULL
+      ORDER BY importance DESC
+    `).all() as Array<{
+      id: string;
+      type: string;
+      content: string;
+      embedding: Buffer;
+      importance: number;
+      decay: number;
+      timestamp: string;
+      metadata: string;
+    }>;
+
+    return rows.map(row => ({
+      id: row.id,
+      type: row.type as 'episodic' | 'semantic' | 'identity',
+      content: row.content,
+      embedding: Array.from(new Float32Array(row.embedding.buffer.slice(
+        row.embedding.byteOffset,
+        row.embedding.byteOffset + row.embedding.byteLength
+      ))),
+      importance: row.importance,
+      decay: row.decay,
+      timestamp: new Date(row.timestamp),
+      metadata: JSON.parse(row.metadata)
+    }));
+  }
+
+  /**
+   * Semantic similarity search using cosine similarity
+   */
+  semanticSearch(queryEmbedding: number[], options: {
+    type?: 'episodic' | 'semantic' | 'identity';
+    minSimilarity?: number;
+    limit?: number;
+  } = {}): Array<MemoryEntry & { similarity: number }> {
+    const { type, minSimilarity = 0.3, limit = 10 } = options;
+
+    // Get all memories with embeddings
+    let memories = this.getMemoriesWithEmbeddings();
+
+    // Filter by type if specified
+    if (type) {
+      memories = memories.filter(m => m.type === type);
+    }
+
+    // Calculate cosine similarity for each memory
+    const results = memories.map(memory => {
+      const similarity = this.cosineSimilarity(queryEmbedding, memory.embedding);
+      return { ...memory, similarity };
+    });
+
+    // Filter by minimum similarity and sort
+    return results
+      .filter(r => r.similarity >= minSimilarity)
+      .sort((a, b) => b.similarity - a.similarity)
+      .slice(0, limit);
+  }
+
+  /**
+   * Calculate cosine similarity between two vectors
+   */
+  private cosineSimilarity(a: number[], b: number[]): number {
+    if (a.length !== b.length) return 0;
+
+    let dotProduct = 0;
+    let magnitudeA = 0;
+    let magnitudeB = 0;
+
+    for (let i = 0; i < a.length; i++) {
+      dotProduct += a[i] * b[i];
+      magnitudeA += a[i] * a[i];
+      magnitudeB += b[i] * b[i];
+    }
+
+    magnitudeA = Math.sqrt(magnitudeA);
+    magnitudeB = Math.sqrt(magnitudeB);
+
+    if (magnitudeA === 0 || magnitudeB === 0) return 0;
+
+    return dotProduct / (magnitudeA * magnitudeB);
+  }
+
+  /**
+   * Find similar memories to a given text (requires external embedding)
+   */
+  findSimilarByContent(content: string, existingMemories: Array<{ content: string; embedding: number[] }>): number[] | null {
+    // This is a placeholder - actual embedding should be done via embeddings.ts
+    // Return the embedding if content matches an existing memory
+    const match = existingMemories.find(m => m.content === content);
+    return match?.embedding || null;
+  }
+
+  // ============================================================================
   // Evolution Persistence (Ralph Iteration 1 - Feature 4)
   // ============================================================================
 

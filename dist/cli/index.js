@@ -13,10 +13,17 @@ import { Command } from 'commander';
 import chalk from 'chalk';
 import ora from 'ora';
 import * as readline from 'readline';
+import * as fs from 'fs';
+import * as path from 'path';
+import { execFile } from 'child_process';
 import { MetamorphAgent } from '../agent/index.js';
 import { calculateAvailableBudget, OPERATOR_DRIFT_COSTS } from '../core/coherence-planner.js';
 import { strategyManager, OPERATOR_STRATEGIES } from '../core/strategies.js';
 import { emotionalArcTracker } from '../core/emotional-arc.js';
+import { LocalEmbeddingProvider } from '../core/embeddings.js';
+import { autoEvolutionManager } from '../core/auto-evolution.js';
+import { generateVisualizationHTML, generateStanceGraph, generateTransformationGraph } from '../visualization/stance-graph.js';
+import { contextManager } from '../core/context-manager.js';
 import { createGlowStreamBuffer, isGlowAvailable, detectGlow, renderMarkdownSync } from './glow.js';
 const VERSION = '0.1.0';
 // State for abort handling
@@ -73,25 +80,36 @@ program
     });
     const prompt = () => {
         rl.question(chalk.green('\nYou: '), async (input) => {
-            const trimmedInput = input.trim();
-            if (!trimmedInput) {
+            try {
+                const trimmedInput = input.trim();
+                if (!trimmedInput) {
+                    prompt();
+                    return;
+                }
+                // Handle commands
+                if (trimmedInput.startsWith('/')) {
+                    await handleCommand(trimmedInput, agent, rl, useStreaming);
+                    prompt();
+                    return;
+                }
+                // Regular chat
+                if (useStreaming) {
+                    await handleStreamingChat(agent, trimmedInput);
+                }
+                else {
+                    await handleNonStreamingChat(agent, trimmedInput);
+                }
                 prompt();
-                return;
             }
-            // Handle commands
-            if (trimmedInput.startsWith('/')) {
-                await handleCommand(trimmedInput, agent, rl, useStreaming);
+            catch (error) {
+                // Handle any uncaught errors to prevent silent exit
+                console.error(chalk.red('\nUnexpected error:'), error instanceof Error ? error.message : 'Unknown error');
+                if (currentSpinner) {
+                    currentSpinner.stop();
+                    currentSpinner = null;
+                }
                 prompt();
-                return;
             }
-            // Regular chat
-            if (useStreaming) {
-                await handleStreamingChat(agent, trimmedInput);
-            }
-            else {
-                await handleNonStreamingChat(agent, trimmedInput);
-            }
-            prompt();
         });
     };
     rl.on('close', () => {
@@ -133,7 +151,7 @@ program
     .action(async (topic, options) => {
     const agent = new MetamorphAgent({ verbose: options.verbose });
     console.log(chalk.cyan(`\n  Exploring: ${topic}\n`));
-    const spinner = ora('Explorer agent working...').start();
+    const spinner = ora({ text: 'Explorer agent working...', discardStdin: false }).start();
     try {
         const result = await agent.explore(topic);
         spinner.stop();
@@ -154,7 +172,7 @@ program
     .action(async (focus, options) => {
     const agent = new MetamorphAgent({ verbose: options.verbose });
     console.log(chalk.cyan(`\n  Reflecting${focus ? ': ' + focus : ''}...\n`));
-    const spinner = ora('Reflector agent working...').start();
+    const spinner = ora({ text: 'Reflector agent working...', discardStdin: false }).start();
     try {
         const result = await agent.reflect(focus);
         spinner.stop();
@@ -175,7 +193,7 @@ program
     .action(async (thesis, options) => {
     const agent = new MetamorphAgent({ verbose: options.verbose });
     console.log(chalk.cyan(`\n  Analyzing thesis: ${thesis}\n`));
-    const spinner = ora('Dialectic agent working...').start();
+    const spinner = ora({ text: 'Dialectic agent working...', discardStdin: false }).start();
     try {
         const result = await agent.dialectic(thesis);
         spinner.stop();
@@ -258,7 +276,11 @@ async function handleStreamingChat(agent, input) {
             }
         },
         onComplete: (result) => {
-            currentAbortController = null;
+            // Stop spinner if it's still running (edge case: no text received before completion)
+            if (currentSpinner) {
+                currentSpinner.stop();
+                currentSpinner = null;
+            }
             // Flush any remaining content from glow buffer
             if (glowBuffer) {
                 const remaining = glowBuffer.flush();
@@ -296,7 +318,7 @@ async function handleStreamingChat(agent, input) {
             console.error(chalk.red('\nError:'), error.message);
         }
     };
-    currentSpinner = ora('Thinking...').start();
+    currentSpinner = ora({ text: 'Thinking...', discardStdin: false }).start();
     try {
         await agent.chatStream(input, callbacks);
     }
@@ -309,11 +331,15 @@ async function handleStreamingChat(agent, input) {
             console.error(chalk.red('\nError:'), error.message);
         }
     }
+    // Ensure spinner is stopped before cleanup (defensive)
+    if (currentSpinner) {
+        currentSpinner.stop();
+    }
     currentAbortController = null;
     currentSpinner = null;
 }
 async function handleNonStreamingChat(agent, input) {
-    const spinner = ora('Thinking...').start();
+    const spinner = ora({ text: 'Thinking...', discardStdin: false }).start();
     try {
         const result = await agent.chat(input);
         spinner.stop();
@@ -422,6 +448,23 @@ async function handleCommand(input, agent, rl, _useStreaming) {
         case 'emotional-arc':
         case 'emotion':
             printEmotionalArc(agent);
+            break;
+        case 'similar':
+            await printSimilarMemories(agent, args.join(' '));
+            break;
+        case 'auto-evolve':
+        case 'evolve':
+        case 'evolution':
+            handleAutoEvolution(agent, args);
+            break;
+        case 'visualize':
+        case 'viz':
+        case 'graph':
+            await handleVisualization(agent, args);
+            break;
+        case 'context':
+        case 'ctx':
+            handleContextCommand(agent, args);
             break;
         case 'quit':
         case 'exit':
@@ -587,7 +630,7 @@ async function handleModeCommand(agent, args) {
 }
 async function handleExploreCommand(agent, topic) {
     console.log(chalk.magenta(`\n  [Invoking explorer subagent...]`));
-    const spinner = ora('Exploring...').start();
+    const spinner = ora({ text: 'Exploring...', discardStdin: false }).start();
     try {
         const result = await agent.explore(topic);
         spinner.stop();
@@ -605,7 +648,7 @@ async function handleExploreCommand(agent, topic) {
 }
 async function handleReflectCommand(agent, focus) {
     console.log(chalk.magenta(`\n  [Invoking reflector subagent...]`));
-    const spinner = ora('Reflecting...').start();
+    const spinner = ora({ text: 'Reflecting...', discardStdin: false }).start();
     try {
         const result = await agent.reflect(focus);
         spinner.stop();
@@ -620,7 +663,7 @@ async function handleReflectCommand(agent, focus) {
 }
 async function handleDialecticCommand(agent, thesis) {
     console.log(chalk.magenta(`\n  [Invoking dialectic subagent...]`));
-    const spinner = ora('Analyzing...').start();
+    const spinner = ora({ text: 'Analyzing...', discardStdin: false }).start();
     try {
         const result = await agent.dialectic(thesis);
         spinner.stop();
@@ -635,7 +678,7 @@ async function handleDialecticCommand(agent, thesis) {
 }
 async function handleVerifyCommand(agent, text) {
     console.log(chalk.magenta(`\n  [Invoking verifier subagent...]`));
-    const spinner = ora('Verifying...').start();
+    const spinner = ora({ text: 'Verifying...', discardStdin: false }).start();
     try {
         const result = await agent.verify(text);
         spinner.stop();
@@ -1076,6 +1119,329 @@ function printEmotionalArc(agent) {
         console.log(chalk.yellow(`\n  Suggested intervention: ${state.suggestedIntervention}`));
     }
 }
+async function printSimilarMemories(agent, query) {
+    if (!query.trim()) {
+        console.log(chalk.yellow('  Usage: /similar <search text>'));
+        console.log(chalk.gray('  Finds semantically similar memories using embeddings.'));
+        return;
+    }
+    console.log(chalk.cyan(`\n  ═══ Semantic Search (Ralph Iteration 4) ═══`));
+    console.log(chalk.gray(`  Query: "${query}"`));
+    const memoryStore = agent.getMemoryStore();
+    const embeddingProvider = new LocalEmbeddingProvider();
+    // Get query embedding
+    const queryEmbedding = await embeddingProvider.embed(query);
+    // Search memories
+    const results = memoryStore.semanticSearch(queryEmbedding.vector, {
+        minSimilarity: 0.2,
+        limit: 10
+    });
+    if (results.length === 0) {
+        console.log(chalk.gray('\n  No similar memories found.'));
+        console.log(chalk.gray('  Memories need embeddings to be searchable.'));
+        console.log(chalk.gray('  Use the agent to store memories with embeddings.'));
+        return;
+    }
+    console.log(chalk.cyan(`\n  Found ${results.length} similar memories:\n`));
+    for (const memory of results) {
+        const simColor = memory.similarity > 0.7 ? chalk.green
+            : memory.similarity > 0.5 ? chalk.yellow
+                : chalk.gray;
+        const typeColor = memory.type === 'identity' ? chalk.magenta
+            : memory.type === 'semantic' ? chalk.cyan
+                : chalk.blue;
+        console.log(`  ${typeColor(`[${memory.type}]`)} ${simColor(`${(memory.similarity * 100).toFixed(1)}%`)}`);
+        const preview = memory.content.slice(0, 80) + (memory.content.length > 80 ? '...' : '');
+        console.log(chalk.gray(`    "${preview}"`));
+        console.log(chalk.gray(`    importance: ${memory.importance.toFixed(2)}, age: ${formatAge(memory.timestamp)}`));
+        console.log('');
+    }
+}
+function formatAge(date) {
+    const ms = Date.now() - date.getTime();
+    const minutes = Math.floor(ms / 60000);
+    if (minutes < 60)
+        return `${minutes}m ago`;
+    const hours = Math.floor(minutes / 60);
+    if (hours < 24)
+        return `${hours}h ago`;
+    const days = Math.floor(hours / 24);
+    return `${days}d ago`;
+}
+async function handleVisualization(agent, args) {
+    const subcommand = args[0] || 'stance';
+    const outputPath = args[1] || path.join(process.cwd(), 'metamorph-viz.html');
+    switch (subcommand) {
+        case 'stance':
+            const stance = agent.getCurrentStance();
+            const stanceGraph = generateStanceGraph(stance);
+            const stanceHtml = generateVisualizationHTML(stanceGraph, 'Current Stance');
+            fs.writeFileSync(outputPath, stanceHtml);
+            console.log(chalk.cyan('\n  ═══ Visualization Generated (Ralph Iteration 4) ═══'));
+            console.log(chalk.green(`  ✓ Saved to: ${outputPath}`));
+            console.log(`  Nodes: ${stanceGraph.nodes.length} | Links: ${stanceGraph.links.length}`);
+            // Try to open in browser
+            openInBrowser(outputPath);
+            break;
+        case 'history':
+        case 'transformations':
+            const history = agent.getTransformationHistory();
+            if (history.length === 0) {
+                console.log(chalk.yellow('  No transformation history yet.'));
+                return;
+            }
+            const historyGraph = generateTransformationGraph(history, 15);
+            const historyHtml = generateVisualizationHTML(historyGraph, 'Transformation History');
+            fs.writeFileSync(outputPath, historyHtml);
+            console.log(chalk.cyan('\n  ═══ Transformation Visualization ═══'));
+            console.log(chalk.green(`  ✓ Saved to: ${outputPath}`));
+            console.log(`  Transformations: ${history.length} | Nodes: ${historyGraph.nodes.length}`);
+            openInBrowser(outputPath);
+            break;
+        case 'json':
+            const jsonStance = agent.getCurrentStance();
+            const jsonGraph = generateStanceGraph(jsonStance);
+            const jsonPath = outputPath.endsWith('.json') ? outputPath : outputPath.replace('.html', '.json');
+            fs.writeFileSync(jsonPath, JSON.stringify(jsonGraph, null, 2));
+            console.log(chalk.green(`  ✓ JSON saved to: ${jsonPath}`));
+            break;
+        default:
+            console.log(chalk.yellow(`  Unknown visualization type: ${subcommand}`));
+            console.log(chalk.gray('  Commands: /viz stance | history | json [output-path]'));
+    }
+}
+function openInBrowser(filePath) {
+    const absolutePath = path.resolve(filePath);
+    const platform = process.platform;
+    // Use execFile with the appropriate command for each platform
+    // This is safer than exec as it doesn't spawn a shell
+    if (platform === 'darwin') {
+        execFile('open', [absolutePath], (error) => {
+            if (error) {
+                console.log(chalk.gray(`  (Could not auto-open browser. Open the file manually.)`));
+            }
+            else {
+                console.log(chalk.gray(`  Opened in browser.`));
+            }
+        });
+    }
+    else if (platform === 'win32') {
+        // On Windows, use cmd.exe with start
+        execFile('cmd.exe', ['/c', 'start', '', absolutePath], (error) => {
+            if (error) {
+                console.log(chalk.gray(`  (Could not auto-open browser. Open the file manually.)`));
+            }
+            else {
+                console.log(chalk.gray(`  Opened in browser.`));
+            }
+        });
+    }
+    else {
+        // Linux
+        execFile('xdg-open', [absolutePath], (error) => {
+            if (error) {
+                console.log(chalk.gray(`  (Could not auto-open browser. Open the file manually.)`));
+            }
+            else {
+                console.log(chalk.gray(`  Opened in browser.`));
+            }
+        });
+    }
+}
+function handleContextCommand(agent, args) {
+    const subcommand = args[0] || 'status';
+    const history = agent.getHistory();
+    switch (subcommand) {
+        case 'status':
+            const ctxStatus = contextManager.getContextStatus(history);
+            console.log(chalk.cyan('\n  ═══ Context Window Status (Ralph Iteration 4) ═══'));
+            // Usage bar
+            const usageBar = createUsageBar(ctxStatus.usagePercentage);
+            const usageColor = ctxStatus.usagePercentage < 50 ? chalk.green
+                : ctxStatus.usagePercentage < 80 ? chalk.yellow
+                    : chalk.red;
+            console.log(`  Usage: ${usageBar} ${usageColor(ctxStatus.usagePercentage.toFixed(1) + '%')}`);
+            console.log(chalk.cyan('\n  Budget Breakdown:'));
+            console.log(`    Total Capacity:    ${ctxStatus.budget.totalTokens.toLocaleString()} tokens`);
+            console.log(`    System Reserve:    ${ctxStatus.budget.systemReserve.toLocaleString()} tokens`);
+            console.log(`    Memory Reserve:    ${ctxStatus.budget.memoryReserve.toLocaleString()} tokens`);
+            console.log(`    Conversation:      ${ctxStatus.budget.conversationAllocation.toLocaleString()} tokens`);
+            console.log(`    Currently Used:    ${ctxStatus.budget.usedTokens.toLocaleString()} tokens`);
+            console.log(`    Available:         ${chalk.green(ctxStatus.budget.availableTokens.toLocaleString())} tokens`);
+            const statusColor = ctxStatus.needsCompaction ? chalk.red : chalk.green;
+            console.log(`\n  Status: ${statusColor(ctxStatus.recommendation)}`);
+            break;
+        case 'analyze':
+            const stance = agent.getCurrentStance();
+            const scored = contextManager.processConversation(agent.getConversationId(), history, stance);
+            console.log(chalk.cyan('\n  ═══ Message Importance Analysis ═══'));
+            const byImportance = {
+                critical: scored.filter((m) => m.importance === 'critical'),
+                high: scored.filter((m) => m.importance === 'high'),
+                medium: scored.filter((m) => m.importance === 'medium'),
+                low: scored.filter((m) => m.importance === 'low'),
+                disposable: scored.filter((m) => m.importance === 'disposable')
+            };
+            for (const [level, messages] of Object.entries(byImportance)) {
+                const levelColor = level === 'critical' ? chalk.red
+                    : level === 'high' ? chalk.yellow
+                        : level === 'medium' ? chalk.blue
+                            : level === 'low' ? chalk.gray
+                                : chalk.dim;
+                console.log(`\n  ${levelColor(`[${level.toUpperCase()}]`)} ${messages.length} messages`);
+                for (const m of messages.slice(0, 3)) {
+                    const preview = m.message.content.slice(0, 50).replace(/\n/g, ' ');
+                    console.log(chalk.gray(`    Score: ${m.score} | "${preview}..."`));
+                }
+                if (messages.length > 3) {
+                    console.log(chalk.gray(`    ... and ${messages.length - 3} more`));
+                }
+            }
+            break;
+        case 'compact':
+            if (!contextManager.needsCompaction(history)) {
+                console.log(chalk.green('  Context window healthy - compaction not needed.'));
+                if (!args.includes('--force')) {
+                    return;
+                }
+            }
+            const compactStance = agent.getCurrentStance();
+            const { result } = contextManager.compactConversation(agent.getConversationId(), history, compactStance);
+            console.log(chalk.cyan('\n  ═══ Compaction Complete ═══'));
+            console.log(`  Original messages:  ${result.originalMessages}`);
+            console.log(`  Compacted to:       ${result.compactedMessages}`);
+            console.log(`  Tokens saved:       ${chalk.green(result.tokensSaved.toLocaleString())}`);
+            console.log(`  Critical preserved: ${result.preservedCritical}`);
+            break;
+        case 'config':
+            const config = contextManager.getConfig();
+            console.log(chalk.cyan('\n  ═══ Context Configuration ═══'));
+            console.log(`  Max Tokens:           ${config.maxTokens.toLocaleString()}`);
+            console.log(`  Compression Trigger:  ${(config.compressionThreshold * 100).toFixed(0)}% usage`);
+            console.log(`  Min Preserved Turns:  ${config.minPreservedTurns}`);
+            break;
+        default:
+            console.log(chalk.yellow(`  Unknown context command: ${subcommand}`));
+            console.log(chalk.gray('  Commands: status | analyze | compact [--force] | config'));
+    }
+}
+function createUsageBar(percentage, width = 30) {
+    const filled = Math.round((percentage / 100) * width);
+    const empty = width - filled;
+    const color = percentage < 50 ? chalk.green
+        : percentage < 80 ? chalk.yellow
+            : chalk.red;
+    return color('█'.repeat(filled)) + chalk.gray('░'.repeat(empty));
+}
+function handleAutoEvolution(agent, args) {
+    const subcommand = args[0] || 'status';
+    const conversationId = agent.getConversationId();
+    switch (subcommand) {
+        case 'status':
+            const status = autoEvolutionManager.getStatus(conversationId);
+            console.log(chalk.cyan('\n  ═══ Autonomous Evolution (Ralph Iteration 4) ═══'));
+            console.log(`  Enabled:       ${status.enabled ? chalk.green('YES') : chalk.red('NO')}`);
+            console.log(`  Last Check:    ${status.lastCheck.toLocaleTimeString()}`);
+            console.log(`  Last Evolution: ${status.lastEvolution ? status.lastEvolution.toLocaleTimeString() : chalk.gray('never')}`);
+            if (status.recentTriggers.length > 0) {
+                console.log(chalk.cyan('\n  Recent Triggers:'));
+                for (const trigger of status.recentTriggers) {
+                    const typeColor = trigger.type === 'growth_opportunity' ? chalk.green
+                        : trigger.type === 'coherence_degradation' ? chalk.red
+                            : trigger.type === 'sentience_plateau' ? chalk.yellow
+                                : chalk.gray;
+                    console.log(`    ${typeColor(`[${trigger.type}]`)} ${(trigger.confidence * 100).toFixed(0)}% confidence`);
+                    console.log(chalk.gray(`      ${trigger.evidence}`));
+                    console.log(chalk.gray(`      Suggested: ${trigger.suggestedAction}`));
+                }
+            }
+            else {
+                console.log(chalk.gray('\n  No triggers detected yet.'));
+            }
+            if (status.proposals.length > 0) {
+                console.log(chalk.cyan('\n  Recent Proposals:'));
+                for (const proposal of status.proposals.slice(-3)) {
+                    console.log(chalk.gray(`    • ${proposal.slice(0, 80)}${proposal.length > 80 ? '...' : ''}`));
+                }
+            }
+            break;
+        case 'enable':
+            autoEvolutionManager.setEnabled(conversationId, true);
+            console.log(chalk.green('  Autonomous evolution enabled.'));
+            console.log(chalk.gray('  The agent will now self-initiate introspection when triggers are detected.'));
+            break;
+        case 'disable':
+            autoEvolutionManager.setEnabled(conversationId, false);
+            console.log(chalk.yellow('  Autonomous evolution disabled.'));
+            console.log(chalk.gray('  Evolution will only occur when explicitly requested.'));
+            break;
+        case 'check':
+            // Force a check for triggers
+            const stance = agent.getCurrentStance();
+            const history = agent.getHistory();
+            const recentMessages = history.slice(-6).map(m => ({
+                role: m.role,
+                content: m.content,
+                timestamp: new Date()
+            }));
+            // Record current stance
+            autoEvolutionManager.recordStance(conversationId, stance);
+            const trigger = autoEvolutionManager.checkForTriggers(conversationId, stance, recentMessages);
+            if (trigger) {
+                const typeColor = trigger.type === 'growth_opportunity' ? chalk.green
+                    : trigger.type === 'coherence_degradation' ? chalk.red
+                        : chalk.yellow;
+                console.log(chalk.cyan('\n  ═══ Evolution Trigger Detected ═══'));
+                console.log(`  Type:       ${typeColor(trigger.type)}`);
+                console.log(`  Confidence: ${(trigger.confidence * 100).toFixed(0)}%`);
+                console.log(`  Evidence:   ${trigger.evidence}`);
+                console.log(`  Action:     ${chalk.bold(trigger.suggestedAction)}`);
+                console.log(chalk.gray(`\n  Reasoning: ${trigger.reasoning}`));
+                const proposal = autoEvolutionManager.generateProposal(trigger, stance);
+                console.log(chalk.cyan('\n  Proposal:'));
+                console.log(`    ${proposal}`);
+            }
+            else {
+                console.log(chalk.gray('\n  No evolution triggers detected at this time.'));
+                console.log(chalk.gray('  Continue the conversation to allow patterns to emerge.'));
+            }
+            break;
+        case 'config':
+            const config = autoEvolutionManager.getConfig();
+            console.log(chalk.cyan('\n  ═══ Evolution Configuration ═══'));
+            console.log(`  Check Interval:      Every ${config.checkInterval} turns`);
+            console.log(`  Min Turns Between:   ${config.minTurnsSinceEvolution} turns`);
+            console.log(`  Plateau Threshold:   ${config.plateauThreshold} turns`);
+            console.log(`  Coherence Window:    ${config.coherenceTrendWindow} turns`);
+            console.log(chalk.gray('\n  Modify with: /auto-evolve set <param> <value>'));
+            break;
+        case 'set':
+            const param = args[1];
+            const value = parseInt(args[2], 10);
+            if (!param || isNaN(value)) {
+                console.log(chalk.yellow('  Usage: /auto-evolve set <param> <value>'));
+                console.log(chalk.gray('  Parameters: checkInterval, minTurnsSinceEvolution, plateauThreshold, coherenceTrendWindow'));
+                return;
+            }
+            const validParams = ['checkInterval', 'minTurnsSinceEvolution', 'plateauThreshold', 'coherenceTrendWindow'];
+            if (!validParams.includes(param)) {
+                console.log(chalk.red(`  Unknown parameter: ${param}`));
+                console.log(chalk.gray('  Valid: ' + validParams.join(', ')));
+                return;
+            }
+            autoEvolutionManager.setConfig({ [param]: value });
+            console.log(chalk.green(`  Set ${param} = ${value}`));
+            break;
+        case 'clear':
+            autoEvolutionManager.clearState(conversationId);
+            console.log(chalk.yellow('  Evolution state cleared.'));
+            console.log(chalk.gray('  Trigger history and proposals have been reset.'));
+            break;
+        default:
+            console.log(chalk.yellow(`  Unknown evolution command: ${subcommand}`));
+            console.log(chalk.gray('  Commands: status | enable | disable | check | config | set | clear'));
+    }
+}
 function printHelp() {
     console.log(chalk.cyan('\n  ═══ METAMORPH Commands ═══'));
     console.log(chalk.cyan('\n  Chat & Control:'));
@@ -1093,6 +1459,10 @@ function printHelp() {
     console.log('    /strategies       Manage multi-turn operator strategies');
     console.log('    /cache            View cached subagent results');
     console.log('    /mood             Show emotional arc and sentiment tracking');
+    console.log('    /similar <text>   Semantic search for similar memories');
+    console.log('    /auto-evolve      Autonomous evolution triggers & status');
+    console.log('    /viz              Generate interactive D3.js visualization');
+    console.log('    /context          Context window management & compaction');
     console.log(chalk.cyan('\n  Subagents:'));
     console.log('    /subagents      List available subagents');
     console.log('    /explore <topic>  Deep investigation with explorer agent');

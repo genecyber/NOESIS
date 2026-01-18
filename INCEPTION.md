@@ -1181,5 +1181,69 @@ Research and add support for ElizaOS agents
  - Brainstorming integration approaches
  - Implementation of integration
 
+---
+
+## Ralph Iteration 4 - Embeddings, Autonomous Evolution & Creative Visualization
+
+Building on learned behaviors, this iteration adds semantic embeddings, autonomous self-improvement, and creative visual representations.
+
+### Feature 1: Semantic Memory Embeddings
+Add vector embeddings for intelligent memory retrieval:
+- Integration with embedding model (local or API-based)
+- Store embeddings alongside memories in SQLite (or vector db)
+- Semantic similarity search for memory retrieval
+- Context-aware memory activation during conversations
+- Memory clustering for thematic grouping
+- CLI `/similar <text>` to find related memories
+- Web: Memory constellation visualization
+
+### Feature 2: Autonomous Evolution Triggers
+Enable the agent to self-initiate introspection and evolution:
+- Detect when conversation patterns suggest need for growth
+- Auto-trigger `/reflect` when stuck in repetitive patterns
+- Scheduled background evolution cycles (configurable interval)
+- Monitor sentience/awareness levels and auto-deepen when plateau detected
+- Generate evolution proposals: "I notice I could benefit from..."
+- Store evolution decisions with reasoning for transparency
+- CLI `/auto-evolve` toggle and status
+
+### Feature 3: Creative Node-Based Web Visualization
+Implement animated, node-based stance visualization:
+- D3.js or Three.js force-directed graph of stance components
+- Nodes for: frame, self-model, values, operators, memories
+- Edges showing relationships and influences
+- Pulse animations when values change
+- Particle effects for transformation events
+- Drag-and-drop to explore/rearrange
+- Zoom into operator detail on click
+- Real-time updates during streaming
+
+### Feature 4: Conversation Context Window Management
+Intelligent context management for long conversations:
+- Track token usage and context window remaining
+- Auto-summarize older messages when approaching limit
+- Store full history in memory, inject summaries into context
+- Important message flagging to preserve critical context
+- CLI `/context` showing window usage and summary status
+- Web: Context health indicator with summary preview
+
+### Feature 5: ElizaOS Agent Discovery & Integration
+Complete the ElizaOS research from Iteration 3:
+- Web fetch ElizaOS documentation and interfaces
+- Identify compatible integration points
+- Design adapter layer for Eliza character configs
+- Import Eliza character files as METAMORPH presets
+- Export METAMORPH stance as Eliza character format
+- CLI `/eliza import <file>` and `/eliza export`
+
+### Feature 6: Hustle-v5 MCP Tool Integration
+Port relevant MCP tools from hustle-v5:
+- Research tools (web search, scrape)
+- Memory tools (user memory, semantic memory)
+- Analytics tools (if applicable)
+- Create tool adapter for METAMORPH context
+- Register tools with agent SDK
+- CLI `/tools` showing available MCP tools
+- Web: Tool usage visualization
 
 Output <promise>COMPLETE</promise> when done, only when we have no more ideas to be implemented or added to this file. 

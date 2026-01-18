@@ -37,6 +37,37 @@ export declare class MemoryStore {
      */
     applyDecay(decayFactor?: number): void;
     /**
+     * Add memory with embedding
+     */
+    addMemoryWithEmbedding(entry: Omit<MemoryEntry, 'id'>, embedding: number[]): string;
+    /**
+     * Get all memories with embeddings for semantic search
+     */
+    getMemoriesWithEmbeddings(): Array<MemoryEntry & {
+        embedding: number[];
+    }>;
+    /**
+     * Semantic similarity search using cosine similarity
+     */
+    semanticSearch(queryEmbedding: number[], options?: {
+        type?: 'episodic' | 'semantic' | 'identity';
+        minSimilarity?: number;
+        limit?: number;
+    }): Array<MemoryEntry & {
+        similarity: number;
+    }>;
+    /**
+     * Calculate cosine similarity between two vectors
+     */
+    private cosineSimilarity;
+    /**
+     * Find similar memories to a given text (requires external embedding)
+     */
+    findSimilarByContent(content: string, existingMemories: Array<{
+        content: string;
+        embedding: number[];
+    }>): number[] | null;
+    /**
      * Save an evolution snapshot
      */
     saveEvolutionSnapshot(conversationId: string, stance: Stance, trigger: 'drift_threshold' | 'frame_shift' | 'manual' | 'session_end'): string;

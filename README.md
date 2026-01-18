@@ -13,6 +13,9 @@ METAMORPH wraps Claude via the official `@anthropic-ai/claude-agent-sdk` with tr
 - **Memory System**: SQLite-backed episodic, semantic, and identity memories
 - **Subagent System**: Specialized agents for exploration, verification, reflection, dialectic reasoning
 - **Operator Learning**: Bayesian selection based on historical effectiveness (Ralph Iteration 3)
+- **Semantic Memory**: TF-IDF embeddings with similarity search (Ralph Iteration 4)
+- **Auto-Evolution**: Self-initiated introspection triggers (Ralph Iteration 4)
+- **Context Management**: Intelligent window compaction (Ralph Iteration 4)
 
 ## Quick Start
 
@@ -424,7 +427,15 @@ npm run dev
 
 METAMORPH evolves through Ralph Loop iterations:
 
-### Ralph Iteration 3 (Current)
+### Ralph Iteration 4 (Current)
+- Semantic memory embeddings (TF-IDF + Voyage AI ready)
+- Autonomous evolution triggers (self-initiated introspection)
+- Creative D3.js web visualization for stance/transformation graphs
+- Context window management with intelligent compaction
+- ElizaOS agent discovery integration (research stub)
+- MCP tool integration framework (Hustle-v5 compatible)
+
+### Ralph Iteration 3
 - Operator performance learning system (Bayesian selection)
 - Proactive coherence budget planning
 - Multi-turn operator strategies
