@@ -404,6 +404,7 @@ export class MetamorphAgent {
     const toolsUsed: string[] = [];
     const subagentsInvoked: string[] = [];
     let responseText = '';
+    let hasStreamedText = false;
 
     try {
       const response = query({
@@ -426,12 +427,16 @@ export class MetamorphAgent {
           this.sessionId = event.session_id;
         }
 
-        // Handle assistant messages
+        // Handle assistant messages (complete text - don't emit to onText, just track)
         if (event.type === 'assistant') {
           const text = extractTextFromMessage(event);
           if (text) {
-            responseText += text;
-            callbacks.onText?.(text);
+            // Only set responseText if we haven't been streaming
+            // (streaming builds it incrementally)
+            if (!hasStreamedText) {
+              responseText = text;
+              callbacks.onText?.(text); // Only emit if no streaming happened
+            }
           }
 
           // Extract tool usage
@@ -454,16 +459,16 @@ export class MetamorphAgent {
               content_block?: { type?: string; text?: string };
             };
           };
-          // Debug: Log the stream event structure
-          if (this.verbose) {
-            console.log('[STREAM_EVENT]', JSON.stringify(streamEvent.event, null, 2));
-          }
           // Handle text delta from content_block_delta events
           if (streamEvent.event?.type === 'content_block_delta' && streamEvent.event?.delta?.text) {
+            hasStreamedText = true;
+            responseText += streamEvent.event.delta.text;
             callbacks.onText?.(streamEvent.event.delta.text);
           }
           // Also check for text in delta.text directly (fallback)
           else if (streamEvent.event?.delta?.text) {
+            hasStreamedText = true;
+            responseText += streamEvent.event.delta.text;
             callbacks.onText?.(streamEvent.event.delta.text);
           }
         }
