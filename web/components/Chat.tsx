@@ -30,7 +30,7 @@ export default function Chat({ sessionId, onSessionChange, onResponse, onStanceU
 
   const handleSubmit = useCallback(async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!input.trim() || isLoading) return;
+    if (!input.trim() || isLoading || !sessionId) return;
 
     const userMessage: Message = {
       role: 'user',
