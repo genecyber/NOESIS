@@ -414,7 +414,8 @@ app.use((err: Error, _req: Request, res: Response, _next: NextFunction) => {
 export { app };
 
 // Start server if run directly
-const PORT = process.env.PORT || 3000;
+// Default to 3001 to avoid conflict with Next.js dev server (3000)
+const PORT = process.env.PORT || 3001;
 
 export function startServer(port: number = Number(PORT)): void {
   app.listen(port, () => {
