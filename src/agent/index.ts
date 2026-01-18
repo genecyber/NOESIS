@@ -49,7 +49,15 @@ export interface MetamorphAgentOptions {
   verbose?: boolean;
   enableTransformation?: boolean;  // Defaults to true
   maxRegenerationAttempts?: number;  // Defaults to 2
+  disallowedTools?: string[];  // Tools to explicitly block
 }
+
+// All built-in Claude Code tools - allow everything by default
+const ALL_TOOLS = [
+  'Bash', 'Read', 'Write', 'Edit', 'Glob', 'Grep',
+  'WebSearch', 'WebFetch', 'Task', 'TodoWrite', 'NotebookEdit',
+  'AskUserQuestion', 'KillShell', 'TaskOutput'
+];
 
 export interface StreamCallbacks {
   onText?: (text: string) => void;
@@ -113,11 +121,13 @@ export class MetamorphAgent {
   private transformationHistory: TransformationHistoryEntry[] = [];
   private memoryStore: MemoryStore | null = null;
   private coherenceWarnings: Array<{ timestamp: Date; score: number; floor: number }> = [];
+  private disallowedTools: string[];
 
   constructor(options: MetamorphAgentOptions = {}) {
     this.config = { ...createDefaultConfig(), ...options.config };
     this.verbose = options.verbose ?? false;
     this.workingDirectory = options.workingDirectory ?? process.cwd();
+    this.disallowedTools = options.disallowedTools ?? [];
     // maxRegenerationAttempts reserved for future auto-regeneration feature
 
     // Initialize stance controller and create conversation
@@ -218,7 +228,8 @@ export class MetamorphAgent {
           permissionMode: 'acceptEdits',
           resume: this.sessionId,  // Continue session if we have one
           includePartialMessages: true,
-          allowedTools: ['WebSearch', 'WebFetch', 'Read', 'Glob', 'Grep', 'Task']
+          allowedTools: ALL_TOOLS,
+          disallowedTools: this.disallowedTools.length > 0 ? this.disallowedTools : undefined
         }
       });
 
@@ -404,7 +415,8 @@ export class MetamorphAgent {
           permissionMode: 'acceptEdits',
           resume: this.sessionId,
           includePartialMessages: true,
-          allowedTools: ['WebSearch', 'WebFetch', 'Read', 'Glob', 'Grep', 'Task']
+          allowedTools: ALL_TOOLS,
+          disallowedTools: this.disallowedTools.length > 0 ? this.disallowedTools : undefined
         }
       });
 
@@ -648,7 +660,8 @@ export class MetamorphAgent {
           systemPrompt: subagent.systemPrompt,
           permissionMode: 'acceptEdits',
           includePartialMessages: true,
-          allowedTools: ['WebSearch', 'WebFetch', 'Read', 'Glob', 'Grep', 'Task', 'Bash']
+          allowedTools: ALL_TOOLS,
+          disallowedTools: this.disallowedTools.length > 0 ? this.disallowedTools : undefined
         }
       });
 

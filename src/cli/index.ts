@@ -69,6 +69,7 @@ program
   .option('-m, --model <string>', 'Model to use', 'claude-sonnet-4-20250514')
   .option('-v, --verbose', 'Enable verbose output')
   .option('--no-stream', 'Disable streaming output')
+  .option('-d, --disallow <tools>', 'Comma-separated list of tools to disallow (e.g., Bash,Write)')
   .action(async (options) => {
     const config: Partial<ModeConfig> = {
       intensity: parseInt(options.intensity, 10),
@@ -79,9 +80,15 @@ program
 
     printBanner(config);
 
+    // Parse disallowed tools from comma-separated string
+    const disallowedTools = options.disallow
+      ? options.disallow.split(',').map((t: string) => t.trim()).filter(Boolean)
+      : [];
+
     const agent = new MetamorphAgent({
       config,
-      verbose: options.verbose
+      verbose: options.verbose,
+      disallowedTools
     });
 
     const useStreaming = options.stream !== false;
