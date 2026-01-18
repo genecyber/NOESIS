@@ -1,6 +1,7 @@
 'use client';
 
-import { useState, useRef, useEffect, useCallback } from 'react';
+import { useState, useRef, useEffect, useCallback, useMemo } from 'react';
+import ReactMarkdown from 'react-markdown';
 import type { Message, ChatResponse, Stance } from '@/lib/types';
 import { chatStream } from '@/lib/api';
 import styles from './Chat.module.css';
@@ -123,9 +124,32 @@ export default function Chat({ sessionId, onSessionChange, onResponse, onStanceU
 
   return (
     <div className={styles.chat}>
-      <div className={styles.statusBar}>
-        <span className={styles.statusDot} style={{ backgroundColor: statusColor }} />
-        <span className={styles.statusText}>{statusText}</span>
+      {/* Floating status indicator */}
+      <div
+        style={{
+          position: 'fixed',
+          top: 70,
+          right: 340,
+          display: 'flex',
+          alignItems: 'center',
+          gap: 6,
+          padding: '4px 10px',
+          background: 'rgba(30, 30, 30, 0.95)',
+          border: '1px solid #333',
+          borderRadius: 16,
+          fontSize: 11,
+          zIndex: 9999,
+          backdropFilter: 'blur(8px)',
+        }}
+      >
+        <span style={{
+          width: 6,
+          height: 6,
+          borderRadius: '50%',
+          backgroundColor: statusColor,
+          animation: 'pulse 2s infinite'
+        }} />
+        <span style={{ color: '#888' }}>{statusText}</span>
       </div>
       <div className={styles.messages}>
         {messages.length === 0 && (
@@ -140,12 +164,20 @@ export default function Chat({ sessionId, onSessionChange, onResponse, onStanceU
             key={i}
             className={`${styles.message} ${styles[msg.role]}`}
           >
-            <div className={styles.content}>{msg.content}</div>
+            <div className={styles.content}>
+              {msg.role === 'assistant' ? (
+                <ReactMarkdown>{msg.content}</ReactMarkdown>
+              ) : (
+                msg.content
+              )}
+            </div>
           </div>
         ))}
         {streamingText && (
           <div className={`${styles.message} ${styles.assistant}`}>
-            <div className={styles.content}>{streamingText}</div>
+            <div className={styles.content}>
+              <ReactMarkdown>{streamingText}</ReactMarkdown>
+            </div>
           </div>
         )}
         {isLoading && !streamingText && (
