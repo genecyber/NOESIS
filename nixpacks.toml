@@ -1,11 +1,14 @@
 # Nixpacks configuration for Railway deployment
-# dist/ is committed, so we skip build to avoid potential compilation issues
 
 [phases.setup]
 nixPkgs = ["nodejs_20"]
 
 [phases.install]
-cmds = ["npm ci --omit=dev"]
+cmds = ["npm ci"]
+cacheDirectories = []
+
+[phases.build]
+cmds = ["npm run build"]
 cacheDirectories = []
 
 [start]
