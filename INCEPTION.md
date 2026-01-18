@@ -1246,4 +1246,73 @@ Port relevant MCP tools from hustle-v5:
 - CLI `/tools` showing available MCP tools
 - Web: Tool usage visualization
 
+---
+
+## Ralph Iteration 5 - Multi-Modal, Persistence & Real-Time Collaboration
+
+Enhance METAMORPH with multi-modal capabilities, robust identity persistence, and real-time collaborative features.
+
+### Feature 1: Multi-Modal Memory & Analysis
+Extend memory system to handle images and structured data:
+- Store image references with embedding-based descriptions
+- Screenshot analysis via Claude's vision capability
+- Diagram/chart interpretation and memory storage
+- Multi-modal memory search (find memories related to an image)
+- CLI `/memory upload <image>` to store visual memory
+- CLI `/analyze <image>` for visual analysis with stance context
+- Web: Image gallery in memory browser
+
+### Feature 2: Cross-Session Identity Persistence
+Enable true identity continuity across sessions:
+- Identity checkpoint system (save/restore full identity state)
+- Auto-detect identity drift between sessions and reconcile
+- Identity evolution timeline with milestone markers
+- "Core values" that persist even through major transformations
+- Personality fingerprint that recognizes returning users
+- CLI `/identity save <name>` and `/identity restore <name>`
+- CLI `/identity diff` showing changes since last checkpoint
+- Web: Identity evolution graph with branch/merge visualization
+
+### Feature 3: Real-Time Collaborative Sessions
+Allow multiple participants in conversations:
+- WebSocket-based real-time message sync
+- Participant presence indicators
+- Turn-taking or free-form conversation modes
+- Agent stance visible to all participants
+- Collaborative transformation voting (majority decides operator)
+- Session recording and playback
+- CLI `/collab start` and `/collab join <code>`
+- Web: Multi-user chat interface with stance visibility
+
+### Feature 4: Proactive Memory Injection
+Automatically inject relevant memories into context:
+- Background memory scan during user typing
+- Relevance scoring combining: semantic similarity, recency, importance
+- Smart injection: only add memories that enhance response quality
+- Memory attribution in responses ("I recall from our earlier discussion...")
+- Configurable injection aggressiveness
+- CLI `/memory auto on|off` toggle
+- Web: Memory activation indicators during conversation
+
+### Feature 5: Adaptive Response Streaming with Coherence Gates
+Enhance streaming with real-time coherence monitoring:
+- Token-by-token coherence scoring during generation
+- Early termination if coherence drops below threshold
+- Automatic backtrack and regenerate problematic segments
+- Visual coherence wave in streaming UI
+- Predictive coherence warnings before response starts
+- CLI streaming shows inline coherence indicators
+- Web: Coherence health bar during streaming
+
+### Feature 6: Plugin Architecture for Custom Operators
+Enable extensibility through plugins:
+- Plugin manifest format for custom operators
+- Hot-reload plugins without restart
+- Plugin isolation (sandboxed execution)
+- Plugin marketplace concept (registry of community operators)
+- Built-in plugins: poetry mode, coding focus, debate champion
+- CLI `/plugins list|install|remove`
+- Web: Plugin manager with enable/disable toggles
+- API for third-party operator development
+
 Output <promise>COMPLETE</promise> when done, only when we have no more ideas to be implemented or added to this file. 
