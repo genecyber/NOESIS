@@ -119,7 +119,8 @@ describe('Config Component', () => {
     const onUpdate = vi.fn();
     render(<Config config={mockConfig} onUpdate={onUpdate} />);
 
-    expect(screen.getByText('50%')).toBeInTheDocument(); // intensity
+    // Use getAllByText since intensity and sentience both show 50%
+    expect(screen.getAllByText('50%').length).toBeGreaterThan(0);
     expect(screen.getByText('30%')).toBeInTheDocument(); // coherenceFloor
   });
 

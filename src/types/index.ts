@@ -263,6 +263,7 @@ export interface AgentResponse {
   scores: TurnScores;
   toolsUsed: string[];
   subagentsInvoked: string[];
+  coherenceWarning?: string;  // Warning when coherence score is below floor
 }
 
 // ============================================================================

@@ -94,6 +94,24 @@ export class MemoryStore {
       CREATE INDEX IF NOT EXISTS idx_semantic_type
       ON semantic_memory(type)
     `);
+
+    // Evolution snapshots table (Ralph Iteration 1 - Feature 4)
+    this.db.exec(`
+      CREATE TABLE IF NOT EXISTS evolution_snapshots (
+        id TEXT PRIMARY KEY,
+        conversation_id TEXT NOT NULL,
+        stance TEXT NOT NULL,
+        trigger TEXT NOT NULL,
+        drift_at_snapshot INTEGER NOT NULL,
+        timestamp TEXT NOT NULL
+      )
+    `);
+
+    // Create index on conversation_id for evolution snapshots
+    this.db.exec(`
+      CREATE INDEX IF NOT EXISTS idx_evolution_conversation
+      ON evolution_snapshots(conversation_id)
+    `);
   }
 
   // ============================================================================
@@ -392,6 +410,121 @@ export class MemoryStore {
   }
 
   // ============================================================================
+  // Evolution Persistence (Ralph Iteration 1 - Feature 4)
+  // ============================================================================
+
+  /**
+   * Save an evolution snapshot
+   */
+  saveEvolutionSnapshot(
+    conversationId: string,
+    stance: Stance,
+    trigger: 'drift_threshold' | 'frame_shift' | 'manual' | 'session_end'
+  ): string {
+    const id = uuidv4();
+
+    this.db.prepare(`
+      INSERT INTO evolution_snapshots (id, conversation_id, stance, trigger, drift_at_snapshot, timestamp)
+      VALUES (?, ?, ?, ?, ?, ?)
+    `).run(
+      id,
+      conversationId,
+      JSON.stringify(stance),
+      trigger,
+      stance.cumulativeDrift,
+      new Date().toISOString()
+    );
+
+    return id;
+  }
+
+  /**
+   * Get the latest evolution snapshot for a conversation
+   */
+  getLatestSnapshot(conversationId: string): { stance: Stance; trigger: string; timestamp: Date } | null {
+    const row = this.db.prepare(`
+      SELECT stance, trigger, timestamp
+      FROM evolution_snapshots
+      WHERE conversation_id = ?
+      ORDER BY timestamp DESC
+      LIMIT 1
+    `).get(conversationId) as { stance: string; trigger: string; timestamp: string } | undefined;
+
+    if (!row) return null;
+
+    return {
+      stance: JSON.parse(row.stance),
+      trigger: row.trigger,
+      timestamp: new Date(row.timestamp)
+    };
+  }
+
+  /**
+   * Get the latest snapshot across all conversations (for session resume)
+   */
+  getGlobalLatestSnapshot(): { conversationId: string; stance: Stance; trigger: string; timestamp: Date } | null {
+    const row = this.db.prepare(`
+      SELECT conversation_id, stance, trigger, timestamp
+      FROM evolution_snapshots
+      ORDER BY timestamp DESC
+      LIMIT 1
+    `).get() as { conversation_id: string; stance: string; trigger: string; timestamp: string } | undefined;
+
+    if (!row) return null;
+
+    return {
+      conversationId: row.conversation_id,
+      stance: JSON.parse(row.stance),
+      trigger: row.trigger,
+      timestamp: new Date(row.timestamp)
+    };
+  }
+
+  /**
+   * Get evolution timeline for a conversation
+   */
+  getEvolutionTimeline(conversationId: string, limit: number = 20): Array<{
+    id: string;
+    stance: Stance;
+    trigger: string;
+    driftAtSnapshot: number;
+    timestamp: Date;
+  }> {
+    const rows = this.db.prepare(`
+      SELECT id, stance, trigger, drift_at_snapshot, timestamp
+      FROM evolution_snapshots
+      WHERE conversation_id = ?
+      ORDER BY timestamp DESC
+      LIMIT ?
+    `).all(conversationId, limit) as Array<{
+      id: string;
+      stance: string;
+      trigger: string;
+      drift_at_snapshot: number;
+      timestamp: string;
+    }>;
+
+    return rows.map(row => ({
+      id: row.id,
+      stance: JSON.parse(row.stance),
+      trigger: row.trigger,
+      driftAtSnapshot: row.drift_at_snapshot,
+      timestamp: new Date(row.timestamp)
+    }));
+  }
+
+  /**
+   * Check if a snapshot should be auto-saved (based on drift threshold)
+   */
+  shouldAutoSnapshot(conversationId: string, currentDrift: number, threshold: number = 20): boolean {
+    const latest = this.getLatestSnapshot(conversationId);
+    if (!latest) return currentDrift >= threshold;
+
+    const driftSinceSnapshot = currentDrift - latest.stance.cumulativeDrift;
+    return driftSinceSnapshot >= threshold;
+  }
+
+  // ============================================================================
   // Utility
   // ============================================================================
 
@@ -407,5 +540,6 @@ export class MemoryStore {
     this.db.prepare('DELETE FROM conversations').run();
     this.db.prepare('DELETE FROM identity').run();
     this.db.prepare('DELETE FROM semantic_memory').run();
+    this.db.prepare('DELETE FROM evolution_snapshots').run();
   }
 }

@@ -1,29 +1,34 @@
 'use client';
 
-import { useState, useRef, useEffect } from 'react';
-import type { Message, ChatResponse } from '@/lib/types';
+import { useState, useRef, useEffect, useCallback } from 'react';
+import type { Message, ChatResponse, Stance } from '@/lib/types';
 import { chatStream } from '@/lib/api';
 import styles from './Chat.module.css';
+
+type ConnectionStatus = 'connected' | 'disconnected' | 'streaming';
 
 interface ChatProps {
   sessionId: string | undefined;
   onSessionChange?: (sessionId: string) => void;
   onResponse?: (response: ChatResponse) => void;
+  onStanceUpdate?: (stance: Stance) => void;
 }
 
-export default function Chat({ sessionId, onSessionChange, onResponse }: ChatProps) {
+export default function Chat({ sessionId, onSessionChange, onResponse, onStanceUpdate }: ChatProps) {
   const [messages, setMessages] = useState<Message[]>([]);
   const [input, setInput] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const [streamingText, setStreamingText] = useState('');
+  const [connectionStatus, setConnectionStatus] = useState<ConnectionStatus>('connected');
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const abortRef = useRef<(() => void) | null>(null);
+  const accumulatedTextRef = useRef<string>('');
 
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [messages, streamingText]);
 
-  const handleSubmit = async (e: React.FormEvent) => {
+  const handleSubmit = useCallback(async (e: React.FormEvent) => {
     e.preventDefault();
     if (!input.trim() || isLoading) return;
 
@@ -37,23 +42,34 @@ export default function Chat({ sessionId, onSessionChange, onResponse }: ChatPro
     setInput('');
     setIsLoading(true);
     setStreamingText('');
+    setConnectionStatus('streaming');
+    accumulatedTextRef.current = '';
 
     abortRef.current = chatStream(sessionId, userMessage.content, {
       onText: (text) => {
-        setStreamingText(prev => prev + text);
+        accumulatedTextRef.current += text;
+        setStreamingText(accumulatedTextRef.current);
       },
       onComplete: (data) => {
         setIsLoading(false);
+        setConnectionStatus('connected');
+        const finalContent = accumulatedTextRef.current || data.response;
         setMessages(prev => [
           ...prev,
           {
             role: 'assistant',
-            content: streamingText || data.response,
+            content: finalContent,
             timestamp: Date.now(),
           },
         ]);
         setStreamingText('');
+        accumulatedTextRef.current = '';
         onResponse?.(data);
+
+        // Notify of stance update
+        if (data.stanceAfter && onStanceUpdate) {
+          onStanceUpdate(data.stanceAfter);
+        }
 
         // If we get a new session ID, notify parent
         if ((data as unknown as { sessionId?: string }).sessionId && onSessionChange) {
@@ -62,7 +78,9 @@ export default function Chat({ sessionId, onSessionChange, onResponse }: ChatPro
       },
       onError: (error) => {
         setIsLoading(false);
+        setConnectionStatus('disconnected');
         setStreamingText('');
+        accumulatedTextRef.current = '';
         setMessages(prev => [
           ...prev,
           {
@@ -71,15 +89,19 @@ export default function Chat({ sessionId, onSessionChange, onResponse }: ChatPro
             timestamp: Date.now(),
           },
         ]);
+
+        // Auto-reconnect after 3 seconds
+        setTimeout(() => setConnectionStatus('connected'), 3000);
       },
     });
-  };
+  }, [input, isLoading, sessionId, onResponse, onStanceUpdate, onSessionChange]);
 
   const handleStop = () => {
     if (abortRef.current) {
       abortRef.current();
       abortRef.current = null;
       setIsLoading(false);
+      setConnectionStatus('connected');
       if (streamingText) {
         setMessages(prev => [
           ...prev,
@@ -87,11 +109,24 @@ export default function Chat({ sessionId, onSessionChange, onResponse }: ChatPro
         ]);
         setStreamingText('');
       }
+      accumulatedTextRef.current = '';
     }
   };
 
+  const statusColor = connectionStatus === 'connected' ? '#10b981'
+    : connectionStatus === 'streaming' ? '#3b82f6'
+    : '#ef4444';
+
+  const statusText = connectionStatus === 'connected' ? 'Connected'
+    : connectionStatus === 'streaming' ? 'Streaming...'
+    : 'Reconnecting...';
+
   return (
     <div className={styles.chat}>
+      <div className={styles.statusBar}>
+        <span className={styles.statusDot} style={{ backgroundColor: statusColor }} />
+        <span className={styles.statusText}>{statusText}</span>
+      </div>
       <div className={styles.messages}>
         {messages.length === 0 && (
           <div className={styles.welcome}>

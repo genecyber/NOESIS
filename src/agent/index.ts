@@ -28,12 +28,27 @@ import {
   type SubagentDefinition,
   type SubagentContext
 } from './subagents/index.js';
+import { MemoryStore } from '../memory/index.js';
+import type { MemoryEntry } from '../types/index.js';
+
+/**
+ * Transformation history entry
+ */
+export interface TransformationHistoryEntry {
+  timestamp: Date;
+  stanceBefore: Stance;
+  stanceAfter: Stance;
+  operators: PlannedOperation[];
+  scores: TurnScores;
+  userMessage: string;
+}
 
 export interface MetamorphAgentOptions {
   config?: Partial<ModeConfig>;
   workingDirectory?: string;
   verbose?: boolean;
   enableTransformation?: boolean;  // Defaults to true
+  maxRegenerationAttempts?: number;  // Defaults to 2
 }
 
 export interface StreamCallbacks {
@@ -95,11 +110,15 @@ export class MetamorphAgent {
   private verbose: boolean;
   private workingDirectory: string;
   private sessionId: string | undefined;
+  private transformationHistory: TransformationHistoryEntry[] = [];
+  private memoryStore: MemoryStore | null = null;
+  private coherenceWarnings: Array<{ timestamp: Date; score: number; floor: number }> = [];
 
   constructor(options: MetamorphAgentOptions = {}) {
     this.config = { ...createDefaultConfig(), ...options.config };
     this.verbose = options.verbose ?? false;
     this.workingDirectory = options.workingDirectory ?? process.cwd();
+    // maxRegenerationAttempts reserved for future auto-regeneration feature
 
     // Initialize stance controller and create conversation
     this.stanceController = new StanceController();
@@ -250,6 +269,8 @@ export class MetamorphAgent {
       overall: 50
     };
 
+    let coherenceWarning: string | undefined;
+
     if (this.hooks) {
       const postTurnContext: PostTurnContext = {
         message,
@@ -263,6 +284,19 @@ export class MetamorphAgent {
       const postTurnResult = this.hooks.postTurn(postTurnContext);
       stanceAfter = postTurnResult.stanceAfter;
       scores = postTurnResult.scores;
+
+      // Check coherence floor (Ralph Iteration 1 - Feature 5)
+      if (postTurnResult.shouldRegenerate) {
+        coherenceWarning = postTurnResult.regenerationReason;
+        this.coherenceWarnings.push({
+          timestamp: new Date(),
+          score: scores.coherence,
+          floor: this.config.coherenceFloor
+        });
+        if (this.verbose) {
+          console.log(`[METAMORPH] Coherence warning: ${coherenceWarning}`);
+        }
+      }
 
       // Apply stance changes
       if (stanceAfter !== stanceBefore) {
@@ -302,6 +336,12 @@ export class MetamorphAgent {
       console.log(`[METAMORPH] Post-turn complete. Scores: T=${scores.transformation} C=${scores.coherence} S=${scores.sentience}`);
     }
 
+    // Record transformation in history
+    this.recordTransformation(stanceBefore, stanceAfter, operators, scores, message);
+
+    // Check for auto-snapshot (evolution persistence)
+    this.checkAndAutoSnapshot(stanceAfter);
+
     return {
       response: responseText,
       stanceBefore,
@@ -309,7 +349,8 @@ export class MetamorphAgent {
       operationsApplied: operators,
       scores,
       toolsUsed,
-      subagentsInvoked
+      subagentsInvoked,
+      coherenceWarning
     };
   }
 
@@ -406,6 +447,7 @@ export class MetamorphAgent {
         sentience: stanceBefore.sentience.awarenessLevel,
         overall: 50
       };
+      let coherenceWarning: string | undefined;
 
       if (this.hooks) {
         const postTurnResult = this.hooks.postTurn({
@@ -418,6 +460,19 @@ export class MetamorphAgent {
         });
         stanceAfter = postTurnResult.stanceAfter;
         scores = postTurnResult.scores;
+
+        // Check coherence floor (Ralph Iteration 1 - Feature 5)
+        if (postTurnResult.shouldRegenerate) {
+          coherenceWarning = postTurnResult.regenerationReason;
+          this.coherenceWarnings.push({
+            timestamp: new Date(),
+            score: scores.coherence,
+            floor: this.config.coherenceFloor
+          });
+          if (this.verbose) {
+            console.log(`[METAMORPH] Coherence warning: ${coherenceWarning}`);
+          }
+        }
 
         if (stanceAfter !== stanceBefore) {
           this.stanceController.applyDelta(this.conversationId, {
@@ -445,6 +500,12 @@ export class MetamorphAgent {
         toolsUsed
       });
 
+      // Record transformation in history
+      this.recordTransformation(stanceBefore, stanceAfter, operators, scores, message);
+
+      // Check for auto-snapshot (evolution persistence)
+      this.checkAndAutoSnapshot(stanceAfter);
+
       const result: AgentResponse = {
         response: responseText,
         stanceBefore,
@@ -452,7 +513,8 @@ export class MetamorphAgent {
         operationsApplied: operators,
         scores,
         toolsUsed,
-        subagentsInvoked
+        subagentsInvoked,
+        coherenceWarning
       };
 
       callbacks.onComplete?.(result);
@@ -658,5 +720,222 @@ export class MetamorphAgent {
       `Apply dialectic reasoning to: ${thesis}`,
       callbacks
     );
+  }
+
+  // ============================================================================
+  // Transformation History (Ralph Iteration 1 - Feature 1)
+  // ============================================================================
+
+  /**
+   * Get transformation history
+   */
+  getTransformationHistory(): TransformationHistoryEntry[] {
+    return [...this.transformationHistory];
+  }
+
+  /**
+   * Record a transformation in history
+   */
+  private recordTransformation(
+    stanceBefore: Stance,
+    stanceAfter: Stance,
+    operators: PlannedOperation[],
+    scores: TurnScores,
+    userMessage: string
+  ): void {
+    this.transformationHistory.push({
+      timestamp: new Date(),
+      stanceBefore,
+      stanceAfter,
+      operators,
+      scores,
+      userMessage
+    });
+  }
+
+  // ============================================================================
+  // Memory Access (Ralph Iteration 1 - Feature 1)
+  // ============================================================================
+
+  /**
+   * Initialize memory store if not already initialized
+   */
+  private ensureMemoryStore(): MemoryStore {
+    if (!this.memoryStore) {
+      this.memoryStore = new MemoryStore({ inMemory: true });
+    }
+    return this.memoryStore;
+  }
+
+  /**
+   * Store a memory
+   */
+  storeMemory(content: string, type: 'episodic' | 'semantic' | 'identity' = 'semantic', importance: number = 0.5): string {
+    const store = this.ensureMemoryStore();
+    return store.addMemory({
+      type,
+      content,
+      importance,
+      decay: 0.99,
+      timestamp: new Date(),
+      metadata: { conversationId: this.conversationId }
+    });
+  }
+
+  /**
+   * Search memories
+   */
+  searchMemories(query: {
+    type?: 'episodic' | 'semantic' | 'identity';
+    minImportance?: number;
+    limit?: number;
+  } = {}): MemoryEntry[] {
+    const store = this.ensureMemoryStore();
+    return store.searchMemories(query);
+  }
+
+  /**
+   * Get all memories
+   */
+  getAllMemories(limit: number = 50): MemoryEntry[] {
+    return this.searchMemories({ limit });
+  }
+
+  /**
+   * Set a persistent memory store path
+   */
+  setMemoryStorePath(dbPath: string): void {
+    if (this.memoryStore) {
+      this.memoryStore.close();
+    }
+    this.memoryStore = new MemoryStore({ dbPath });
+  }
+
+  // ============================================================================
+  // Evolution Persistence (Ralph Iteration 1 - Feature 4)
+  // ============================================================================
+
+  /**
+   * Enable evolution persistence with auto-snapshotting
+   */
+  enableEvolutionPersistence(dbPath?: string): void {
+    if (dbPath) {
+      this.setMemoryStorePath(dbPath);
+    } else {
+      this.ensureMemoryStore();
+    }
+  }
+
+  /**
+   * Check and auto-snapshot if drift threshold exceeded
+   */
+  private checkAndAutoSnapshot(stance: Stance): void {
+    if (!this.memoryStore) return;
+
+    if (this.memoryStore.shouldAutoSnapshot(this.conversationId, stance.cumulativeDrift, this.config.maxDriftPerTurn * 2)) {
+      this.memoryStore.saveEvolutionSnapshot(this.conversationId, stance, 'drift_threshold');
+      if (this.verbose) {
+        console.log(`[METAMORPH] Evolution snapshot saved (drift threshold reached)`);
+      }
+    }
+  }
+
+  /**
+   * Save an evolution snapshot manually
+   */
+  saveEvolutionSnapshot(trigger: 'manual' | 'session_end' = 'manual'): string | null {
+    if (!this.memoryStore) {
+      this.ensureMemoryStore();
+    }
+    const stance = this.getCurrentStance();
+    return this.memoryStore!.saveEvolutionSnapshot(this.conversationId, stance, trigger);
+  }
+
+  /**
+   * Get evolution timeline for current conversation
+   */
+  getEvolutionTimeline(limit: number = 20): Array<{
+    id: string;
+    stance: Stance;
+    trigger: string;
+    driftAtSnapshot: number;
+    timestamp: Date;
+  }> {
+    if (!this.memoryStore) return [];
+    return this.memoryStore.getEvolutionTimeline(this.conversationId, limit);
+  }
+
+  /**
+   * Resume from the latest evolution snapshot
+   */
+  static resumeFromEvolution(dbPath: string, options?: MetamorphAgentOptions): MetamorphAgent | null {
+    const store = new MemoryStore({ dbPath });
+    const snapshot = store.getGlobalLatestSnapshot();
+
+    if (!snapshot) {
+      store.close();
+      return null;
+    }
+
+    // Create a new agent with the snapshot stance
+    const agent = new MetamorphAgent(options);
+    agent.memoryStore = store;
+
+    // Apply the snapshot stance
+    agent.stanceController.applyDelta(agent.conversationId, {
+      frame: snapshot.stance.frame,
+      values: snapshot.stance.values,
+      selfModel: snapshot.stance.selfModel,
+      objective: snapshot.stance.objective,
+      sentience: snapshot.stance.sentience
+    });
+
+    if (agent.verbose) {
+      console.log(`[METAMORPH] Resumed from evolution snapshot (${snapshot.trigger}) from ${snapshot.timestamp.toISOString()}`);
+    }
+
+    return agent;
+  }
+
+  // ============================================================================
+  // Coherence Floor Enforcement (Ralph Iteration 1 - Feature 5)
+  // ============================================================================
+
+  /**
+   * Get coherence warnings from this session
+   */
+  getCoherenceWarnings(): Array<{ timestamp: Date; score: number; floor: number }> {
+    return [...this.coherenceWarnings];
+  }
+
+  /**
+   * Check if the current coherence floor is being violated frequently
+   */
+  getCoherenceHealth(): {
+    warningCount: number;
+    averageScore: number | null;
+    isHealthy: boolean;
+  } {
+    const warnings = this.coherenceWarnings;
+    if (warnings.length === 0) {
+      return { warningCount: 0, averageScore: null, isHealthy: true };
+    }
+
+    const avgScore = warnings.reduce((sum, w) => sum + w.score, 0) / warnings.length;
+    // Consider unhealthy if more than 3 warnings in session
+    const isHealthy = warnings.length <= 3;
+
+    return {
+      warningCount: warnings.length,
+      averageScore: Math.round(avgScore),
+      isHealthy
+    };
+  }
+
+  /**
+   * Clear coherence warnings (e.g., after adjusting the floor)
+   */
+  clearCoherenceWarnings(): void {
+    this.coherenceWarnings = [];
   }
 }

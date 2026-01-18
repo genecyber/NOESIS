@@ -318,6 +318,11 @@ async function handleStreamingChat(agent: MetamorphAgent, input: string): Promis
       if (result.toolsUsed.length > 0) {
         console.log(chalk.gray(`  [Tools: ${result.toolsUsed.join(', ')}]`));
       }
+
+      // Show coherence warning if any (Ralph Iteration 1 - Feature 5)
+      if (result.coherenceWarning) {
+        console.log(chalk.yellow(`  ⚠ Coherence Warning: ${result.coherenceWarning}`));
+      }
     },
     onError: (error) => {
       currentAbortController = null;
@@ -447,6 +452,15 @@ async function handleCommand(
 
     case 'glow':
       printGlowStatus();
+      break;
+
+    case 'memories':
+      printMemories(agent, args.length > 0 ? args[0] : undefined);
+      break;
+
+    case 'transformations':
+    case 'transforms':
+      printTransformations(agent);
       break;
 
     case 'quit':
@@ -722,6 +736,70 @@ function valueBar(value: number, width: number = 20): string {
   return `${bar} ${value}%`;
 }
 
+function printMemories(agent: MetamorphAgent, typeFilter?: string): void {
+  const validTypes = ['episodic', 'semantic', 'identity'] as const;
+  const filterType = typeFilter && validTypes.includes(typeFilter as typeof validTypes[number])
+    ? typeFilter as 'episodic' | 'semantic' | 'identity'
+    : undefined;
+
+  const memories = agent.searchMemories({ type: filterType, limit: 20 });
+  console.log(chalk.cyan(`\n  ═══ Memories${filterType ? ` (${filterType})` : ''} ═══`));
+
+  if (memories.length === 0) {
+    console.log(chalk.gray('  No memories stored yet.'));
+    console.log(chalk.gray('\n  Memories are created during conversation as important'));
+    console.log(chalk.gray('  information is detected and stored automatically.'));
+    return;
+  }
+
+  memories.forEach((mem, i) => {
+    const typeColor = mem.type === 'identity' ? chalk.magenta
+      : mem.type === 'episodic' ? chalk.blue
+      : chalk.green;
+    const preview = mem.content.slice(0, 60).replace(/\n/g, ' ');
+    const importance = Math.round(mem.importance * 100);
+    console.log(`  ${i + 1}. ${typeColor(`[${mem.type}]`)} ${preview}${mem.content.length > 60 ? '...' : ''}`);
+    console.log(chalk.gray(`     Importance: ${importance}% | ${mem.timestamp.toLocaleString()}`));
+  });
+
+  console.log(chalk.gray(`\n  Filter by type: /memories episodic | semantic | identity`));
+}
+
+function printTransformations(agent: MetamorphAgent): void {
+  const history = agent.getTransformationHistory();
+  console.log(chalk.cyan(`\n  ═══ Transformation History (${history.length} entries) ═══`));
+
+  if (history.length === 0) {
+    console.log(chalk.gray('  No transformations recorded yet.'));
+    return;
+  }
+
+  history.slice(-10).forEach((entry, i) => {
+    const frameChanged = entry.stanceBefore.frame !== entry.stanceAfter.frame;
+    const selfChanged = entry.stanceBefore.selfModel !== entry.stanceAfter.selfModel;
+
+    console.log(chalk.cyan(`\n  [${i + 1}] ${entry.timestamp.toLocaleTimeString()}`));
+    console.log(`  Message: "${entry.userMessage.slice(0, 40)}${entry.userMessage.length > 40 ? '...' : ''}"`);
+
+    if (entry.operators.length > 0) {
+      console.log(`  Operators: ${chalk.yellow(entry.operators.map(o => o.name).join(', '))}`);
+    }
+
+    if (frameChanged) {
+      console.log(`  Frame: ${entry.stanceBefore.frame} → ${chalk.bold(entry.stanceAfter.frame)}`);
+    }
+    if (selfChanged) {
+      console.log(`  Self: ${entry.stanceBefore.selfModel} → ${chalk.bold(entry.stanceAfter.selfModel)}`);
+    }
+
+    console.log(chalk.gray(`  Scores: T=${entry.scores.transformation} C=${entry.scores.coherence} S=${entry.scores.sentience}`));
+  });
+
+  if (history.length > 10) {
+    console.log(chalk.gray(`\n  ... and ${history.length - 10} earlier entries`));
+  }
+}
+
 function printHelp(): void {
   console.log(chalk.cyan('\n  ═══ METAMORPH Commands ═══'));
   console.log(chalk.cyan('\n  Chat & Control:'));
@@ -731,6 +809,9 @@ function printHelp(): void {
   console.log('    /mode           Change mode settings (frame, intensity, etc.)');
   console.log('    /history        Show conversation history');
   console.log('    /export         Export conversation state as JSON');
+  console.log(chalk.cyan('\n  Memory & Transformation:'));
+  console.log('    /memories [type]  List stored memories (episodic/semantic/identity)');
+  console.log('    /transformations  Show transformation history with scores');
   console.log(chalk.cyan('\n  Subagents:'));
   console.log('    /subagents      List available subagents');
   console.log('    /explore <topic>  Deep investigation with explorer agent');
@@ -746,6 +827,7 @@ function printHelp(): void {
   console.log(chalk.gray('    /mode intensity 80'));
   console.log(chalk.gray('    /explore quantum computing implications'));
   console.log(chalk.gray('    /dialectic "AI will replace human creativity"'));
+  console.log(chalk.gray('    /memories identity'));
 }
 
 program.parse();

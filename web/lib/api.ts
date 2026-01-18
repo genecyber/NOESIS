@@ -9,6 +9,7 @@ import type {
   ChatResponse,
   SessionResponse,
   SubagentDefinition,
+  Sentience,
 } from './types';
 
 const API_BASE = '/api';

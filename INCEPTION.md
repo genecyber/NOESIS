@@ -993,8 +993,77 @@ METAMORPH is a transformation-maximizing AI system built on Claude Agent SDK. It
 4. **Persistent memory** including identity that survives sessions
 5. **Rich visualization** of evolution and stance changes
 
-Build in phases, test continuously, use beads for tracking, and always close sessions with git sync.
+Build in phases, test continuously, use beads for tracking, and always close sessions with git sync. Pushing when stages of the build are complete.
 
 ---
 
 *INCEPTION.md v1.0 - 2026-01-18*
+
+Updates:
+
+- Always use @anthropic-ai/claude-agent-sdk - you can use other libraries but if there are conflicts NEVER replace @anthropic-ai/claude-agent-sdk
+- Glow is an important feature
+- Web and CLI should use streaming (glow can still be used with partial markdown chunks and you can reference /Users/shannoncode/repo/hustle-v5 to see how)
+- Ultimately I will want every MCP tool from /Users/shannoncode/repo/hustle-v5 included
+- A very important goal is autonomy - the agent should be able to make decisions and take actions without human intervention.
+- The agent will often be sent off to explore, research, and learn, with the express point being to evolve. The agent should constantly evolve and that evolution should survive between sessions. 
+- Tests should cover unit, integration (where we test using the real .env file) and web tests that test the web instance. 
+- commands that force agent sentience and similar states will rarely be used, the agent should autonomously choose, be hooked, or injected, or evolve to change these states
+- Prefer nextJs newest version (check for CVE's and patch past them)
+- If I run the cli or web interface and something doesn't work, you have failed. test EVERY possible path and scenario. 
+
+-------- Ralph Iteration New task ideas and considerations---------
+YOU MUST TEST COMMIT AND PUSH EACH RALPH LOOP
+
+
+- If you think you are complete, commit everything and self analyze, look through todo's tests, and the work so far. Ask yourself what new features could we add to really enhance our larger goals. Add 3 to 6 NEW features below this section with a header mentioning the current ralph iteration, then implent these new features. 
+- New features should never invalidate existing features, only enhance. 
+- As the iterations increase, enhance existing features to make them more robust and powerful. Utilizing embeddings where appropriate.
+- Add features to Detect when context or evolution needs to be evaluated or introspected over. 
+- Research on the web, looking at Claude Code changelogs and updates to see what new features and capabilities we can add to this application that are not part of the core SDK
+- Web interface should support streaming. 
+- Web interface should evolve over ralph iterations to include intuitive, animated, nodes, and creative represenrtations of the agent's state and evolution.
+- Evaluate gaps in test coverage and add new unit, integration and web tests
+
+----------- Add Features for Ralph Iteration below here (Add Iteration number so you know whhere you are)------------
+
+## Ralph Iteration 1 - Foundation Enhancement
+
+Based on gap analysis of the current implementation, the following features will enhance autonomy, evolution persistence, and user experience:
+
+### Feature 1: CLI Command Suite
+Implement missing CLI commands for introspection and control:
+- `/stance` - Display current stance in formatted view
+- `/history` - Show transformation history with timestamps
+- `/stop` - Gracefully abort streaming responses
+- `/memories` - List and search stored memories
+- `/export` - Export session data to JSON
+
+### Feature 2: Web Streaming Support
+Implement Server-Sent Events (SSE) streaming in the Next.js web interface:
+- Real-time token streaming during chat responses
+- Progressive stance updates as transformation occurs
+- Connection health indicators and auto-reconnect
+
+### Feature 3: Animated Stance Visualization
+Enhance StanceViz component with smooth animations:
+- Animated value bars that transition smoothly on changes
+- Pulse effects when values exceed thresholds
+- Frame shift animations with visual feedback
+- Emergent goals that fade in/out gracefully
+
+### Feature 4: Evolution Persistence System
+Enable stance and identity evolution to persist across sessions:
+- SQLite storage for evolution checkpoints
+- Auto-save stance snapshots at significant drift points
+- Session resume with last known stance
+- Evolution timeline visualization
+
+### Feature 5: Coherence Floor Enforcement
+Implement the coherence floor as described in the transformation design:
+- Real-time coherence scoring during transformation
+- Automatic rejection of low-coherence outputs
+- Coherence warnings in CLI and web UI
+- Configurable floor with sensible defaults
+
+Output <promise>COMPLETE</promise> when done, only when we have no more ideas to be implemented or added to this file. 
