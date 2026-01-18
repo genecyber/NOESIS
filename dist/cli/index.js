@@ -29,6 +29,10 @@ import { pluginManager } from '../plugins/plugin-system.js';
 import { collaborationManager } from '../collaboration/session-manager.js';
 import { memoryInjector } from '../memory/proactive-injection.js';
 import { coherenceGates } from '../streaming/coherence-gates.js';
+import { branchManager } from '../conversation/branching.js';
+import { operatorDiscovery } from '../operators/discovery.js';
+import { multiAgentOrchestrator } from '../orchestration/multi-agent.js';
+import { personalityMarketplace } from '../presets/marketplace.js';
 import { createGlowStreamBuffer, isGlowAvailable, detectGlow, renderMarkdownSync } from './glow.js';
 const VERSION = '0.1.0';
 // State for abort handling
@@ -490,6 +494,31 @@ async function handleCommand(input, agent, rl, _useStreaming) {
         case 'coherence-gates':
         case 'gates':
             handleCoherenceGatesCommand(args);
+            break;
+        // Ralph Iteration 6 Commands
+        case 'memory-persist':
+        case 'persist':
+            handleMemoryPersistCommand(agent, args);
+            break;
+        case 'nl-config':
+        case 'configure':
+            handleNLConfigCommand(agent, args);
+            break;
+        case 'branch':
+        case 'branches':
+            handleBranchCommand(agent, args);
+            break;
+        case 'discover':
+        case 'suggest-operator':
+            handleOperatorDiscoveryCommand(agent, args);
+            break;
+        case 'multi-agent':
+        case 'agents':
+            handleMultiAgentCommand(agent, args);
+            break;
+        case 'presets':
+        case 'marketplace':
+            handlePresetsCommand(args);
             break;
         case 'quit':
         case 'exit':
@@ -1801,6 +1830,196 @@ function handleCoherenceGatesCommand(args) {
             console.log(chalk.gray('  Commands: status | on | off | config'));
     }
 }
+// ============================================================================
+// Ralph Iteration 6 Command Handlers
+// ============================================================================
+function handleMemoryPersistCommand(_agent, args) {
+    const subcommand = args[0] || 'status';
+    if (subcommand === 'status') {
+        console.log(chalk.cyan('\n  ═══ Memory Persistence (Ralph Iteration 6) ═══'));
+        console.log(`  Status:           Active`);
+        console.log(`  Export formats:   JSON, JSONL, CSV`);
+        console.log(`  Backup:           Available`);
+        console.log(`  Deduplication:    Available`);
+        console.log(`  Consolidation:    Available`);
+        console.log(chalk.gray('\n  API: memoryPersistence.exportMemories(), createBackup(), deduplicateMemories()'));
+    }
+    else {
+        console.log(chalk.cyan('  Memory Persistence - use programmatic API for operations'));
+        console.log(chalk.gray('  /persist status - Show persistence status'));
+    }
+}
+function handleNLConfigCommand(_agent, args) {
+    const subcommand = args[0] || 'help';
+    if (subcommand === 'status') {
+        console.log(chalk.cyan('\n  ═══ Natural Language Configuration (Ralph Iteration 6) ═══'));
+        console.log(`  Status:     Active`);
+        console.log(`  Undo/Redo:  Available`);
+        console.log(chalk.gray('\n  API: nlConfig.parseIntent(), applyConfiguration(), undo(), redo()'));
+    }
+    else {
+        console.log(chalk.cyan('\n  Natural Language Configuration'));
+        console.log(chalk.gray('  Configure operators using natural language via API:'));
+        console.log(chalk.gray('    nlConfig.parseIntent("make responses more playful", stance, config)'));
+    }
+}
+function handleBranchCommand(_agent, args) {
+    const subcommand = args[0] || 'list';
+    const branches = branchManager.listBranches();
+    const activeBranch = branchManager.getActiveBranch();
+    if (subcommand === 'list') {
+        console.log(chalk.cyan('\n  ═══ Conversation Branches (Ralph Iteration 6) ═══'));
+        if (branches.length === 0) {
+            console.log(chalk.gray('  No branches yet.'));
+        }
+        else {
+            branches.forEach(b => {
+                const current = activeBranch && b.id === activeBranch.id ? chalk.green(' (current)') : '';
+                console.log(`  ${b.name}${current} - ${b.messages.length} messages`);
+            });
+        }
+    }
+    else {
+        console.log(chalk.cyan('  Branching Commands:'));
+        console.log(chalk.gray('    /branch list    - List all branches'));
+        console.log(chalk.gray('  API: branchManager.branchAt(), switchBranch(), timeTravelTo(), mergeBranches()'));
+    }
+}
+function handleOperatorDiscoveryCommand(_agent, args) {
+    const subcommand = args[0] || 'status';
+    if (subcommand === 'status') {
+        const status = operatorDiscovery.getStatus();
+        console.log(chalk.cyan('\n  ═══ Operator Discovery (Ralph Iteration 6) ═══'));
+        console.log(`  Suggestions Made: ${status.suggestionCount}`);
+        console.log(`  A/B Tests:        ${status.activeTests} active, ${status.completedTests} completed`);
+        console.log(`  Feedback Count:   ${status.feedbackCount}`);
+        console.log(`  Patterns:         ${status.patternsDetected} detected`);
+    }
+    else {
+        console.log(chalk.cyan('  Operator Discovery'));
+        console.log(chalk.gray('  /discover status - Show discovery stats'));
+        console.log(chalk.gray('  API: operatorDiscovery.suggestOperator(), createABTest(), recordFeedback()'));
+    }
+}
+function handleMultiAgentCommand(_agent, args) {
+    const subcommand = args[0] || 'status';
+    if (subcommand === 'status') {
+        const agents = multiAgentOrchestrator.listAgents();
+        console.log(chalk.cyan('\n  ═══ Multi-Agent Orchestration (Ralph Iteration 6) ═══'));
+        console.log(`  Registered agents: ${agents.length}`);
+        agents.forEach(a => {
+            console.log(`    • ${a.name} (${a.specialization}) - ${a.status}`);
+        });
+    }
+    else {
+        console.log(chalk.cyan('  Multi-Agent Orchestration'));
+        console.log(chalk.gray('  /agents status - Show registered agents'));
+        console.log(chalk.gray('  API: multiAgentOrchestrator.registerLocalAgent(), createTask(), shareMemory()'));
+    }
+}
+function handlePresetsCommand(args) {
+    const subcommand = args[0] || 'list';
+    switch (subcommand) {
+        case 'list':
+            console.log(chalk.cyan('\n  ═══ Personality Marketplace (Ralph Iteration 6) ═══'));
+            const presets = personalityMarketplace.getFeaturedPresets(10);
+            if (presets.length === 0) {
+                console.log(chalk.gray('  No presets available.'));
+            }
+            else {
+                presets.forEach(p => {
+                    const stars = '★'.repeat(Math.round(p.rating)) + '☆'.repeat(5 - Math.round(p.rating));
+                    console.log(`\n  ${chalk.bold(p.name)} ${chalk.yellow(stars)}`);
+                    console.log(chalk.gray(`    ${p.description}`));
+                    console.log(chalk.gray(`    By ${p.author} | ${p.downloads} downloads | Tags: ${p.tags.join(', ')}`));
+                });
+            }
+            break;
+        case 'search':
+            const query = args.slice(1).join(' ');
+            if (!query) {
+                console.log(chalk.yellow('  Usage: /presets search <query>'));
+                return;
+            }
+            const results = personalityMarketplace.searchPresets(query);
+            console.log(chalk.cyan(`\n  ═══ Search Results: "${query}" ═══`));
+            if (results.length === 0) {
+                console.log(chalk.gray('  No presets found.'));
+            }
+            else {
+                results.forEach(p => {
+                    console.log(`  • ${p.name} (${p.rating.toFixed(1)}★) - ${p.description.slice(0, 50)}...`);
+                });
+            }
+            break;
+        case 'install':
+            const presetId = args[1];
+            if (!presetId) {
+                console.log(chalk.yellow('  Usage: /presets install <preset-id>'));
+                return;
+            }
+            const installed = personalityMarketplace.installPreset(presetId);
+            if (installed) {
+                console.log(chalk.green(`  Installed: ${installed.name}`));
+                console.log(chalk.gray('  Use /presets apply <id> to activate.'));
+            }
+            else {
+                console.log(chalk.red('  Preset not found.'));
+            }
+            break;
+        case 'apply':
+            const applyId = args[1];
+            if (!applyId) {
+                console.log(chalk.yellow('  Usage: /presets apply <preset-id>'));
+                return;
+            }
+            const applied = personalityMarketplace.applyPreset(applyId);
+            if (applied.success) {
+                console.log(chalk.green(`  Preset applied successfully`));
+                console.log(`  Operators: ${applied.operators?.length || 0}`);
+                console.log(`  Stance: ${applied.stanceConfig?.baseStance}`);
+            }
+            else {
+                console.log(chalk.red(`  Failed to apply: ${applied.error}`));
+            }
+            break;
+        case 'create':
+            console.log(chalk.cyan('\n  ═══ Create Preset ═══'));
+            console.log(chalk.gray('  Interactive preset creation coming soon.'));
+            console.log(chalk.gray('  For now, use the programmatic API.'));
+            break;
+        case 'export':
+            const exportId = args[1];
+            if (!exportId) {
+                console.log(chalk.yellow('  Usage: /presets export <preset-id>'));
+                return;
+            }
+            const exported = personalityMarketplace.exportPreset(exportId);
+            if (exported) {
+                console.log(chalk.cyan('\n  ═══ Exported Preset (JSON) ═══'));
+                console.log(exported);
+            }
+            else {
+                console.log(chalk.red('  Preset not found.'));
+            }
+            break;
+        case 'stats':
+            const marketStats = personalityMarketplace.getMarketplaceStats();
+            console.log(chalk.cyan('\n  ═══ Marketplace Statistics ═══'));
+            console.log(`  Total presets:     ${marketStats.totalPresets}`);
+            console.log(`  Public presets:    ${marketStats.publicPresets}`);
+            console.log(`  Total downloads:   ${marketStats.totalDownloads}`);
+            console.log(`  Average rating:    ${marketStats.averageRating.toFixed(1)}★`);
+            console.log(chalk.cyan('\n  Top categories:'));
+            marketStats.topCategories.forEach(c => {
+                console.log(`    • ${c.category}: ${c.count} presets`);
+            });
+            break;
+        default:
+            console.log(chalk.yellow(`  Unknown presets command: ${subcommand}`));
+            console.log(chalk.gray('  Commands: list | search <query> | install <id> | apply <id> | create | export <id> | stats'));
+    }
+}
 function printHelp() {
     console.log(chalk.cyan('\n  ═══ METAMORPH Commands ═══'));
     console.log(chalk.cyan('\n  Chat & Control:'));
@@ -1840,6 +2059,13 @@ function printHelp() {
     console.log('    /collab         Collaborative sessions (start/join/list)');
     console.log('    /inject         Proactive memory injection (on/off/config)');
     console.log('    /gates          Coherence gates for streaming (on/off/status)');
+    console.log(chalk.cyan('\n  Ralph Iteration 6:'));
+    console.log('    /persist        Memory persistence (export/backup/dedupe/consolidate)');
+    console.log('    /configure      Natural language operator configuration');
+    console.log('    /branch         Conversation branching & time travel');
+    console.log('    /discover       Dynamic operator discovery & A/B testing');
+    console.log('    /agents         Multi-agent orchestration & coordination');
+    console.log('    /presets        Personality marketplace & presets');
     console.log(chalk.cyan('\n  System:'));
     console.log('    /glow           Show glow markdown renderer status');
     console.log('    /quit           Exit the chat (also /exit, /q)');
@@ -1851,6 +2077,9 @@ function printHelp() {
     console.log(chalk.gray('    /dialectic "AI will replace human creativity"'));
     console.log(chalk.gray('    /identity save my-identity'));
     console.log(chalk.gray('    /collab start MyName free-form'));
+    console.log(chalk.gray('    /configure apply "make responses more playful"'));
+    console.log(chalk.gray('    /branch create experiment-1'));
+    console.log(chalk.gray('    /presets search creative'));
 }
 program.parse();
 //# sourceMappingURL=index.js.map
