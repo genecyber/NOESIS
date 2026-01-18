@@ -128,6 +128,7 @@ app.get('/api/chat/stream', apiKeyAuth, async (req: Request, res: Response) => {
   res.setHeader('Cache-Control', 'no-cache');
   res.setHeader('Connection', 'keep-alive');
   res.setHeader('X-Accel-Buffering', 'no');
+  res.flushHeaders(); // Send headers immediately to start streaming
 
   const agent = getOrCreateAgent(sessionId);
 
@@ -181,6 +182,7 @@ app.post('/api/chat/stream', apiKeyAuth, async (req: Request, res: Response) => 
   res.setHeader('Cache-Control', 'no-cache');
   res.setHeader('Connection', 'keep-alive');
   res.setHeader('X-Accel-Buffering', 'no');
+  res.flushHeaders(); // Send headers immediately to start streaming
 
   const agent = getOrCreateAgent(sessionId);
 

@@ -15,6 +15,10 @@ import type {
 } from './types';
 
 const API_BASE = '/api';
+// Direct connection to backend for SSE streaming (bypasses Next.js proxy buffering)
+const STREAM_BASE = typeof window !== 'undefined'
+  ? `http://${window.location.hostname}:3001/api`
+  : 'http://localhost:3001/api';
 
 async function fetchJson<T>(url: string, options?: RequestInit): Promise<T> {
   const response = await fetch(url, {
@@ -95,7 +99,7 @@ export function chatStream(
 
   (async () => {
     try {
-      const response = await fetch(`${API_BASE}/chat/stream`, {
+      const response = await fetch(`${STREAM_BASE}/chat/stream`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ sessionId, message }),
