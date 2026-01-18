@@ -1,9 +1,8 @@
 # Railway Configuration for Metamorph API Server
-# Deploy this as a service pointing to the root directory
+# Build phases defined in nixpacks.toml
 
 [build]
 builder = "nixpacks"
-buildCommand = "npm ci && npm run build"
 
 [deploy]
 startCommand = "npm run server"
