@@ -172,5 +172,60 @@ describe('API Client', () => {
 
       expect(onError).toHaveBeenCalledWith(expect.any(Error));
     });
+
+    it('should call onToolEvent when tool events are received', async () => {
+      const onToolEvent = vi.fn();
+      const onComplete = vi.fn();
+
+      // Create SSE data with tool events - full message in one chunk
+      const toolEvent = {
+        id: 'tool-123',
+        name: 'Read',
+        input: { file_path: '/test.txt' },
+        status: 'started',
+      };
+      const completeEvent = {
+        response: 'Done',
+        stanceAfter: { frame: 'existential' },
+        scores: { transformation: 50 },
+      };
+
+      // SSE format: event line, then data line, then blank line
+      const sseData = `event: tool_event\ndata: ${JSON.stringify(toolEvent)}\n\nevent: complete\ndata: ${JSON.stringify(completeEvent)}\n\n`;
+
+      // Create a mock reader that returns all SSE data at once
+      const encoder = new TextEncoder();
+      let readCount = 0;
+      const mockReader = {
+        read: vi.fn().mockImplementation(async () => {
+          if (readCount === 0) {
+            readCount++;
+            return { done: false, value: encoder.encode(sseData) };
+          }
+          return { done: true, value: undefined };
+        }),
+      };
+
+      const mockBody = {
+        getReader: () => mockReader,
+      };
+
+      mockFetch.mockResolvedValueOnce({
+        ok: true,
+        body: mockBody,
+      });
+
+      chatStream('test-session', 'Hello', { onToolEvent, onComplete });
+
+      // Wait for async stream processing
+      await new Promise(resolve => setTimeout(resolve, 100));
+
+      expect(onToolEvent).toHaveBeenCalledWith(expect.objectContaining({
+        id: 'tool-123',
+        name: 'Read',
+        status: 'started',
+      }));
+      expect(onComplete).toHaveBeenCalled();
+    });
   });
 });

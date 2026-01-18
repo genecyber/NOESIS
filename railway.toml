@@ -1,0 +1,17 @@
+# Railway Configuration for Metamorph API Server
+# Deploy this as a service pointing to the root directory
+
+[build]
+builder = "nixpacks"
+buildCommand = "npm ci && npm run build"
+
+[deploy]
+startCommand = "npm run server"
+healthcheckPath = "/health"
+healthcheckTimeout = 300
+restartPolicyType = "on_failure"
+restartPolicyMaxRetries = 3
+
+# Required environment variables (set in Railway dashboard):
+# - ANTHROPIC_API_KEY: Your Anthropic API key for Claude access
+# - PORT: Automatically set by Railway (default: 3001)

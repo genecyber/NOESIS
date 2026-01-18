@@ -1,0 +1,18 @@
+# Railway Configuration for Metamorph Web UI
+# Deploy this as a separate service pointing to the web/ directory
+
+[build]
+builder = "nixpacks"
+buildCommand = "npm ci && npm run build"
+
+[deploy]
+startCommand = "node .next/standalone/server.js"
+healthcheckPath = "/"
+healthcheckTimeout = 300
+restartPolicyType = "on_failure"
+restartPolicyMaxRetries = 3
+
+# Required environment variables (set in Railway dashboard):
+# - API_URL: Internal URL of the API server for server-side rewrites (e.g., https://your-api.railway.internal)
+# - NEXT_PUBLIC_API_URL: Public URL of the API server for client-side streaming (e.g., https://your-api.railway.app)
+# - PORT: Automatically set by Railway (Next.js uses this automatically)

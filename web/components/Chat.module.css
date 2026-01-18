@@ -280,3 +280,46 @@
 .stopButton:hover {
   opacity: 0.9;
 }
+
+/* Input wrapper for command palette positioning */
+.inputWrapper {
+  position: relative;
+}
+
+/* Command mode input styling */
+.input.commandMode {
+  font-family: 'Monaco', 'Menlo', 'Courier New', monospace;
+  border-color: var(--accent-cyan);
+  background: rgba(0, 255, 255, 0.05);
+}
+
+/* Command message styling */
+.commandMessage {
+  max-width: 100%;
+}
+
+.commandMessage.user {
+  background: transparent;
+  color: var(--text-primary);
+}
+
+/* Command input display in user messages */
+.commandInput {
+  display: block;
+  font-family: 'Monaco', 'Menlo', 'Courier New', monospace;
+  font-size: 0.95em;
+  color: var(--accent-cyan);
+  background: rgba(0, 255, 255, 0.1);
+  padding: 0.5em 0.75em;
+  border-radius: 6px;
+  border-left: 3px solid var(--accent-cyan);
+}
+
+/* Hint code styling */
+.hint code {
+  background: rgba(0, 255, 255, 0.2);
+  padding: 0.1em 0.4em;
+  border-radius: 4px;
+  font-family: 'Monaco', 'Menlo', monospace;
+  color: var(--accent-cyan);
+}

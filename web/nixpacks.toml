@@ -1,0 +1,17 @@
+# Nixpacks configuration for Railway deployment (Web UI)
+
+[phases.setup]
+nixPkgs = ["nodejs_20"]
+
+[phases.install]
+cmds = ["npm ci"]
+
+[phases.build]
+cmds = [
+  "npm run build",
+  "cp -r .next/static .next/standalone/.next/static",
+  "cp -r public .next/standalone/public 2>/dev/null || true"
+]
+
+[start]
+cmd = "node .next/standalone/server.js"

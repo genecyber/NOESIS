@@ -55,6 +55,8 @@ The web UI provides a full-featured interface for interacting with METAMORPH:
 
 - **Real-time Streaming**: Responses stream token-by-token via SSE
 - **Markdown Rendering**: Full markdown support (headers, code blocks, lists, blockquotes)
+- **Slash Commands**: All 60+ CLI commands via `/` with autocomplete palette
+- **Tool Usage Display**: See tools being used in real-time with input/output on hover
 - **Custom Scrollbars**: Styled gradient scrollbars matching theme
 - **Connection Status**: Floating indicator shows connection state
 - **Transformation Triggers**: Asking about feelings, identity, or hypotheticals triggers operators
@@ -72,6 +74,22 @@ cd web && npm run dev
 ```
 
 The server runs on port 3001, and Next.js proxies API requests from port 3000.
+
+### Deployment (Railway)
+
+The project includes Railway configuration for easy deployment:
+
+```bash
+# Deploy API server (root directory)
+railway up
+
+# Deploy Web UI (web directory)
+cd web && railway up
+```
+
+**Environment Variables**:
+- `ANTHROPIC_API_KEY`: Your Anthropic API key (required)
+- `NEXT_PUBLIC_API_URL`: API server URL for web UI streaming (e.g., `https://your-api.railway.app`)
 
 ---
 

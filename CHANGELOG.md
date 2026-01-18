@@ -8,6 +8,27 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ### Added
 
+#### Web UI Enhancements
+- **Slash Commands in Chat**: All 60+ CLI commands available via `/` in chat with autocomplete
+  - `CommandPalette` component with keyboard navigation (Arrow keys, Tab, Enter, Esc)
+  - Command categories: Chat & Control, Memory, Subagents, Sessions, System
+  - Rich command output rendering with `CommandOutput` component
+  - Commands execute inline or switch to relevant panel
+- **Tool Usage Display**: Real-time visibility into agent tool use during streaming
+  - `ToolUsage` component shows tools with input params and hover-to-reveal results
+  - `ActiveToolsBar` displays currently running tools with spinners during streaming
+  - Tool events tracked via `onToolEvent` callback in `chatStream()`
+  - Status indicators: started (yellow), completed (green), error (red)
+- **Railway Deployment Config**: Ready-to-deploy configuration for Railway
+  - `railway.toml` and `railway.json` for API server (port 3001)
+  - `web/railway.toml` for Next.js web UI (standalone output)
+  - `nixpacks.toml` for Node.js 20 build configuration
+
+#### Streaming Enhancements
+- `ToolUseEvent` interface for detailed tool tracking (id, name, input, status, result, error)
+- `onToolEvent` callback in `StreamCallbacks` for real-time tool event notifications
+- Server SSE `tool_event` event type for forwarding tool use to clients
+
 #### Autonomous Commands System
 - **Command Registry**: Central registry pattern for all slash commands with metadata
   - `CommandRegistry` class with `register()`, `get()`, `detectTriggers()`, `execute()` methods

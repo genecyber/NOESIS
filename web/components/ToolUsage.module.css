@@ -1,0 +1,280 @@
+.toolUsage {
+  background: rgba(139, 92, 246, 0.1);
+  border: 1px solid rgba(139, 92, 246, 0.3);
+  border-radius: 8px;
+  padding: 10px;
+  margin-bottom: 8px;
+}
+
+.header {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-bottom: 8px;
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.icon {
+  font-size: 12px;
+}
+
+.label {
+  color: #8b5cf6;
+  font-weight: 600;
+}
+
+.count {
+  background: rgba(139, 92, 246, 0.3);
+  color: #c4b5fd;
+  padding: 2px 6px;
+  border-radius: 10px;
+  font-size: 10px;
+}
+
+.tools {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.tool {
+  position: relative;
+  background: #1a1a1a;
+  border: 1px solid #333;
+  border-radius: 6px;
+  padding: 8px 10px;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.tool:hover {
+  border-color: #8b5cf6;
+  background: #222;
+}
+
+.tool.started {
+  border-left: 3px solid #f59e0b;
+}
+
+.tool.completed {
+  border-left: 3px solid #10b981;
+}
+
+.tool.error {
+  border-left: 3px solid #ef4444;
+}
+
+.toolHeader {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.statusIcon {
+  font-size: 12px;
+}
+
+.tool.started .statusIcon {
+  color: #f59e0b;
+}
+
+.tool.completed .statusIcon {
+  color: #10b981;
+}
+
+.tool.error .statusIcon {
+  color: #ef4444;
+}
+
+.toolName {
+  font-family: 'Monaco', 'Menlo', monospace;
+  font-size: 12px;
+  font-weight: 600;
+  color: #fff;
+}
+
+.spinner {
+  width: 10px;
+  height: 10px;
+  border: 2px solid #333;
+  border-top-color: #f59e0b;
+  border-radius: 50%;
+  animation: spin 0.8s linear infinite;
+  margin-left: auto;
+}
+
+@keyframes spin {
+  to { transform: rotate(360deg); }
+}
+
+.inputPreview {
+  font-size: 11px;
+  color: #888;
+  margin-top: 4px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  font-family: 'Monaco', 'Menlo', monospace;
+}
+
+/* Tooltip for hover details */
+.tooltip {
+  position: absolute;
+  top: 100%;
+  left: 0;
+  right: 0;
+  margin-top: 4px;
+  background: #1a1a1a;
+  border: 1px solid #444;
+  border-radius: 8px;
+  padding: 12px;
+  z-index: 100;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.5);
+  max-height: 300px;
+  overflow-y: auto;
+}
+
+.tooltipSection {
+  margin-bottom: 12px;
+}
+
+.tooltipSection:last-child {
+  margin-bottom: 0;
+}
+
+.tooltipLabel {
+  font-size: 10px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  color: #8b5cf6;
+  margin-bottom: 4px;
+}
+
+.tooltipLabel.errorLabel {
+  color: #ef4444;
+}
+
+.tooltipCode {
+  background: #0a0a0a;
+  border: 1px solid #333;
+  border-radius: 4px;
+  padding: 8px;
+  font-size: 10px;
+  font-family: 'Monaco', 'Menlo', monospace;
+  color: #999;
+  overflow-x: auto;
+  white-space: pre-wrap;
+  word-break: break-word;
+  max-height: 150px;
+  overflow-y: auto;
+  margin: 0;
+}
+
+.tooltipError {
+  background: rgba(239, 68, 68, 0.1);
+  border: 1px solid rgba(239, 68, 68, 0.3);
+  border-radius: 4px;
+  padding: 8px;
+  font-size: 11px;
+  color: #fca5a5;
+}
+
+/* Inline indicator styles */
+.indicator {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 8px;
+  border-radius: 12px;
+  font-size: 11px;
+  margin: 2px;
+}
+
+.indicator.started {
+  background: rgba(245, 158, 11, 0.2);
+  color: #f59e0b;
+}
+
+.indicator.completed {
+  background: rgba(16, 185, 129, 0.2);
+  color: #10b981;
+}
+
+.indicator.error {
+  background: rgba(239, 68, 68, 0.2);
+  color: #ef4444;
+}
+
+.indicatorIcon {
+  font-size: 10px;
+}
+
+.indicatorName {
+  font-family: 'Monaco', 'Menlo', monospace;
+  font-size: 10px;
+}
+
+/* Active tools bar */
+.activeBar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 12px;
+  background: rgba(245, 158, 11, 0.1);
+  border: 1px solid rgba(245, 158, 11, 0.3);
+  border-radius: 8px;
+  margin-bottom: 8px;
+  flex-wrap: wrap;
+}
+
+.activeLabel {
+  font-size: 11px;
+  color: #f59e0b;
+  font-weight: 500;
+}
+
+.activeTool {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 3px 8px;
+  background: rgba(245, 158, 11, 0.2);
+  border-radius: 12px;
+  font-family: 'Monaco', 'Menlo', monospace;
+  font-size: 11px;
+  color: #fcd34d;
+}
+
+.activeSpinner {
+  width: 8px;
+  height: 8px;
+  border: 1.5px solid rgba(245, 158, 11, 0.3);
+  border-top-color: #f59e0b;
+  border-radius: 50%;
+  animation: spin 0.8s linear infinite;
+}
+
+/* Scrollbar styling for tooltip */
+.tooltip::-webkit-scrollbar,
+.tooltipCode::-webkit-scrollbar {
+  width: 6px;
+}
+
+.tooltip::-webkit-scrollbar-track,
+.tooltipCode::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.tooltip::-webkit-scrollbar-thumb,
+.tooltipCode::-webkit-scrollbar-thumb {
+  background: #333;
+  border-radius: 3px;
+}
+
+.tooltip::-webkit-scrollbar-thumb:hover,
+.tooltipCode::-webkit-scrollbar-thumb:hover {
+  background: #444;
+}

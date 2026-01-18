@@ -12,13 +12,15 @@ import type {
   Sentience,
   TimelineEntry,
   EvolutionSnapshot,
+  ToolUseEvent,
 } from './types';
 
 const API_BASE = '/api';
 // Direct connection to backend for SSE streaming (bypasses Next.js proxy buffering)
+// In production, use NEXT_PUBLIC_API_URL; in development, use localhost
 const STREAM_BASE = typeof window !== 'undefined'
-  ? `http://${window.location.hostname}:3001/api`
-  : 'http://localhost:3001/api';
+  ? (process.env.NEXT_PUBLIC_API_URL || `http://${window.location.hostname}:3001`) + '/api'
+  : (process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001') + '/api';
 
 async function fetchJson<T>(url: string, options?: RequestInit): Promise<T> {
   const response = await fetch(url, {
@@ -91,6 +93,7 @@ export function chatStream(
   message: string,
   callbacks: {
     onText?: (text: string) => void;
+    onToolEvent?: (event: ToolUseEvent) => void;
     onComplete?: (data: ChatResponse) => void;
     onError?: (error: Error) => void;
   }
@@ -143,6 +146,8 @@ export function chatStream(
               // Handle based on event type
               if (currentEvent === 'text' && callbacks.onText) {
                 callbacks.onText(parsed.text);
+              } else if (currentEvent === 'tool_event' && callbacks.onToolEvent) {
+                callbacks.onToolEvent(parsed);
               } else if (currentEvent === 'complete' && callbacks.onComplete) {
                 callbacks.onComplete(parsed);
               } else if (currentEvent === 'error' && callbacks.onError) {
@@ -283,4 +288,40 @@ export async function getMemories(
   if (type) params.append('type', type);
   if (limit) params.append('limit', limit.toString());
   return fetchJson(`${API_BASE}/memories?${params}`);
+}
+
+/**
+ * Invoke a subagent (explore, reflect, dialectic, verify)
+ */
+export async function invokeSubagent(
+  sessionId: string,
+  name: string,
+  input: string
+): Promise<{
+  response: string;
+  toolsUsed: string[];
+  stanceAfter: Stance;
+}> {
+  return fetchJson(`${API_BASE}/subagents/${name}`, {
+    method: 'POST',
+    body: JSON.stringify({ sessionId, input }),
+  });
+}
+
+/**
+ * Execute a CLI command via API
+ */
+export async function executeCommand(
+  sessionId: string,
+  command: string,
+  args: string[]
+): Promise<{
+  success: boolean;
+  data: unknown;
+  error?: string;
+}> {
+  return fetchJson(`${API_BASE}/command`, {
+    method: 'POST',
+    body: JSON.stringify({ sessionId, command, args }),
+  });
 }

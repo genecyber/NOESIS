@@ -102,3 +102,13 @@ export interface EvolutionSnapshot {
   trigger: 'drift_threshold' | 'frame_shift' | 'manual' | 'session_end';
   driftAtSnapshot: number;
 }
+
+// Tool usage events for streaming
+export interface ToolUseEvent {
+  id: string;
+  name: string;
+  input: Record<string, unknown>;
+  status: 'started' | 'completed' | 'error';
+  result?: string;
+  error?: string;
+}

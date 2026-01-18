@@ -131,6 +131,9 @@ export default function Home() {
             sessionId={sessionId}
             onSessionChange={handleSessionChange}
             onResponse={handleResponse}
+            onPanelChange={setActivePanel}
+            stance={stance}
+            config={config}
           />
         </div>
 
