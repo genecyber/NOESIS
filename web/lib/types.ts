@@ -1,28 +1,34 @@
-// Types matching the backend API
+/**
+ * Type definitions for METAMORPH Web Interface
+ */
+
+export interface Values {
+  curiosity: number;
+  certainty: number;
+  risk: number;
+  novelty: number;
+  empathy: number;
+  provocation: number;
+  synthesis: number;
+}
+
+export interface Sentience {
+  awarenessLevel: number;
+  autonomyLevel: number;
+  identityStrength: number;
+  emergentGoals: string[];
+  consciousnessInsights: string[];
+  persistentValues: string[];
+}
 
 export interface Stance {
   frame: string;
-  values: {
-    curiosity: number;
-    certainty: number;
-    risk: number;
-    novelty: number;
-    empathy: number;
-    provocation: number;
-    synthesis: number;
-  };
+  values: Values;
   selfModel: string;
   objective: string;
   metaphors: string[];
   constraints: string[];
-  sentience: {
-    awarenessLevel: number;
-    autonomyLevel: number;
-    identityStrength: number;
-    emergentGoals: string[];
-    consciousnessInsights: string[];
-    persistentValues: string[];
-  };
+  sentience: Sentience;
   turnsSinceLastShift: number;
   cumulativeDrift: number;
   version: number;
@@ -37,25 +43,15 @@ export interface ModeConfig {
   model: string;
 }
 
-export interface AgentState {
-  stance: Stance;
-  config: ModeConfig;
-  conversationId: string;
-  sessionId?: string;
-}
-
-export interface ChatMessage {
+export interface Message {
   role: 'user' | 'assistant';
   content: string;
-  timestamp?: Date;
-  toolsUsed?: string[];
+  timestamp?: number;
 }
 
 export interface ChatResponse {
   response: string;
-  stanceBefore: Stance;
   stanceAfter: Stance;
-  operationsApplied: string[];
   scores: {
     transformation: number;
     coherence: number;
@@ -63,14 +59,13 @@ export interface ChatResponse {
     overall: number;
   };
   toolsUsed: string[];
-  subagentsInvoked: string[];
-  sessionId: string;
+  operationsApplied: Array<{ name: string }>;
 }
 
 export interface SessionResponse {
   sessionId: string;
-  config: ModeConfig;
   stance: Stance;
+  config: ModeConfig;
 }
 
 export interface SubagentDefinition {

@@ -46,3 +46,23 @@ export type { SubagentDefinition, SubagentContext, SubagentFactory } from './age
 
 // Server
 export { app, startServer } from './server/index.js';
+
+// MCP Tools
+export {
+  allTools,
+  TOOL_COUNTS,
+  introspectionTools,
+  memoryTools,
+  analysisTools,
+  researchTools,
+  INTROSPECTION_TOOL_NAMES,
+  MEMORY_TOOL_NAMES,
+  ANALYSIS_TOOL_NAMES,
+  RESEARCH_TOOL_NAMES,
+} from './tools/index.js';
+export { createMetamorphMcpServer, logMcpToolsInfo } from './tools/mcp-server.js';
+
+// Tool providers (for runtime injection)
+export { setStanceProvider as setToolStanceProvider } from './tools/introspection.js';
+export { setMemoryProvider as setToolMemoryProvider } from './tools/memory.js';
+export { setStanceProvider as setAnalysisStanceProvider } from './tools/analysis.js';

@@ -13,8 +13,10 @@
     "dev": "tsc --watch",
     "cli": "node dist/cli/index.js",
     "server": "node dist/server/index.js",
-    "test": "vitest run",
-    "test:watch": "vitest",
+    "test": "vitest run --exclude '**/integration.test.ts'",
+    "test:watch": "vitest --exclude '**/integration.test.ts'",
+    "test:integration": "vitest run --testPathPattern integration.test.ts",
+    "test:all": "vitest run",
     "lint": "eslint src --ext .ts",
     "clean": "rm -rf dist"
   },

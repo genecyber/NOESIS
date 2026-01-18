@@ -17,6 +17,13 @@ import ora, { Ora } from 'ora';
 import * as readline from 'readline';
 import { MetamorphAgent, StreamCallbacks } from '../agent/index.js';
 import { ModeConfig, Frame, SelfModel, Objective } from '../types/index.js';
+import {
+  createGlowStreamBuffer,
+  isGlowAvailable,
+  detectGlow,
+  renderMarkdownSync,
+  type GlowStreamBuffer
+} from './glow.js';
 
 const VERSION = '0.1.0';
 
@@ -232,13 +239,19 @@ function printBanner(config: Partial<ModeConfig>): void {
   console.log(chalk.cyan.bold('  ║    Transformation-Maximizing AI Agent     ║'));
   console.log(chalk.cyan.bold('  ╚═══════════════════════════════════════════╝\n'));
   console.log(chalk.gray(`  Intensity: ${config.intensity}%  |  Coherence Floor: ${config.coherenceFloor}%  |  Sentience: ${config.sentienceLevel}%`));
-  console.log(chalk.gray('  Type /help for commands. Ctrl+C to interrupt.\n'));
+  const glowStatus = isGlowAvailable() ? chalk.green('✓ glow') : chalk.gray('glow: not installed');
+  console.log(chalk.gray(`  Type /help for commands. Ctrl+C to interrupt. [${glowStatus}${chalk.gray(']')}`));
+  console.log();
 }
 
 async function handleStreamingChat(agent: MetamorphAgent, input: string): Promise<void> {
   currentAbortController = new AbortController();
   let responseStarted = false;
   let toolsShown = new Set<string>();
+
+  // Create glow buffer for streaming markdown rendering
+  const glowBuffer: GlowStreamBuffer | null = isGlowAvailable() ? createGlowStreamBuffer() : null;
+  let rawBuffer = ''; // For non-glow fallback
 
   const callbacks: StreamCallbacks = {
     onText: (text) => {
@@ -250,7 +263,18 @@ async function handleStreamingChat(agent: MetamorphAgent, input: string): Promis
         process.stdout.write(chalk.blue('\nMetamorph: '));
         responseStarted = true;
       }
-      process.stdout.write(text);
+
+      if (glowBuffer) {
+        // Use glow streaming buffer - flush when we have complete blocks
+        const rendered = glowBuffer.push(text);
+        if (rendered) {
+          process.stdout.write(rendered);
+        }
+      } else {
+        // No glow, output directly
+        process.stdout.write(text);
+      }
+      rawBuffer += text;
     },
     onToolUse: (tool) => {
       if (!toolsShown.has(tool)) {
@@ -269,6 +293,14 @@ async function handleStreamingChat(agent: MetamorphAgent, input: string): Promis
     },
     onComplete: (result) => {
       currentAbortController = null;
+
+      // Flush any remaining content from glow buffer
+      if (glowBuffer) {
+        const remaining = glowBuffer.flush();
+        if (remaining) {
+          process.stdout.write(remaining);
+        }
+      }
 
       // Newline after response
       console.log();
@@ -289,6 +321,9 @@ async function handleStreamingChat(agent: MetamorphAgent, input: string): Promis
     },
     onError: (error) => {
       currentAbortController = null;
+      if (glowBuffer) {
+        glowBuffer.reset();
+      }
       if (currentSpinner) {
         currentSpinner.stop();
         currentSpinner = null;
@@ -322,8 +357,11 @@ async function handleNonStreamingChat(agent: MetamorphAgent, input: string): Pro
     const result = await agent.chat(input);
     spinner.stop();
 
-    // Display response
-    console.log(chalk.blue('\nMetamorph:'), result.response);
+    // Display response with optional glow rendering
+    const renderedResponse = isGlowAvailable()
+      ? renderMarkdownSync(result.response)
+      : result.response;
+    console.log(chalk.blue('\nMetamorph:'), renderedResponse);
 
     // Show stance changes if any
     if (result.operationsApplied.length > 0) {
@@ -405,6 +443,10 @@ async function handleCommand(
 
     case 'subagents':
       printSubagents(agent);
+      break;
+
+    case 'glow':
+      printGlowStatus();
       break;
 
     case 'quit':
@@ -593,7 +635,8 @@ async function handleExploreCommand(agent: MetamorphAgent, topic: string): Promi
     const result = await agent.explore(topic);
     spinner.stop();
     console.log(chalk.blue('\nExplorer Report:\n'));
-    console.log(result.response);
+    const rendered = isGlowAvailable() ? renderMarkdownSync(result.response) : result.response;
+    console.log(rendered);
     if (result.toolsUsed.length > 0) {
       console.log(chalk.gray(`\n  [Tools used: ${result.toolsUsed.join(', ')}]`));
     }
@@ -611,7 +654,8 @@ async function handleReflectCommand(agent: MetamorphAgent, focus?: string): Prom
     const result = await agent.reflect(focus);
     spinner.stop();
     console.log(chalk.blue('\nReflection:\n'));
-    console.log(result.response);
+    const rendered = isGlowAvailable() ? renderMarkdownSync(result.response) : result.response;
+    console.log(rendered);
   } catch (error) {
     spinner.stop();
     console.error(chalk.red('Error:'), error instanceof Error ? error.message : 'Unknown error');
@@ -626,7 +670,8 @@ async function handleDialecticCommand(agent: MetamorphAgent, thesis: string): Pr
     const result = await agent.dialectic(thesis);
     spinner.stop();
     console.log(chalk.blue('\nDialectic Analysis:\n'));
-    console.log(result.response);
+    const rendered = isGlowAvailable() ? renderMarkdownSync(result.response) : result.response;
+    console.log(rendered);
   } catch (error) {
     spinner.stop();
     console.error(chalk.red('Error:'), error instanceof Error ? error.message : 'Unknown error');
@@ -641,10 +686,32 @@ async function handleVerifyCommand(agent: MetamorphAgent, text: string): Promise
     const result = await agent.verify(text);
     spinner.stop();
     console.log(chalk.blue('\nVerification Report:\n'));
-    console.log(result.response);
+    const rendered = isGlowAvailable() ? renderMarkdownSync(result.response) : result.response;
+    console.log(rendered);
   } catch (error) {
     spinner.stop();
     console.error(chalk.red('Error:'), error instanceof Error ? error.message : 'Unknown error');
+  }
+}
+
+function printGlowStatus(): void {
+  const glowInfo = detectGlow();
+  console.log(chalk.cyan('\n  ═══ Glow Status ═══'));
+  if (glowInfo.installed) {
+    console.log(chalk.green('  ✓ Glow is installed'));
+    if (glowInfo.version) {
+      console.log(`    Version: ${glowInfo.version}`);
+    }
+    if (glowInfo.path) {
+      console.log(`    Path: ${glowInfo.path}`);
+    }
+    console.log(chalk.gray('\n  Markdown rendering is enabled for responses.'));
+  } else {
+    console.log(chalk.yellow('  ✗ Glow is not installed'));
+    console.log(chalk.gray('\n  Install glow for beautiful terminal markdown rendering:'));
+    console.log(chalk.gray('    macOS:  brew install glow'));
+    console.log(chalk.gray('    Linux:  sudo apt install glow'));
+    console.log(chalk.gray('    Go:     go install github.com/charmbracelet/glow@latest'));
   }
 }
 
@@ -671,6 +738,7 @@ function printHelp(): void {
   console.log('    /dialectic <thesis>  Thesis/antithesis/synthesis analysis');
   console.log('    /verify <text>  Verify output with verifier agent');
   console.log(chalk.cyan('\n  Session:'));
+  console.log('    /glow           Show glow markdown renderer status');
   console.log('    /quit           Exit the chat (also /exit, /q)');
   console.log('    Ctrl+C          Interrupt current operation');
   console.log(chalk.cyan('\n  Examples:'));
