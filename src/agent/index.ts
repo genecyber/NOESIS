@@ -216,7 +216,8 @@ export class MetamorphAgent {
           cwd: this.workingDirectory,
           systemPrompt: systemPrompt,
           permissionMode: 'acceptEdits',
-          resume: this.sessionId  // Continue session if we have one
+          resume: this.sessionId,  // Continue session if we have one
+          includePartialMessages: true
         }
       });
 
@@ -400,7 +401,8 @@ export class MetamorphAgent {
           cwd: this.workingDirectory,
           systemPrompt: systemPrompt,
           permissionMode: 'acceptEdits',
-          resume: this.sessionId
+          resume: this.sessionId,
+          includePartialMessages: true
         }
       });
 
@@ -642,7 +644,8 @@ export class MetamorphAgent {
           model: this.config.model,
           cwd: this.workingDirectory,
           systemPrompt: subagent.systemPrompt,
-          permissionMode: 'acceptEdits'
+          permissionMode: 'acceptEdits',
+          includePartialMessages: true
         }
       });
 
