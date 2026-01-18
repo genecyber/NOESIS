@@ -118,6 +118,27 @@ METAMORPH provides extensive skills organized by category. All capabilities can 
 | **Subagent Cache** | `/cache` | View cached subagent results | `memoryStore.searchSubagentCache()` |
 | **Emotional Arc** | `/mood` | Sentiment and emotional trajectory | `emotionalArcTracker.getCurrentState()` |
 
+### Autonomous Commands
+
+Commands that can be auto-invoked based on conversation context:
+
+| Command | Triggers | Description | Programmatic |
+|---------|----------|-------------|--------------|
+| **memories** | "remember when...", "recall...", "what was..." | Query stored memories | `agent.invokeCommand('memories')` |
+| **evolution** | "how have you evolved", "stance history" | View stance evolution timeline | `agent.invokeCommand('evolution')` |
+| **strategies** | "what's your strategy", "game plan" | Multi-turn operator sequences | `agent.invokeCommand('strategies')` |
+| **mood** | "how are we feeling", "emotional state" | Emotional arc analysis | `agent.invokeCommand('mood')` |
+| **coherence** | "coherence", "drift budget" | Coherence forecast and budget | `agent.invokeCommand('coherence')` |
+| **transformations** | "what happened", "why the shift" | Transformation history | `agent.invokeCommand('transformations')` |
+| **identity** | "who are you", "your values" | Identity and sentience info | `agent.invokeCommand('identity')` |
+
+**Configuration Options**:
+- `enableAutoCommands: boolean` - Master toggle (default: true)
+- `autoCommandThreshold: number` - Confidence threshold (default: 0.7)
+- `maxAutoCommandsPerTurn: number` - Rate limiting (default: 2)
+- `autoCommandWhitelist: string[]` - Only these can auto-invoke
+- `autoCommandBlacklist: string[]` - Never auto-invoke these
+
 ### Subagent Skills
 
 | Skill | CLI Command | Description | Programmatic |

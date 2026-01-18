@@ -30,6 +30,7 @@ import {
 } from './subagents/index.js';
 import { MemoryStore } from '../memory/index.js';
 import type { MemoryEntry } from '../types/index.js';
+import { commandRegistry, type CommandResult } from '../commands/index.js';
 
 /**
  * Transformation history entry
@@ -59,9 +60,19 @@ const ALL_TOOLS = [
   'AskUserQuestion', 'KillShell', 'TaskOutput'
 ];
 
+export interface ToolUseEvent {
+  id: string;
+  name: string;
+  input: Record<string, unknown>;
+  status: 'started' | 'completed' | 'error';
+  result?: string;
+  error?: string;
+}
+
 export interface StreamCallbacks {
   onText?: (text: string) => void;
   onToolUse?: (tool: string) => void;
+  onToolEvent?: (event: ToolUseEvent) => void;
   onSubagent?: (name: string, status: 'start' | 'end') => void;
   onComplete?: (response: AgentResponse) => void;
   onError?: (error: Error) => void;
@@ -88,6 +99,12 @@ function extractTextFromMessage(message: SDKMessage): string {
 /**
  * Extract tool name from tool use blocks in assistant message
  */
+interface ToolUseBlock {
+  id: string;
+  name: string;
+  input: Record<string, unknown>;
+}
+
 function extractToolsFromMessage(message: SDKMessage): string[] {
   if (message.type !== 'assistant') return [];
 
@@ -101,6 +118,42 @@ function extractToolsFromMessage(message: SDKMessage): string[] {
     }
   }
   return tools;
+}
+
+function extractToolUseBlocks(message: SDKMessage): ToolUseBlock[] {
+  if (message.type !== 'assistant') return [];
+
+  const betaMessage = message.message;
+  if (!betaMessage?.content) return [];
+
+  const blocks: ToolUseBlock[] = [];
+  for (const block of betaMessage.content) {
+    if (block.type === 'tool_use') {
+      blocks.push({
+        id: block.id,
+        name: block.name,
+        input: block.input as Record<string, unknown>,
+      });
+    }
+  }
+  return blocks;
+}
+
+function extractToolResultFromMessage(message: SDKMessage): { toolUseId: string; result: string } | null {
+  if (message.type !== 'user') return null;
+
+  const content = (message as { content?: Array<{ type: string; tool_use_id?: string; content?: string }> }).content;
+  if (!content) return null;
+
+  for (const block of content) {
+    if (block.type === 'tool_result' && block.tool_use_id) {
+      return {
+        toolUseId: block.tool_use_id,
+        result: typeof block.content === 'string' ? block.content : JSON.stringify(block.content),
+      };
+    }
+  }
+  return null;
 }
 
 /**
@@ -185,6 +238,9 @@ export class MetamorphAgent {
     const stanceBefore = this.getCurrentStance();
     const conversationHistory = this.getHistory();
 
+    // 0. AUTO-COMMAND DETECTION AND EXECUTION
+    const autoInvokedCommands = this.executeAutoCommands(message, stanceBefore);
+
     // 1. PRE-TURN: Build transformed system prompt
     let systemPrompt: string;
     let operators: PlannedOperation[] = [];
@@ -208,6 +264,18 @@ export class MetamorphAgent {
         operators: [],
         config: this.config
       });
+    }
+
+    // Inject auto-invoked command results into system prompt
+    if (autoInvokedCommands.length > 0) {
+      const commandContext = autoInvokedCommands
+        .map(cmd => `[/${cmd.command}]\n${cmd.output}`)
+        .join('\n\n');
+      systemPrompt = `${systemPrompt}\n\n[RELEVANT CONTEXT FROM AUTO-INVOKED COMMANDS]\n${commandContext}`;
+
+      if (this.verbose) {
+        console.log(`[METAMORPH] Auto-invoked: ${autoInvokedCommands.map(c => '/' + c.command).join(', ')}`);
+      }
     }
 
     if (this.verbose) {
@@ -379,6 +447,15 @@ export class MetamorphAgent {
     const stanceBefore = this.getCurrentStance();
     const conversationHistory = this.getHistory();
 
+    // 0. AUTO-COMMAND DETECTION AND EXECUTION
+    const autoInvokedCommands = this.executeAutoCommands(message, stanceBefore);
+
+    // Notify about auto-invoked commands
+    if (autoInvokedCommands.length > 0 && callbacks.onText) {
+      const notice = `[Auto-invoked: ${autoInvokedCommands.map(c => '/' + c.command).join(', ')}]\n\n`;
+      callbacks.onText(notice);
+    }
+
     // Build system prompt
     let systemPrompt: string;
     let operators: PlannedOperation[] = [];
@@ -403,8 +480,17 @@ export class MetamorphAgent {
       });
     }
 
+    // Inject auto-invoked command results into system prompt
+    if (autoInvokedCommands.length > 0) {
+      const commandContext = autoInvokedCommands
+        .map(cmd => `[/${cmd.command}]\n${cmd.output}`)
+        .join('\n\n');
+      systemPrompt = `${systemPrompt}\n\n[RELEVANT CONTEXT FROM AUTO-INVOKED COMMANDS]\n${commandContext}`;
+    }
+
     const toolsUsed: string[] = [];
     const subagentsInvoked: string[] = [];
+    const activeTools = new Map<string, ToolUseBlock>();
     let responseText = '';
     let hasStreamedText = false;
 
@@ -447,6 +533,37 @@ export class MetamorphAgent {
             if (!toolsUsed.includes(tool)) {
               toolsUsed.push(tool);
               callbacks.onToolUse?.(tool);
+            }
+          }
+
+          // Extract detailed tool use blocks for onToolEvent
+          const toolBlocks = extractToolUseBlocks(event);
+          for (const block of toolBlocks) {
+            if (!activeTools.has(block.id)) {
+              activeTools.set(block.id, block);
+              callbacks.onToolEvent?.({
+                id: block.id,
+                name: block.name,
+                input: block.input,
+                status: 'started',
+              });
+            }
+          }
+        }
+
+        // Handle tool results (user messages with tool_result)
+        if (event.type === 'user') {
+          const toolResult = extractToolResultFromMessage(event);
+          if (toolResult) {
+            const toolBlock = activeTools.get(toolResult.toolUseId);
+            if (toolBlock) {
+              callbacks.onToolEvent?.({
+                id: toolResult.toolUseId,
+                name: toolBlock.name,
+                input: toolBlock.input,
+                status: 'completed',
+                result: toolResult.result,
+              });
             }
           }
         }
@@ -804,6 +921,78 @@ export class MetamorphAgent {
       scores,
       userMessage
     });
+  }
+
+  // ============================================================================
+  // Auto-Command System
+  // ============================================================================
+
+  /**
+   * Detect and execute auto-invoked commands based on message content
+   */
+  private executeAutoCommands(
+    message: string,
+    stance: Stance
+  ): Array<{ command: string; output: string }> {
+    if (!this.config.enableAutoCommands) {
+      return [];
+    }
+
+    // Detect which commands should be triggered
+    const triggers = commandRegistry.detectTriggers(
+      message,
+      stance,
+      this.config,
+      this.config.maxAutoCommandsPerTurn
+    );
+
+    if (triggers.length === 0) {
+      return [];
+    }
+
+    // Execute each triggered command
+    const results: Array<{ command: string; output: string }> = [];
+
+    for (const trigger of triggers) {
+      const result = commandRegistry.execute(trigger.command, {
+        agent: this,
+        stance,
+        config: this.config,
+        message
+      });
+
+      if (result && result.shouldInjectIntoResponse) {
+        results.push({
+          command: trigger.command,
+          output: result.output
+        });
+      }
+    }
+
+    return results;
+  }
+
+  /**
+   * Manually invoke a command (for agent tool use)
+   */
+  invokeCommand(command: string, args: string[] = []): CommandResult | null {
+    const stance = this.getCurrentStance();
+    return commandRegistry.execute(command, {
+      agent: this,
+      stance,
+      config: this.config
+    }, args);
+  }
+
+  /**
+   * List available commands for agent use
+   */
+  listCommands(): Array<{ name: string; description: string; aliases: string[] }> {
+    return commandRegistry.listAgentInvocable().map(cmd => ({
+      name: cmd.name,
+      description: cmd.description,
+      aliases: cmd.aliases
+    }));
   }
 
   // ============================================================================

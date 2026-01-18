@@ -162,7 +162,14 @@ export const ModeConfigSchema = z.object({
   // Ralph Iteration 3 - Proactive coherence budget planning
   coherenceReserveBudget: z.number().min(0).max(50).default(20),  // Minimum coherence to preserve (%)
   enableCoherencePlanning: z.boolean().default(true),  // Filter operators by predicted drift
-  maxRegenerationAttempts: z.number().min(0).max(5).default(2)  // Times to regenerate on coherence failure
+  maxRegenerationAttempts: z.number().min(0).max(5).default(2),  // Times to regenerate on coherence failure
+
+  // Auto-command system - Agent-invocable and hook-triggered commands
+  enableAutoCommands: z.boolean().default(true),  // Master toggle for auto-invoking commands
+  autoCommandThreshold: z.number().min(0).max(1).default(0.7),  // Confidence threshold for triggering
+  maxAutoCommandsPerTurn: z.number().min(0).max(5).default(2),  // Max commands to auto-invoke per turn
+  autoCommandWhitelist: z.array(z.string()).default([]),  // Only these can auto-invoke (empty = all)
+  autoCommandBlacklist: z.array(z.string()).default([])  // Never auto-invoke these
 });
 
 export type ModeConfig = z.infer<typeof ModeConfigSchema>;
@@ -295,6 +302,7 @@ export interface PreTurnResult {
   systemPrompt: string;
   operators: PlannedOperation[];
   stanceAfterPlan: Stance;
+  autoInvokedCommands?: Array<{ command: string; output: string }>;  // Commands auto-invoked based on triggers
 }
 
 export interface PostTurnContext {

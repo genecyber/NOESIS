@@ -6,6 +6,43 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+### Added
+
+#### Autonomous Commands System
+- **Command Registry**: Central registry pattern for all slash commands with metadata
+  - `CommandRegistry` class with `register()`, `get()`, `detectTriggers()`, `execute()` methods
+  - `CommandDefinition` interface with name, aliases, description, triggers, execute function
+  - Commands: memories, evolution, strategies, mood, coherence, transformations, identity
+- **Trigger Detection**: Pattern matching in message content to auto-invoke commands
+  - `TriggerCondition` interface with type, patterns (RegExp[]), stanceConditions, confidence
+  - `DetectedTrigger` interface with command, trigger type, confidence, evidence
+  - Stance-based conditions for context-aware triggering
+- **Agent Integration**: Commands auto-executed based on conversation context
+  - `executeAutoCommands()` method on MetamorphAgent
+  - `invokeCommand()` method for explicit command invocation
+  - `listCommands()` method for available command listing
+  - Auto-invoked commands injected into system prompt for transparency
+- **Configuration Options** (ModeConfig):
+  - `enableAutoCommands: boolean` (default: true) - Master toggle
+  - `autoCommandThreshold: number` (default: 0.7) - Confidence threshold
+  - `maxAutoCommandsPerTurn: number` (default: 2) - Rate limiting
+  - `autoCommandWhitelist: string[]` - Only these can auto-invoke
+  - `autoCommandBlacklist: string[]` - Never auto-invoke these
+- **Command Files**:
+  - `src/commands/registry.ts` - Core registry implementation
+  - `src/commands/memories.ts` - Memory query with triggers like "remember when..."
+  - `src/commands/evolution.ts` - Evolution timeline with stance snapshots
+  - `src/commands/strategies.ts` - Multi-turn strategy management
+  - `src/commands/mood.ts` - Emotional arc analysis and tracking
+  - `src/commands/coherence.ts` - Coherence forecast and budget
+  - `src/commands/transformations.ts` - Transformation history
+  - `src/commands/identity.ts` - Identity and sentience info
+
+### Changed
+- `PreTurnResult` now includes `autoInvokedCommands` field for transparency
+- Agent `chat()` and `chatStream()` methods detect and execute auto-commands
+- Commands export both individual commands and `initializeCommands()` for auto-registration
+
 ## [0.5.0] - 2026-01-18 - Web UI Enhancement Release
 
 ### Added
