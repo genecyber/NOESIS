@@ -1593,7 +1593,7 @@ Share and discover personality configurations:
 - Coherence-bounded autonomy
 - Goal achievement validation
 
-## Ralph Iteration 11 (Next)
+## Ralph Iteration 11 (Completed)
 
 ### Feature 1: Cross-Model Stance Transfer
 - Export stance configurations for other LLMs
@@ -1643,22 +1643,66 @@ Share and discover personality configurations:
 - Collaborative coherence maintenance
 - Sync protocols for distributed editing
 
-## Ralph Iteration 12 Ideas (Considerations for Future)
+## Ralph Iteration 12 (Current)
 
-- Stance influence inheritance for nested conversations
-- Automated stance therapy and debugging tools
+### Feature 1: Stance Influence Inheritance
+- Parent stance influence propagation
+- Nested conversation stance inheritance
+- Influence decay over conversation depth
+- Override and isolation mechanisms
+- Inheritance conflict resolution
+- Propagation visibility and debugging
+
+### Feature 2: Stance Therapy and Debugging
+- Automated stance inconsistency detection
+- Therapeutic intervention suggestions
+- Coherence health diagnostics
+- Self-healing stance mechanisms
+- Debug mode for stance tracing
+- Recovery playbooks for common issues
+
+### Feature 3: Time-Based Stance Scheduling
+- Cron-like stance trigger expressions
+- Scheduled stance transitions
+- Time-aware context detection
+- Recurring stance patterns
+- Calendar-based stance profiles
+- Automatic schedule optimization
+
+### Feature 4: Domain-Specific Templates
+- Therapy session stance templates
+- Educational interaction templates
+- Creative writing persona templates
+- Business communication templates
+- Template customization framework
+- Template sharing and marketplace hooks
+
+### Feature 5: Natural Language Stance Specification
+- Prose-to-stance conversion
+- Semantic stance interpretation
+- Ambiguity resolution dialogues
+- Validation against formal schema
+- Iterative refinement interface
+- Example-based stance learning
+
+### Feature 6: Stance Impact Simulation
+- Pre-application change preview
+- Coherence impact scoring
+- Rollback simulation scenarios
+- Side-effect prediction
+- A/B simulation comparisons
+- Confidence interval reporting
+
+## Ralph Iteration 13 Ideas (Considerations for Future)
+
 - Stance visualization export to 3D modeling formats (GLTF, USD)
-- Time-based stance scheduling and triggers (cron-like)
-- Stance templates for specific domains (therapy, education, creative writing)
 - Cross-session stance continuity with identity markers
 - Competitive stance comparison and leaderboards
 - Stance-based access control and permissions
 - Haptic feedback for VR stance visualization
 - AI-assisted stance optimization suggestions
-- Natural language stance specification (describe stance in words)
 - Stance versioning with semantic diff
 - Integration with external knowledge bases for frame enrichment
-- Stance impact simulation (preview changes before applying)
 
 ---
 
