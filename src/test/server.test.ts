@@ -168,4 +168,148 @@ describe('Server', () => {
       expect(response.body.state).toBeDefined();
     });
   });
+
+  // New tests for v0.5.0 features
+  describe('Timeline Endpoint', () => {
+    it('returns empty timeline for new session', async () => {
+      const session = await request(app).post('/api/session').send({});
+      const sessionId = session.body.sessionId;
+
+      const response = await request(app)
+        .get(`/api/timeline?sessionId=${sessionId}`);
+
+      expect(response.status).toBe(200);
+      expect(response.body.entries).toBeDefined();
+      expect(Array.isArray(response.body.entries)).toBe(true);
+    });
+
+    it('respects limit parameter', async () => {
+      const session = await request(app).post('/api/session').send({});
+      const sessionId = session.body.sessionId;
+
+      const response = await request(app)
+        .get(`/api/timeline?sessionId=${sessionId}&limit=5`);
+
+      expect(response.status).toBe(200);
+      expect(response.body.entries).toBeDefined();
+    });
+  });
+
+  describe('Evolution Endpoint', () => {
+    it('returns evolution snapshots for session', async () => {
+      const session = await request(app).post('/api/session').send({});
+      const sessionId = session.body.sessionId;
+
+      const response = await request(app)
+        .get(`/api/evolution?sessionId=${sessionId}`);
+
+      expect(response.status).toBe(200);
+      expect(response.body.snapshots).toBeDefined();
+      expect(Array.isArray(response.body.snapshots)).toBe(true);
+    });
+
+    it('respects limit parameter', async () => {
+      const session = await request(app).post('/api/session').send({});
+      const sessionId = session.body.sessionId;
+
+      const response = await request(app)
+        .get(`/api/evolution?sessionId=${sessionId}&limit=10`);
+
+      expect(response.status).toBe(200);
+      expect(response.body.snapshots).toBeDefined();
+    });
+  });
+
+  describe('Memories Endpoint', () => {
+    it('returns memories for session', async () => {
+      const session = await request(app).post('/api/session').send({});
+      const sessionId = session.body.sessionId;
+
+      const response = await request(app)
+        .get(`/api/memories?sessionId=${sessionId}`);
+
+      expect(response.status).toBe(200);
+      expect(response.body.memories).toBeDefined();
+      expect(Array.isArray(response.body.memories)).toBe(true);
+    });
+
+    it('filters by memory type', async () => {
+      const session = await request(app).post('/api/session').send({});
+      const sessionId = session.body.sessionId;
+
+      const response = await request(app)
+        .get(`/api/memories?sessionId=${sessionId}&type=episodic`);
+
+      expect(response.status).toBe(200);
+      expect(response.body.memories).toBeDefined();
+    });
+  });
+
+  describe('Sessions List Endpoint', () => {
+    it('returns list of all sessions', async () => {
+      // Create a session first
+      await request(app).post('/api/session').send({});
+
+      const response = await request(app).get('/api/sessions');
+
+      expect(response.status).toBe(200);
+      expect(response.body.sessions).toBeDefined();
+      expect(Array.isArray(response.body.sessions)).toBe(true);
+      expect(response.body.sessions.length).toBeGreaterThan(0);
+    });
+
+    it('includes session metadata', async () => {
+      const session = await request(app).post('/api/session').send({});
+
+      const response = await request(app).get('/api/sessions');
+
+      expect(response.status).toBe(200);
+      const createdSession = response.body.sessions.find(
+        (s: { id: string }) => s.id === session.body.sessionId
+      );
+      expect(createdSession).toBeDefined();
+      expect(createdSession.stance).toBeDefined();
+      expect(createdSession.messageCount).toBeDefined();
+    });
+  });
+
+  describe('Session Deletion Endpoint', () => {
+    it('deletes existing session', async () => {
+      const session = await request(app).post('/api/session').send({});
+      const sessionId = session.body.sessionId;
+
+      const response = await request(app)
+        .delete(`/api/session/${sessionId}`);
+
+      expect(response.status).toBe(200);
+      expect(response.body.success).toBe(true);
+    });
+
+    it('returns 404 for non-existent session', async () => {
+      const response = await request(app)
+        .delete('/api/session/non-existent-id');
+
+      expect(response.status).toBe(404);
+      expect(response.body.error).toBe('Session not found');
+    });
+  });
+
+  describe('Streaming Endpoint Validation', () => {
+    it('returns error without message for GET stream', async () => {
+      const response = await request(app)
+        .get('/api/chat/stream');
+
+      expect(response.status).toBe(400);
+      expect(response.body.error).toBe('Message query parameter is required');
+    });
+
+    it('returns error without message for POST stream', async () => {
+      const response = await request(app)
+        .post('/api/chat/stream')
+        .send({});
+
+      expect(response.status).toBe(400);
+      expect(response.body.error).toBe('Message is required');
+    });
+  });
 });
