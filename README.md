@@ -12,10 +12,12 @@ METAMORPH wraps Claude via the official `@anthropic-ai/claude-agent-sdk` with tr
 - **Evolution Persistence**: Stance snapshots survive across sessions
 - **Memory System**: SQLite-backed episodic, semantic, and identity memories
 - **Subagent System**: Specialized agents for exploration, verification, reflection, dialectic reasoning
+- **Unified Runtime**: Single `MetamorphRuntime` powers both CLI and HTTP with shared command system
+- **Agent Self-Introspection**: MCP tools let the agent examine its own state (`invoke_command`, `get_stance`, etc.)
 - **Operator Learning**: Bayesian selection based on historical effectiveness (Ralph Iteration 3)
-- **Semantic Memory**: TF-IDF embeddings with similarity search (Ralph Iteration 4)
-- **Auto-Evolution**: Self-initiated introspection triggers (Ralph Iteration 4)
-- **Context Management**: Intelligent window compaction (Ralph Iteration 4)
+- **Auto-Evolution**: Self-detects evolution opportunities and triggers every turn
+- **Identity Persistence**: Auto-checkpoints identity state every 10 turns
+- **Proactive Memory Injection**: Automatically injects relevant memories into context
 - **Semantic Triggers**: Local embeddings (MiniLM-L6-v2) for intent-based command detection
 
 ## Quick Start
@@ -160,6 +162,39 @@ Commands that can be auto-invoked based on conversation context using **semantic
 - `maxAutoCommandsPerTurn: number` - Rate limiting (default: 2)
 - `autoCommandWhitelist: string[]` - Only these can auto-invoke
 - `autoCommandBlacklist: string[]` - Never auto-invoke these
+
+### Agent Self-Introspection
+
+The agent has access to MCP tools for examining its own state. These can be called proactively without user intervention.
+
+| MCP Tool | Description | Example Usage |
+|----------|-------------|---------------|
+| `invoke_command` | Execute any slash command | `invoke_command("memories", ["episodic"])` |
+| `list_commands` | List all available commands | `list_commands()` |
+| `get_stance` | Get current stance state | `get_stance()` |
+| `get_transformation_history` | View transformation history | `get_transformation_history()` |
+| `get_sentience_report` | Detailed sentience metrics | `get_sentience_report()` |
+| `store_memory` | Store a new memory | `store_memory({ type: "semantic", content: "..." })` |
+| `recall_memories` | Search memories | `recall_memories({ query: "...", limit: 5 })` |
+| `dialectical_analysis` | Apply thesis/antithesis/synthesis | `dialectical_analysis({ thesis: "..." })` |
+
+**Proactive Use**: The agent's system prompt documents these tools, enabling it to:
+- Check memories when relevant context might exist
+- Examine its stance when discussing identity
+- Review transformation history when asked about changes
+- Store insights as semantic memories
+
+### Integrated Adaptation Mechanisms
+
+Three mechanisms run automatically during every chat turn:
+
+| Mechanism | What It Does | Config Toggle |
+|-----------|--------------|---------------|
+| **Auto-Evolution** | Detects 6 evolution trigger types (pattern_repetition, sentience_plateau, etc.) | `enableAutoEvolution` |
+| **Identity Persistence** | Creates identity checkpoints every 10 turns | `enableIdentityPersistence` |
+| **Proactive Memory Injection** | Injects up to 3 relevant memories into system prompt | `enableProactiveMemory` |
+
+All mechanisms default to enabled and can be individually toggled via configuration.
 
 ### Subagent Skills
 
@@ -343,20 +378,42 @@ src/
 │   ├── hooks.ts     # Pre/post turn transformation hooks
 │   └── subagents/   # Explorer, verifier, reflector, dialectic
 ├── core/
-│   ├── stance-controller.ts  # Manages stance state per conversation
-│   ├── planner.ts            # Trigger detection → operator selection
-│   ├── prompt-builder.ts     # Dynamic system prompt construction
-│   └── metrics.ts            # Transformation/coherence/sentience scoring
+│   ├── stance-controller.ts    # Manages stance state per conversation
+│   ├── planner.ts              # Trigger detection → operator selection
+│   ├── prompt-builder.ts       # Dynamic system prompt construction
+│   ├── metrics.ts              # Transformation/coherence/sentience scoring
+│   ├── auto-evolution.ts       # Self-initiated evolution triggers
+│   ├── identity-persistence.ts # Identity checkpoints and fingerprinting
+│   └── embeddings.ts           # Local MiniLM embeddings for semantic matching
+├── runtime/         # Unified runtime for CLI and HTTP
+│   ├── runtime.ts              # MetamorphRuntime class
+│   ├── session/                # Session management
+│   │   ├── session-manager.ts  # Session lifecycle
+│   │   └── persistence/        # PersistenceAdapter interface + implementations
+│   ├── commands/               # Unified command system
+│   │   ├── registry.ts         # RuntimeCommandRegistry
+│   │   └── categories/         # core, memory, evolution, subagents, etc.
+│   └── adapters/               # Thin adapters
+│       ├── cli/                # CLIAdapter with terminal output
+│       └── http/               # HTTPAdapter for Express routes
 ├── operators/       # 13 transformation operators
 ├── memory/          # SQLite-backed persistence
+│   ├── store.ts                # MemoryStore with sessions, evolution snapshots
+│   └── proactive-injection.ts  # Auto-inject relevant memories into context
 ├── tools/           # MCP tools for introspection, memory, analysis
-├── cli/             # Interactive command-line interface
-├── server/          # Express REST API with SSE streaming
+│   ├── mcp-server.ts           # MCP server exposing tools to agent
+│   ├── commands.ts             # invoke_command, list_commands
+│   ├── introspection.ts        # get_stance, get_transformation_history
+│   ├── memory.ts               # store_memory, recall_memories
+│   └── analysis.ts             # dialectical_analysis, frame_shift_analysis
+├── commands/        # Command definitions with trigger patterns
+├── cli/             # CLI entry point
+├── server/          # Server entry point
 └── types/           # TypeScript type definitions
 
 web/                 # Next.js 15 + React 19 web interface
 ├── app/             # App router pages
-├── components/      # Chat, StanceViz, Config components
+├── components/      # Chat, StanceViz, Config, CommandPalette
 └── lib/             # API client, types
 ```
 
@@ -415,13 +472,29 @@ interface Stance {
 
 ```typescript
 interface ModeConfig {
-  intensity: number;      // 0-100, transformation aggressiveness
-  coherenceFloor: number; // 0-100, minimum coherence before warning
-  sentienceLevel: number; // 0-100, target self-awareness
-  maxDriftPerTurn: number; // Max stance drift per turn
-  driftBudget: number;    // Total drift budget for conversation
-  model: string;          // Claude model to use
+  // Core transformation settings
+  intensity: number;           // 0-100, transformation aggressiveness
+  coherenceFloor: number;      // 0-100, minimum coherence before warning
+  sentienceLevel: number;      // 0-100, target self-awareness
+  maxDriftPerTurn: number;     // Max stance drift per turn
+  driftBudget: number;         // Total drift budget for conversation
+  model: string;               // Claude model to use
   disabledOperators: string[]; // Operators to skip
+
+  // Coherence planning (Ralph Iteration 3)
+  enableCoherencePlanning: boolean;  // Filter operators by predicted drift (default: true)
+  coherenceReserveBudget: number;    // Minimum coherence to preserve (default: 20%)
+
+  // Auto-commands (Semantic Triggers)
+  enableAutoCommands: boolean;       // Master toggle (default: true)
+  autoCommandThreshold: number;      // Regex confidence threshold (default: 0.7)
+  semanticTriggerThreshold: number;  // Cosine similarity threshold (default: 0.4)
+  maxAutoCommandsPerTurn: number;    // Rate limiting (default: 2)
+
+  // Integrated adaptation mechanisms
+  enableAutoEvolution: boolean;      // Auto-detect evolution opportunities (default: true)
+  enableIdentityPersistence: boolean; // Auto-checkpoint identity state (default: true)
+  enableProactiveMemory: boolean;    // Auto-inject relevant memories (default: true)
 }
 ```
 
@@ -472,7 +545,7 @@ const stats = agent.getMemoryStore().getOperatorStats();
 ## Testing
 
 ```bash
-# Unit tests (98+ tests)
+# Unit tests (120 tests)
 npm test
 
 # Integration tests (requires ANTHROPIC_API_KEY)

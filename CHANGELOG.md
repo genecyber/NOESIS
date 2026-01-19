@@ -8,6 +8,57 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ### Added
 
+#### Unified Runtime Architecture
+- **MetamorphRuntime**: Single unified runtime for both CLI and HTTP adapters
+  - `src/runtime/runtime.ts` - Core runtime class managing sessions and commands
+  - `src/runtime/session/session-manager.ts` - Session lifecycle management
+  - `src/runtime/session/persistence/adapter.ts` - `PersistenceAdapter` interface for future Supabase integration
+  - `src/runtime/session/persistence/memory-adapter.ts` - In-memory adapter (current behavior)
+- **Unified Command System**: All 50+ commands available in both CLI and Server
+  - `src/runtime/commands/registry.ts` - Enhanced `RuntimeCommandRegistry` with `invokeCommand()` support
+  - `src/runtime/commands/context.ts` - `CommandContext` with session, runtime, and output helpers
+  - `src/runtime/commands/categories/` - Commands organized by category (core, memory, evolution, subagents, coherence, identity, advanced, integrations)
+- **Thin Adapters**: CLI and HTTP delegate to shared runtime
+  - `src/runtime/adapters/cli/` - CLIAdapter with terminal output
+  - `src/runtime/adapters/http/` - HTTPAdapter for Express routes
+- **Agent Command Methods**: MetamorphAgent now exposes command invocation
+  - `agent.invokeCommand(name, args)` - Execute any registered command
+  - `agent.listCommands()` - List all available invocable commands
+
+#### Agent Self-Introspection MCP Tools
+- **invoke_command Tool**: Agents can now invoke any slash command programmatically
+  - `mcp__metamorph-tools__invoke_command` - Execute commands like `/memories`, `/stance`, `/identity`
+  - Enables agent self-examination without user prompts
+  - System prompt documents available tools for agent awareness
+- **list_commands Tool**: Discover available commands
+  - `mcp__metamorph-tools__list_commands` - Returns all invocable commands with descriptions
+- **Full MCP Tool Wiring**: All introspection tools now functional
+  - Introspection tools: `get_stance`, `get_transformation_history`, `get_sentience_report`, `get_emergent_goals`
+  - Memory tools: `store_memory`, `recall_memories`, `get_memory_types`
+  - Analysis tools: `dialectical_analysis`, `frame_shift_analysis`, `value_analysis`, `coherence_check`
+  - All tools auto-allowed without permission prompts
+- **Provider Wiring**: All MCP tool providers connected to agent
+  - `setAgentProvider()` for command tools
+  - `setStanceProvider()` for introspection and analysis tools
+  - `setHistoryProvider()` for transformation history
+  - `setMemoryProvider()` for memory tools
+
+#### Integrated Adaptation Mechanisms
+- **Auto-Evolution Manager Integration**: Self-detects evolution opportunities during chat
+  - Records stance and coherence history every turn
+  - Checks 6 trigger types: pattern_repetition, sentience_plateau, identity_drift, value_stagnation, coherence_degradation, growth_opportunity
+  - Controlled by `config.enableAutoEvolution` (default: true)
+- **Identity Persistence Manager Integration**: Auto-checkpoints identity state
+  - Calls `recordTurn()` every turn
+  - Creates identity checkpoints every 10 turns (configurable)
+  - Tracks identity fingerprints and emergent traits
+  - Controlled by `config.enableIdentityPersistence` (default: true)
+- **Proactive Memory Injection Integration**: Auto-injects relevant memories into context
+  - Searches memories for semantic relevance to current message in pre-turn hook
+  - Injects up to 3 memories into system prompt with relevance scores
+  - Uses semantic similarity, recency decay, stance alignment, and cooldown tracking
+  - Controlled by `config.enableProactiveMemory` (default: true)
+
 #### Web UI Enhancements
 - **Slash Commands in Chat**: All 60+ CLI commands available via `/` in chat with autocomplete
   - `CommandPalette` component with keyboard navigation (Arrow keys, Tab, Enter, Esc)
@@ -90,6 +141,13 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 - `PreTurnResult` now includes `autoInvokedCommands` field for transparency
 - Agent `chat()` and `chatStream()` methods detect and execute auto-commands
 - Commands export both individual commands and `initializeCommands()` for auto-registration
+- **ModeConfig** extended with new feature toggles:
+  - `enableAutoEvolution: boolean` (default: true) - Auto-detect evolution opportunities
+  - `enableIdentityPersistence: boolean` (default: true) - Auto-checkpoint identity state
+  - `enableProactiveMemory: boolean` (default: true) - Auto-inject relevant memories
+- **Architecture**: All 50+ commands now work identically in CLI and HTTP (unified runtime)
+- **Agent**: Integrated auto-evolution, identity persistence, and proactive memory into chat loop
+- **AGENT_ADAPTATION_AUDIT.md**: Updated to reflect 3 newly integrated mechanisms
 
 ## [0.5.0] - 2026-01-18 - Web UI Enhancement Release
 
