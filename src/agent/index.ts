@@ -32,6 +32,9 @@ import { MemoryStore } from '../memory/index.js';
 import type { MemoryEntry } from '../types/index.js';
 import { commandRegistry, type CommandResult } from '../commands/index.js';
 import { setAgentProvider } from '../tools/commands.js';
+import { setStanceProvider as setIntrospectionStanceProvider, setHistoryProvider } from '../tools/introspection.js';
+import { setStanceProvider as setAnalysisStanceProvider } from '../tools/analysis.js';
+import { setMemoryProvider } from '../tools/memory.js';
 import { createMetamorphMcpServer } from '../tools/mcp-server.js';
 import type { McpSdkServerConfigWithInstance } from '@anthropic-ai/claude-agent-sdk';
 
@@ -232,10 +235,55 @@ export class MetamorphAgent {
       this.hooks = createTransformationHooks(this.memoryStore ?? undefined);
     }
 
-    // Wire tool providers for agent command invocation
+    // Wire all tool providers for MCP tools
     // eslint-disable-next-line @typescript-eslint/no-this-alias
     const self = this;
+
+    // Command tools provider
     setAgentProvider(() => self);
+
+    // Introspection tools providers
+    setIntrospectionStanceProvider(() => self.getCurrentStance());
+    setHistoryProvider(() => {
+      const history = self.getTransformationHistory();
+      return history.map(entry => ({
+        timestamp: entry.timestamp.getTime(),
+        stance: entry.stanceAfter,
+        trigger: entry.operators.map(op => op.name).join(', ') || 'natural'
+      }));
+    });
+
+    // Analysis tools provider
+    setAnalysisStanceProvider(() => self.getCurrentStance());
+
+    // Memory tools provider
+    setMemoryProvider({
+      store: (memory) => {
+        const store = self.getMemoryStore();
+        const id = store.addMemory({
+          ...memory,
+          timestamp: new Date(),
+          decay: 0.99
+        });
+        const entries = store.searchMemories({ limit: 1 });
+        return entries[0] || { ...memory, id, timestamp: new Date(), decay: 0.99 };
+      },
+      recall: (query, limit = 10) => {
+        const store = self.getMemoryStore();
+        // For now, use type-based search if query matches a type, otherwise get all
+        const type = ['episodic', 'semantic', 'identity'].includes(query) ? query as 'episodic' | 'semantic' | 'identity' : undefined;
+        return store.searchMemories({ type, limit });
+      },
+      getAll: () => {
+        const store = self.getMemoryStore();
+        return store.searchMemories({ limit: 100 });
+      },
+      delete: (_id) => {
+        // Memory deletion not yet implemented in MemoryStore
+        // TODO: Add deleteMemory method to MemoryStore
+        return false;
+      }
+    });
 
     if (this.verbose) {
       console.log(`[METAMORPH] Initialized with conversation ${this.conversationId}`);
