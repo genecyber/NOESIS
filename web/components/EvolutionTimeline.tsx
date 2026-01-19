@@ -69,11 +69,11 @@ export function EvolutionTimeline({
 
   if (snapshots.length === 0) {
     return (
-      <div className="bg-emblem-surface rounded-lg p-4 my-4">
+      <div className="glass-card p-4 h-full flex flex-col">
         <div className="flex justify-between items-center mb-4 pb-2 border-b border-emblem-surface-2">
           <h3 className="m-0 text-emblem-secondary text-base">Evolution Timeline</h3>
         </div>
-        <div className="text-center py-8 text-emblem-muted">
+        <div className="flex-1 flex flex-col items-center justify-center text-emblem-muted">
           <div className="text-2xl text-emblem-muted/50 mb-2">~</div>
           <p>No evolution snapshots yet.</p>
           <p className="text-sm text-emblem-muted/70 mt-2">
@@ -85,7 +85,7 @@ export function EvolutionTimeline({
   }
 
   return (
-    <div className="bg-emblem-surface rounded-lg p-4 my-4">
+    <div className="glass-card p-4 h-full flex flex-col">
       <div className="flex justify-between items-center mb-4 pb-2 border-b border-emblem-surface-2">
         <h3 className="m-0 text-emblem-secondary text-base">Evolution Timeline</h3>
         <span className="text-emblem-muted text-xs">{snapshots.length} snapshots</span>
@@ -103,92 +103,101 @@ export function EvolutionTimeline({
         </div>
       )}
 
-      {/* Timeline Visualization */}
-      <div className="flex gap-2 overflow-x-auto py-4 min-h-[180px] items-end">
-        {displaySnapshots.map((snapshot, index) => {
-          const prevSnapshot = displaySnapshots[index + 1];
-          const isMajor = isMajorTransform(snapshot, prevSnapshot);
-          const isSelected = selectedId === snapshot.id;
-          const isHovered = hoveredId === snapshot.id;
-          const frameColor = FRAME_COLORS[snapshot.stance.frame] || '#00d9ff';
+      {/* Timeline Visualization - centered and fills available space */}
+      <div className="flex-1 flex items-center justify-center overflow-visible py-4 relative">
+        <div className="flex gap-3 items-end">
+          {displaySnapshots.map((snapshot, index) => {
+            const prevSnapshot = displaySnapshots[index + 1];
+            const isMajor = isMajorTransform(snapshot, prevSnapshot);
+            const isSelected = selectedId === snapshot.id;
+            const isHovered = hoveredId === snapshot.id;
+            const frameColor = FRAME_COLORS[snapshot.stance.frame] || '#00d9ff';
 
-          return (
-            <div
-              key={snapshot.id}
-              className={cn(
-                "flex flex-col items-center min-w-[60px] cursor-pointer transition-all relative",
-                (isHovered || isSelected) && "-translate-y-1"
-              )}
-              onClick={() => {
-                setSelectedId(isSelected ? null : snapshot.id);
-                onSnapshotClick?.(snapshot);
-              }}
-              onMouseEnter={() => setHoveredId(snapshot.id)}
-              onMouseLeave={() => setHoveredId(null)}
-            >
-              {/* Drift bar */}
-              <div className="w-6 h-20 bg-emblem-surface-2 rounded overflow-hidden flex flex-col justify-end">
+            return (
+              <div
+                key={snapshot.id}
+                className={cn(
+                  "flex flex-col items-center min-w-[60px] cursor-pointer transition-all relative",
+                  (isHovered || isSelected) && "-translate-y-1"
+                )}
+                onClick={() => {
+                  setSelectedId(isSelected ? null : snapshot.id);
+                  onSnapshotClick?.(snapshot);
+                }}
+                onMouseEnter={() => setHoveredId(snapshot.id)}
+                onMouseLeave={() => setHoveredId(null)}
+              >
+                {/* Expanded details - positioned above the bar */}
+                {isSelected && (
+                  <div className="absolute bottom-full left-1/2 -translate-x-1/2 bg-emblem-surface-2 border border-white/10 rounded-lg p-3 min-w-[200px] z-50 mb-2 shadow-xl">
+                    <div className="text-xs text-emblem-muted mb-2">
+                      {new Date(snapshot.timestamp).toLocaleString()}
+                    </div>
+                    <div className="grid grid-cols-2 gap-x-4 gap-y-1 text-sm">
+                      <span className="text-emblem-muted">Frame:</span>
+                      <span style={{ color: frameColor }} className="font-medium">{snapshot.stance.frame}</span>
+                      <span className="text-emblem-muted">Self-Model:</span>
+                      <span className="text-emblem-text/80">{snapshot.stance.selfModel}</span>
+                      <span className="text-emblem-muted">Drift:</span>
+                      <span className="text-emblem-text/80">{snapshot.driftAtSnapshot}</span>
+                    </div>
+                    <div className="mt-2 pt-2 border-t border-white/10 grid grid-cols-3 gap-2 text-xs text-emblem-muted">
+                      <div className="text-center">
+                        <div className="text-emblem-primary font-medium">{snapshot.stance.sentience.awarenessLevel}</div>
+                        <div>Aware</div>
+                      </div>
+                      <div className="text-center">
+                        <div className="text-emblem-primary font-medium">{snapshot.stance.sentience.autonomyLevel}</div>
+                        <div>Autonomy</div>
+                      </div>
+                      <div className="text-center">
+                        <div className="text-emblem-primary font-medium">{snapshot.stance.sentience.identityStrength}</div>
+                        <div>Identity</div>
+                      </div>
+                    </div>
+                    {/* Arrow pointing down */}
+                    <div className="absolute top-full left-1/2 -translate-x-1/2 w-0 h-0 border-l-[8px] border-l-transparent border-r-[8px] border-r-transparent border-t-[8px] border-t-emblem-surface-2" />
+                  </div>
+                )}
+
+                {/* Drift bar */}
+                <div className="w-8 h-24 bg-emblem-surface-2 rounded overflow-hidden flex flex-col justify-end">
+                  <div
+                    className="w-full transition-all duration-300 rounded-t"
+                    style={{
+                      height: `${getDriftHeight(snapshot.driftAtSnapshot)}%`,
+                      backgroundColor: frameColor,
+                      opacity: isHovered || isSelected ? 1 : 0.7,
+                      boxShadow: isSelected ? `0 0 12px ${frameColor}` : 'none'
+                    }}
+                  />
+                </div>
+
+                {/* Snapshot dot */}
                 <div
-                  className="w-full transition-all duration-300 rounded-t"
+                  className={cn(
+                    "rounded-full my-2 transition-all border-2 border-emblem-surface",
+                    isMajor ? "w-4 h-4" : "w-3 h-3",
+                    isMajor && "shadow-[0_0_10px_currentColor]"
+                  )}
                   style={{
-                    height: `${getDriftHeight(snapshot.driftAtSnapshot)}%`,
                     backgroundColor: frameColor,
-                    opacity: isHovered || isSelected ? 1 : 0.7
+                    transform: isHovered ? 'scale(1.3)' : 'scale(1)',
+                    color: frameColor
                   }}
                 />
-              </div>
 
-              {/* Snapshot dot */}
-              <div
-                className={cn(
-                  "rounded-full my-2 transition-all border-2 border-emblem-surface",
-                  isMajor ? "w-4 h-4" : "w-3 h-3",
-                  isMajor && "shadow-[0_0_10px_currentColor]"
-                )}
-                style={{
-                  backgroundColor: frameColor,
-                  transform: isHovered ? 'scale(1.3)' : 'scale(1)',
-                  color: frameColor
-                }}
-              />
-
-              {/* Trigger label */}
-              <div className="flex flex-col items-center gap-0.5">
-                <span className="text-[0.65rem] text-emblem-muted uppercase">
-                  {TRIGGER_LABELS[snapshot.trigger]}
-                </span>
-                <span className="text-xs text-emblem-text/80 capitalize">{snapshot.stance.frame}</span>
-              </div>
-
-              {/* Expanded details */}
-              {isSelected && (
-                <div className="absolute top-full left-1/2 -translate-x-1/2 bg-emblem-surface-2 border border-emblem-surface-2 rounded-lg p-3 min-w-[180px] z-10 mt-2 animate-fade-in">
-                  <div className="flex justify-between text-sm mb-1">
-                    <span className="text-emblem-muted">Time:</span>
-                    <span className="text-emblem-text/80">{new Date(snapshot.timestamp).toLocaleString()}</span>
-                  </div>
-                  <div className="flex justify-between text-sm mb-1">
-                    <span className="text-emblem-muted">Frame:</span>
-                    <span style={{ color: frameColor }}>{snapshot.stance.frame}</span>
-                  </div>
-                  <div className="flex justify-between text-sm mb-1">
-                    <span className="text-emblem-muted">Self-Model:</span>
-                    <span className="text-emblem-text/80">{snapshot.stance.selfModel}</span>
-                  </div>
-                  <div className="flex justify-between text-sm mb-1">
-                    <span className="text-emblem-muted">Drift:</span>
-                    <span className="text-emblem-text/80">{snapshot.driftAtSnapshot}</span>
-                  </div>
-                  <div className="flex flex-col gap-0.5 mt-2 pt-2 border-t border-emblem-surface text-xs text-emblem-muted">
-                    <span>Awareness: {snapshot.stance.sentience.awarenessLevel}</span>
-                    <span>Autonomy: {snapshot.stance.sentience.autonomyLevel}</span>
-                    <span>Identity: {snapshot.stance.sentience.identityStrength}</span>
-                  </div>
+                {/* Trigger label */}
+                <div className="flex flex-col items-center gap-0.5">
+                  <span className="text-[0.65rem] text-emblem-muted uppercase">
+                    {TRIGGER_LABELS[snapshot.trigger]}
+                  </span>
+                  <span className="text-xs text-emblem-text/80 capitalize">{snapshot.stance.frame}</span>
                 </div>
-              )}
-            </div>
-          );
-        })}
+              </div>
+            );
+          })}
+        </div>
       </div>
 
       {/* Legend */}
