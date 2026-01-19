@@ -127,5 +127,6 @@ export interface EmotionContext {
   confidence: number;        // 0 to 1
   stability: number;         // 0 to 1
   promptContext?: string;
+  suggestedEmpathyBoost?: number;  // 0 to 20+, based on negative valence + instability
   timestamp?: string;
 }

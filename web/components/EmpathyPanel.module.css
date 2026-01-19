@@ -262,6 +262,50 @@
   transition: width 0.3s ease;
 }
 
+/* Aggregate Stats */
+.aggregateStats {
+  margin-top: 0.5rem;
+  padding: 0.5rem;
+  background: var(--bg-secondary);
+  border-radius: 6px;
+  border: 1px solid var(--border-color);
+}
+
+.aggregateRow {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 0.25rem 0;
+  font-size: 0.7rem;
+}
+
+.aggregateRow:not(:last-child) {
+  border-bottom: 1px solid var(--border-color);
+  padding-bottom: 0.375rem;
+  margin-bottom: 0.25rem;
+}
+
+.aggregateLabel {
+  color: var(--text-secondary);
+}
+
+.aggregateValue {
+  color: var(--text-primary);
+  font-weight: 500;
+}
+
+.trendImproving {
+  color: #4ade80;
+}
+
+.trendStable {
+  color: var(--accent-cyan);
+}
+
+.trendDeclining {
+  color: #f87171;
+}
+
 .analyzing {
   display: flex;
   align-items: center;

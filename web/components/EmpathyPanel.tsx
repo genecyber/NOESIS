@@ -4,16 +4,8 @@ import { useState, useEffect, useRef, useCallback } from 'react';
 import styles from './EmpathyPanel.module.css';
 import { loadModels, isModelsLoaded, detectEmotions, calculateValence, calculateArousal } from '../lib/face-api';
 import { analyzeVisionEmotion } from '../lib/api';
-
-interface EmotionContext {
-  currentEmotion: string;
-  valence: number;
-  arousal: number;
-  confidence: number;
-  stability: number;
-  suggestedEmpathyBoost?: number;
-  promptContext?: string;
-}
+import { emotionAggregator, type EmotionAggregate } from '../lib/emotion-aggregator';
+import type { EmotionContext } from '../lib/types';
 
 interface EmpathyConfig {
   empathyCameraInterval?: number;
@@ -88,6 +80,7 @@ export default function EmpathyPanel({
   const [selectedDevice, setSelectedDevice] = useState<string>('');
   const [debugInfo, setDebugInfo] = useState<string>('');
   const [localEmotionContext, setLocalEmotionContext] = useState<EmotionContext | null>(null);
+  const [emotionAggregate, setEmotionAggregate] = useState<EmotionAggregate | null>(null);
   const [detectionStatus, setDetectionStatus] = useState<string>('');
   const [isDetecting, setIsDetecting] = useState(false);
   const [modelsLoading, setModelsLoading] = useState(false);
@@ -205,6 +198,8 @@ export default function EmpathyPanel({
     setDebugInfo('Camera stopped');
     setDetectionStatus('');
     setLocalEmotionContext(null);
+    setEmotionAggregate(null);
+    emotionAggregator.clear(); // Clear aggregated readings
   }, []);
 
   // Browser-side detection loop (disabled when Claude Vision is enabled)
@@ -250,17 +245,38 @@ export default function EmpathyPanel({
           const valence = calculateValence(result.expressions);
           const arousal = calculateArousal(result.expressions);
 
-          const context: EmotionContext = {
+          // Add reading to aggregator (no LLM calls - just local math)
+          emotionAggregator.addReading({
+            currentEmotion: result.currentEmotion,
+            valence,
+            arousal,
+            confidence: result.confidence
+          });
+
+          // Get aggregated data
+          const aggregate = emotionAggregator.getAggregate();
+          setEmotionAggregate(aggregate);
+
+          // Build context from aggregate (richer data) or latest if no aggregate
+          const context: EmotionContext = aggregate ? {
+            currentEmotion: aggregate.dominantEmotion,
+            valence: aggregate.avgValence,
+            arousal: aggregate.avgArousal,
+            confidence: aggregate.avgConfidence,
+            stability: aggregate.stability,
+            suggestedEmpathyBoost: aggregate.suggestedEmpathyBoost,
+            promptContext: aggregate.promptContext
+          } : {
             currentEmotion: result.currentEmotion,
             valence,
             arousal,
             confidence: result.confidence,
-            stability: 0.5, // TODO: track history for stability
+            stability: 0.5
           };
 
-          console.log('[Empathy] Detected:', context);
+          console.log('[Empathy] Detected:', result.currentEmotion, '| Aggregate:', aggregate?.sampleCount, 'samples, trend:', aggregate?.trend);
           setLocalEmotionContext(context);
-          setDetectionStatus(`Detected: ${result.currentEmotion}`);
+          setDetectionStatus(`${result.currentEmotion} (${aggregate?.sampleCount ?? 1} samples)`);
           onEmotionDetected?.(context);
         } else {
           consecutiveFailures++;
@@ -703,6 +719,28 @@ export default function EmpathyPanel({
               />
             </div>
           </div>
+
+          {/* Aggregate Stats */}
+          {emotionAggregate && (
+            <div className={styles.aggregateStats}>
+              <div className={styles.aggregateRow}>
+                <span className={styles.aggregateLabel}>Samples</span>
+                <span className={styles.aggregateValue}>{emotionAggregate.sampleCount}</span>
+              </div>
+              <div className={styles.aggregateRow}>
+                <span className={styles.aggregateLabel}>Trend</span>
+                <span className={`${styles.aggregateValue} ${styles[`trend${emotionAggregate.trend.charAt(0).toUpperCase() + emotionAggregate.trend.slice(1)}`]}`}>
+                  {emotionAggregate.trend === 'improving' ? '↑' : emotionAggregate.trend === 'declining' ? '↓' : '→'} {emotionAggregate.trend}
+                </span>
+              </div>
+              {emotionAggregate.suggestedEmpathyBoost > 0 && (
+                <div className={styles.aggregateRow}>
+                  <span className={styles.aggregateLabel}>Empathy Boost</span>
+                  <span className={styles.aggregateValue}>+{emotionAggregate.suggestedEmpathyBoost}</span>
+                </div>
+              )}
+            </div>
+          )}
         </div>
       )}
 

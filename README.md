@@ -129,6 +129,34 @@ cd web && npm run dev
 
 The server runs on port 3001, and Next.js proxies API requests from port 3000.
 
+### Empathy Mode: Emotion-Aware Responses
+
+METAMORPH includes **Empathy Mode** - a webcam-based emotion detection system that makes the agent aware of your emotional state during conversation.
+
+**How It Works:**
+
+1. **Browser-Side Detection**: Uses [face-api.js](https://github.com/vladmandic/face-api) running locally in your browser via TensorFlow.js. Models load from CDN (~6MB). **No API calls required** - all emotion detection happens on your device.
+
+2. **Emotion Aggregation**: Rather than sending individual readings, the system accumulates face-api detections over a 30-second sliding window and computes:
+   - **Average valence** (positive/negative emotional tone)
+   - **Average arousal** (calm to excited energy level)
+   - **Dominant emotion** (most frequent in window)
+   - **Stability** (how consistent emotions are - inverse of variance)
+   - **Trend** (improving, stable, or declining over time)
+   - **Empathy boost** (suggested increase to agent's empathy value)
+
+3. **Context Injection**: When you send a message, the aggregated emotional context is included. The agent's system prompt receives natural language like: *"The user appears sad with a negative emotional state. They seem calm. Their emotional state has been fluctuating. Their mood appears to be declining - consider responding with extra care."*
+
+4. **Optional Claude Vision**: For deeper analysis, enable "AI Emotion Analysis" which sends frames to Claude Vision (rate-limited to 1/minute). This supplements local detection with Claude's understanding of context, body language, and nuanced expression.
+
+**Privacy**: Face-api runs entirely in your browser. Video never leaves your device unless you explicitly enable Claude Vision. The emotion aggregator stores only numerical metrics (valence, arousal, confidence) - no images or video.
+
+**Configuration** (in Empathy Panel → Advanced Settings):
+- **Detection Interval**: How often to capture frames (100-5000ms)
+- **Min Confidence**: Threshold for including detections in aggregate
+- **Auto-Adjust**: Let detected emotions automatically boost agent empathy
+- **Max Boost**: Cap on empathy value increases
+
 ### Deployment (Railway)
 
 The project includes Railway configuration for easy deployment:

@@ -117,21 +117,36 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
   - Models loaded from jsDelivr CDN (TinyFaceDetector + FaceExpressionNet)
   - `detectEmotions()`, `calculateValence()`, `calculateArousal()` utilities
   - Zero API calls for basic emotion detection - works offline
+- **Emotion Aggregation System**: Time-windowed accumulation of face-api readings
+  - `web/lib/emotion-aggregator.ts` - EmotionAggregator class for local computation
+  - 30-second sliding window (configurable) with max 60 samples
+  - Computed metrics:
+    - `avgValence`, `avgArousal`, `avgConfidence` - Running averages
+    - `dominantEmotion` - Most frequent emotion in window
+    - `stability` - Inverse of valence variance (0-1 scale)
+    - `trend` - Compares first/second half: improving, stable, or declining
+    - `suggestedEmpathyBoost` - Based on negative valence + instability (0-20)
+    - `promptContext` - Natural language summary for system prompt
+  - Singleton `emotionAggregator` instance for app-wide use
+  - Auto-clears when camera stops
+  - UI displays sample count, trend arrows, and empathy boost
 - **Claude Vision Integration**: Advanced emotion analysis via Claude's vision capabilities
   - `POST /api/chat/vision` - Analyze webcam frame with Claude Vision
   - Rate-limited to 1 request per minute (server-side cooldown)
   - Stores emotion context for automatic injection into subsequent chat calls
   - Customizable analysis prompt (saved to localStorage)
 - **Emotion Context Flow**: Full pipeline support for emotion-aware responses
-  - `EmotionContext` type defined in `src/types/index.ts`
+  - `EmotionContext` type defined in `src/types/index.ts` and `web/lib/types.ts`
   - Passed through `PreTurnContext` to hooks and operators
   - Auto-injected into system prompt when empathy mode enabled
   - Supports both local face-api detection and Claude Vision analysis
+  - Aggregated context (stability, trend, boost) flows through chat API
 - **Enhanced Empathy Panel**: Unified emotion detection UI
   - Toggle between local face-api and Claude Vision detection
   - Configurable detection interval, confidence threshold, auto-adjust settings
   - Advanced section with customizable Claude Vision prompt
   - Real-time emotion display with valence/arousal metrics
+  - Aggregate stats display: sample count, trend indicator, empathy boost
   - Permission handling and error states
 - **Server-Side Face Detection** (fallback): Using face-api.js
   - `FaceApiDetector` class wrapping @vladmandic/face-api
