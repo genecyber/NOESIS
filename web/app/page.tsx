@@ -1,7 +1,8 @@
 'use client';
 
 import { useState, useEffect, useCallback, useRef } from 'react';
-import { Layers, Settings, Heart, Clock, Brain, FolderOpen, MessageSquare, Menu, X, GripVertical } from 'lucide-react';
+import { motion, AnimatePresence } from 'framer-motion';
+import { Layers, Settings, Heart, Clock, Brain, FolderOpen, MessageSquare, Menu, X, GripVertical, ChevronDown, Plus } from 'lucide-react';
 import Chat from '@/components/Chat';
 import StanceViz from '@/components/StanceViz';
 import Config from '@/components/Config';
@@ -28,6 +29,20 @@ const TABS: { id: PanelType; label: string; icon: React.ElementType }[] = [
   { id: 'memories', label: 'Memories', icon: MessageSquare },
 ];
 
+// Mobile breakpoint hook
+function useIsMobile(breakpoint = 768) {
+  const [isMobile, setIsMobile] = useState(false);
+
+  useEffect(() => {
+    const checkMobile = () => setIsMobile(window.innerWidth < breakpoint);
+    checkMobile();
+    window.addEventListener('resize', checkMobile);
+    return () => window.removeEventListener('resize', checkMobile);
+  }, [breakpoint]);
+
+  return isMobile;
+}
+
 export default function Home() {
   const [sessionId, setSessionId] = useState<string | undefined>();
   const [stance, setStance] = useState<Stance | null>(null);
@@ -40,12 +55,17 @@ export default function Home() {
   const [activePanel, setActivePanel] = useState<PanelType>('stance');
   const [emotionContext, setEmotionContext] = useState<EmotionContext | null>(null);
 
-  // Sidebar state
+  // Sidebar state (desktop)
   const [sidebarOpen, setSidebarOpen] = useState(true);
   const [sidebarWidth, setSidebarWidth] = useState(320);
   const isResizing = useRef(false);
   const minSidebarWidth = 280;
   const maxSidebarWidth = 500;
+
+  // Mobile state
+  const isMobile = useIsMobile();
+  const [mobileDrawerOpen, setMobileDrawerOpen] = useState(false);
+  const [mobilePanelOpen, setMobilePanelOpen] = useState(false);
 
   // Initialize preferences from localStorage on mount
   useEffect(() => {
@@ -61,7 +81,7 @@ export default function Home() {
     }
   }, []);
 
-  // Handle sidebar resize
+  // Handle sidebar resize (desktop only)
   const handleMouseDown = useCallback(() => {
     isResizing.current = true;
     document.body.style.cursor = 'col-resize';
@@ -80,7 +100,6 @@ export default function Home() {
         isResizing.current = false;
         document.body.style.cursor = '';
         document.body.style.userSelect = '';
-        // Save width to preferences
         savePreferences({ sidebarWidth });
       }
     };
@@ -94,7 +113,7 @@ export default function Home() {
     };
   }, [sidebarWidth]);
 
-  // Toggle sidebar
+  // Toggle sidebar (desktop)
   const toggleSidebar = useCallback(() => {
     const newState = !sidebarOpen;
     setSidebarOpen(newState);
@@ -105,6 +124,15 @@ export default function Home() {
   const handlePanelChange = useCallback((panel: PanelType) => {
     setActivePanel(panel);
     savePreferences({ activePanel: panel });
+    if (isMobile) {
+      setMobileDrawerOpen(false);
+      setMobilePanelOpen(true);
+    }
+  }, [isMobile]);
+
+  // Close mobile panel
+  const closeMobilePanel = useCallback(() => {
+    setMobilePanelOpen(false);
   }, []);
 
   // Sync pending items on load (standard PWA pattern)
@@ -113,7 +141,6 @@ export default function Home() {
       if (!isOnline()) return;
 
       try {
-        // Process any pending sync queue items
         const pendingItems = await getPendingSyncItems();
         for (const item of pendingItems) {
           try {
@@ -133,17 +160,15 @@ export default function Home() {
 
     syncOnLoad();
 
-    // Also sync when coming back online
     const handleOnline = () => syncOnLoad();
     window.addEventListener('online', handleOnline);
     return () => window.removeEventListener('online', handleOnline);
   }, []);
 
-  // Initialize session on mount - try to resume last session first
+  // Initialize session on mount
   useEffect(() => {
     const initSession = async () => {
       try {
-        // Try to resume last session from localStorage
         const lastSessionId = getLastSessionId();
         if (lastSessionId) {
           try {
@@ -154,7 +179,6 @@ export default function Home() {
               setConfig(resumed.config);
               setError(null);
 
-              // Sync local memories to server on session resume
               if (isOnline()) {
                 const localMemories = getMemoriesFromStorage(lastSessionId);
                 if (localMemories.length > 0) {
@@ -166,12 +190,10 @@ export default function Home() {
               return;
             }
           } catch {
-            // Session no longer exists on server, create new one
             console.log('Last session not found on server, creating new session');
           }
         }
 
-        // Create new session
         const session = await createSession();
         setSessionId(session.sessionId);
         setStance(session.stance);
@@ -214,7 +236,6 @@ export default function Home() {
 
   const handleResponse = (response: ChatResponse) => {
     setStance(response.stanceAfter);
-    // Refresh timeline data after each response
     if (sessionId) {
       refreshTimelineData(sessionId);
     }
@@ -239,9 +260,11 @@ export default function Home() {
       setConfig(session.config);
       setTimelineEntries([]);
       setEvolutionSnapshots([]);
-      // Save new session ID and clear emotion context
       saveLastSessionId(session.sessionId);
       setEmotionContext(null);
+      if (isMobile) {
+        setMobilePanelOpen(false);
+      }
     } catch (err) {
       console.error('Failed to create session:', err);
     }
@@ -250,22 +273,55 @@ export default function Home() {
   const handleSelectSession = async (newSessionId: string) => {
     await handleSessionChange(newSessionId);
     setActivePanel('stance');
+    if (isMobile) {
+      setMobilePanelOpen(false);
+    }
   };
 
-  // Handle Claude Vision emotion analysis request from EmpathyPanel (legacy callback)
-  // Note: EmpathyPanel now calls the API directly, this is for backward compatibility
   const handleVisionRequest = useCallback(async (frame: string, _prompt: string) => {
     if (!sessionId) return;
-
     try {
       console.log('[Vision] Legacy callback - frame already sent by EmpathyPanel');
-      // The EmpathyPanel now calls analyzeVisionEmotion directly and updates emotionContext
-      // This callback is kept for compatibility but doesn't need to do anything
-      // The emotion context will be updated by EmpathyPanel's onEmotionDetected callback
     } catch (err) {
       console.error('[Vision] Failed to analyze frame:', err);
     }
   }, [sessionId]);
+
+  // Render panel content
+  const renderPanelContent = () => (
+    <>
+      {activePanel === 'stance' && <StanceViz stance={stance} />}
+      {activePanel === 'config' && <Config config={config} onUpdate={handleConfigUpdate} />}
+      {activePanel === 'timeline' && <OperatorTimeline entries={timelineEntries} />}
+      {activePanel === 'evolution' && <EvolutionTimeline snapshots={evolutionSnapshots} currentStance={stance || undefined} />}
+      {activePanel === 'sessions' && (
+        <SessionBrowser
+          currentSessionId={sessionId}
+          onSelectSession={handleSelectSession}
+          onNewSession={handleNewSession}
+        />
+      )}
+      {activePanel === 'memories' && <MemoryBrowser sessionId={sessionId} />}
+      {activePanel === 'empathy' && (
+        <EmpathyPanel
+          enabled={config?.enableEmpathyMode ?? false}
+          emotionContext={emotionContext}
+          onToggle={(enabled) => handleConfigUpdate({ enableEmpathyMode: enabled })}
+          onEmotionDetected={(context) => setEmotionContext(context)}
+          onVisionRequest={handleVisionRequest}
+          sessionId={sessionId}
+          detectionInterval={config?.empathyCameraInterval ?? 1000}
+          config={{
+            empathyCameraInterval: config?.empathyCameraInterval,
+            empathyMinConfidence: config?.empathyMinConfidence,
+            empathyAutoAdjust: config?.empathyAutoAdjust,
+            empathyBoostMax: config?.empathyBoostMax,
+          }}
+          onConfigUpdate={handleConfigUpdate}
+        />
+      )}
+    </>
+  );
 
   if (error) {
     return (
@@ -284,6 +340,112 @@ export default function Home() {
     );
   }
 
+  // Mobile layout
+  if (isMobile) {
+    return (
+      <main className="h-screen max-h-screen flex flex-col overflow-hidden relative">
+        {/* Mobile pull-down drawer handle */}
+        <div className="absolute top-0 left-0 right-0 z-40 flex justify-center">
+          <button
+            onClick={() => setMobileDrawerOpen(!mobileDrawerOpen)}
+            className="flex items-center gap-1 px-4 py-1.5 bg-emblem-surface-2/90 backdrop-blur-lg rounded-b-xl border border-t-0 border-white/10 transition-colors"
+          >
+            <ChevronDown className={cn(
+              "w-4 h-4 text-emblem-muted transition-transform",
+              mobileDrawerOpen && "rotate-180"
+            )} />
+            <span className="text-xs text-emblem-muted">Menu</span>
+          </button>
+        </div>
+
+        {/* Mobile drawer */}
+        <AnimatePresence>
+          {mobileDrawerOpen && (
+            <motion.div
+              initial={{ y: '-100%' }}
+              animate={{ y: 0 }}
+              exit={{ y: '-100%' }}
+              transition={{ type: 'spring', damping: 25, stiffness: 300 }}
+              className="absolute top-0 left-0 right-0 z-30 bg-emblem-surface/95 backdrop-blur-lg border-b border-white/10 pt-10 pb-4 px-4"
+            >
+              {/* Tab buttons */}
+              <div className="grid grid-cols-4 gap-2 mb-4">
+                {TABS.map(({ id, label, icon: Icon }) => (
+                  <button
+                    key={id}
+                    onClick={() => handlePanelChange(id)}
+                    className={cn(
+                      'flex flex-col items-center gap-1 p-3 rounded-lg transition-all',
+                      activePanel === id
+                        ? 'bg-emblem-secondary/20 text-emblem-secondary'
+                        : 'text-emblem-muted hover:bg-white/5'
+                    )}
+                  >
+                    <Icon className="w-5 h-5" />
+                    <span className="text-[10px]">{label}</span>
+                  </button>
+                ))}
+                {/* New Chat button */}
+                <button
+                  onClick={handleNewSession}
+                  className="flex flex-col items-center gap-1 p-3 rounded-lg transition-all text-emblem-primary hover:bg-emblem-primary/10"
+                >
+                  <Plus className="w-5 h-5" />
+                  <span className="text-[10px]">New</span>
+                </button>
+              </div>
+            </motion.div>
+          )}
+        </AnimatePresence>
+
+        {/* Mobile full-screen panel overlay */}
+        <AnimatePresence>
+          {mobilePanelOpen && (
+            <motion.div
+              initial={{ opacity: 0, y: 20 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: 20 }}
+              transition={{ type: 'spring', damping: 25, stiffness: 300 }}
+              className="absolute inset-0 z-50 bg-emblem-bg flex flex-col"
+            >
+              {/* Panel header with close button */}
+              <div className="flex items-center justify-between px-4 py-3 border-b border-white/10">
+                <h2 className="text-lg font-display font-semibold text-emblem-secondary capitalize">
+                  {activePanel}
+                </h2>
+                <button
+                  onClick={closeMobilePanel}
+                  className="p-2 rounded-lg hover:bg-white/10 transition-colors"
+                >
+                  <X className="w-5 h-5 text-emblem-muted" />
+                </button>
+              </div>
+              {/* Panel content */}
+              <div className="flex-1 overflow-y-auto p-4 scrollbar-styled">
+                {renderPanelContent()}
+              </div>
+            </motion.div>
+          )}
+        </AnimatePresence>
+
+        {/* Mobile chat - edge to edge */}
+        <div className="flex-1 min-h-0 max-h-full flex flex-col pt-8">
+          <Chat
+            sessionId={sessionId}
+            onSessionChange={handleSessionChange}
+            onResponse={handleResponse}
+            onPanelChange={handlePanelChange}
+            onNewSession={handleNewSession}
+            stance={stance}
+            config={config}
+            emotionContext={emotionContext}
+          />
+        </div>
+      </main>
+    );
+  }
+
+  // Desktop layout
   return (
     <main className="h-screen max-h-screen flex flex-col overflow-hidden">
       <header className="flex items-center justify-between px-6 py-4 border-b border-white/5">
@@ -297,7 +459,7 @@ export default function Home() {
           </button>
           <div className="flex items-baseline gap-4">
             <h1 className="text-2xl font-display font-bold gradient-text">METAMORPH</h1>
-            <span className="text-sm text-emblem-muted max-md:hidden">Transformation-Maximizing AI</span>
+            <span className="text-sm text-emblem-muted">Transformation-Maximizing AI</span>
           </div>
         </div>
         <Button variant="outline" onClick={handleNewSession}>
@@ -344,46 +506,7 @@ export default function Home() {
           </TooltipProvider>
 
           <div className="flex-1 overflow-y-auto scrollbar-styled">
-            {activePanel === 'stance' && (
-              <StanceViz stance={stance} />
-            )}
-            {activePanel === 'config' && (
-              <Config config={config} onUpdate={handleConfigUpdate} />
-            )}
-            {activePanel === 'timeline' && (
-              <OperatorTimeline entries={timelineEntries} />
-            )}
-            {activePanel === 'evolution' && (
-              <EvolutionTimeline snapshots={evolutionSnapshots} currentStance={stance || undefined} />
-            )}
-            {activePanel === 'sessions' && (
-              <SessionBrowser
-                currentSessionId={sessionId}
-                onSelectSession={handleSelectSession}
-                onNewSession={handleNewSession}
-              />
-            )}
-            {activePanel === 'memories' && (
-              <MemoryBrowser sessionId={sessionId} />
-            )}
-            {activePanel === 'empathy' && (
-              <EmpathyPanel
-                enabled={config?.enableEmpathyMode ?? false}
-                emotionContext={emotionContext}
-                onToggle={(enabled) => handleConfigUpdate({ enableEmpathyMode: enabled })}
-                onEmotionDetected={(context) => setEmotionContext(context)}
-                onVisionRequest={handleVisionRequest}
-                sessionId={sessionId}
-                detectionInterval={config?.empathyCameraInterval ?? 1000}
-                config={{
-                  empathyCameraInterval: config?.empathyCameraInterval,
-                  empathyMinConfidence: config?.empathyMinConfidence,
-                  empathyAutoAdjust: config?.empathyAutoAdjust,
-                  empathyBoostMax: config?.empathyBoostMax,
-                }}
-                onConfigUpdate={handleConfigUpdate}
-              />
-            )}
+            {renderPanelContent()}
           </div>
         </aside>
 
