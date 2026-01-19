@@ -33,9 +33,7 @@ const markdownComponents: Components = {
     );
   },
   pre: ({ children }) => (
-    <div className="w-full overflow-hidden my-3">
-      <pre className="bg-black/40 p-4 rounded-lg overflow-x-auto font-mono text-sm">{children}</pre>
-    </div>
+    <pre className="bg-black/40 p-4 rounded-lg overflow-x-auto my-3 font-mono text-sm max-w-full scrollbar-styled">{children}</pre>
   ),
   ul: ({ children }) => <ul className="my-2 pl-6 list-disc">{children}</ul>,
   ol: ({ children }) => <ol className="my-2 pl-6 list-decimal">{children}</ol>,
@@ -645,7 +643,7 @@ export default function Chat({ sessionId, onSessionChange, onResponse, onStanceU
                 msg.type === 'command' && msg.role === 'user' && 'bg-transparent text-emblem-text'
               )}
             >
-            <div className="break-words prose-chat overflow-hidden w-full">
+            <div className="break-words prose-chat overflow-hidden w-0 min-w-full">
               {msg.type === 'command' && msg.commandData ? (
                 <CommandOutput
                   command={msg.commandData.command}
@@ -682,7 +680,7 @@ export default function Chat({ sessionId, onSessionChange, onResponse, onStanceU
               transition={{ type: "spring", stiffness: 400, damping: 25 }}
               className="self-start glass-card max-w-[80%] p-3 rounded-xl overflow-hidden min-w-0 flex-shrink-0"
             >
-              <div className="break-words overflow-hidden w-full">
+              <div className="break-words overflow-hidden w-0 min-w-full">
                 <ActiveToolsBar tools={activeTools} />
               </div>
             </motion.div>
@@ -697,7 +695,7 @@ export default function Chat({ sessionId, onSessionChange, onResponse, onStanceU
               transition={{ type: "spring", stiffness: 400, damping: 25 }}
               className="self-start glass-card max-w-[80%] p-3 rounded-xl overflow-hidden min-w-0 flex-shrink-0"
             >
-              <div className="break-words prose-chat overflow-hidden w-full">
+              <div className="break-words prose-chat overflow-hidden w-0 min-w-full">
                 <ReactMarkdown components={markdownComponents}>{streamingText}</ReactMarkdown>
               </div>
             </motion.div>
