@@ -37,7 +37,7 @@ const markdownComponents: Components = {
   li: ({ children }) => <li className="my-1">{children}</li>,
   blockquote: ({ children }) => <blockquote className="border-l-3 border-emblem-primary my-3 pl-4 text-emblem-muted">{children}</blockquote>,
   strong: ({ children }) => <strong className="text-emblem-secondary font-semibold">{children}</strong>,
-  a: ({ href, children }) => <a href={href} className="text-emblem-primary underline hover:text-emblem-secondary transition-colors">{children}</a>,
+  a: ({ href, children }) => <a href={href} target="_blank" rel="noopener noreferrer" className="text-emblem-primary underline hover:text-emblem-secondary transition-colors">{children}</a>,
 };
 
 // Import EmotionContext from types
