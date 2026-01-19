@@ -4,6 +4,25 @@ All notable changes to METAMORPH will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
+## Table of Contents
+
+- [Unreleased](#unreleased)
+  - [Unified Runtime Architecture](#unified-runtime-architecture)
+  - [Agent Self-Introspection MCP Tools](#agent-self-introspection-mcp-tools)
+  - [Integrated Adaptation Mechanisms](#integrated-adaptation-mechanisms)
+- [0.6.0 - Ralph Iterations 4-17](#060---2026-01-18---ralph-iterations-4-17)
+  - [Ralph Iteration 4 - Semantic Memory & Auto-Evolution](#ralph-iteration-4---semantic-memory--auto-evolution)
+  - [Ralph Iteration 5 - Identity Persistence & Collaboration](#ralph-iteration-5---identity-persistence--collaboration)
+  - [Ralph Iteration 6 - Persistence & Multi-Agent](#ralph-iteration-6---persistence--multi-agent)
+  - [Ralph Iterations 7-17 - Type Definitions](#ralph-iterations-7-17---type-definitions--future-features)
+- [0.5.0 - Web UI Enhancement Release](#050---2026-01-18---web-ui-enhancement-release)
+- [0.4.0 - Ralph Iteration 3](#040---2026-01-18---ralph-iteration-3)
+- [0.3.0 - Ralph Iteration 2](#030---2026-01-18---ralph-iteration-2)
+- [0.2.0 - Ralph Iteration 1](#020---2026-01-18---ralph-iteration-1)
+- [0.1.0 - Initial Implementation](#010---2026-01-18---initial-implementation)
+
+---
+
 ## [Unreleased]
 
 ### Added

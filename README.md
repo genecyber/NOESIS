@@ -2,6 +2,36 @@
 
 **Transformation-maximizing AI system** - An autonomous agent that evolves its cognitive stance through conversation.
 
+## Table of Contents
+
+- [Overview](#overview)
+- [Quick Start](#quick-start)
+- [Web Interface](#web-interface)
+- [Skills & Capabilities Reference](#skills--capabilities-reference)
+  - [Conversation Skills](#conversation-skills)
+  - [Introspection Skills](#introspection-skills)
+  - [Memory Skills](#memory-skills)
+  - [Transformation Skills](#transformation-skills)
+  - [Autonomous Commands](#autonomous-commands)
+  - [Agent Self-Introspection](#agent-self-introspection)
+  - [Integrated Adaptation Mechanisms](#integrated-adaptation-mechanisms)
+  - [Subagent Skills](#subagent-skills)
+  - [Mode Configuration Skills](#mode-configuration-skills)
+  - [Session Management Skills](#session-management-skills)
+  - [System Skills](#system-skills)
+- [Subagent Capabilities](#subagent-capabilities)
+- [Transformation Operators](#transformation-operators)
+- [Architecture](#architecture)
+- [The Stance Object](#the-stance-object)
+- [API Endpoints](#api-endpoints)
+- [Configuration](#configuration)
+- [Programmatic Usage](#programmatic-usage)
+- [Testing](#testing)
+- [Development](#development)
+- [Ralph Loop Evolution](#ralph-loop-evolution)
+
+---
+
 ## Overview
 
 METAMORPH wraps Claude via the official `@anthropic-ai/claude-agent-sdk` with transformation capabilities:
