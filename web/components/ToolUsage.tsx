@@ -98,12 +98,10 @@ function ToolChip({ tool }: ToolChipProps) {
         config.border
       )}
     >
-      {/* Status indicator - spinner only for started, text icons for completed/error */}
-      {tool.status === 'started' ? (
-        <Loader2 className={cn('w-3 h-3 animate-spin', config.text)} />
-      ) : (
-        <span className={cn('text-xs font-bold leading-none', config.text)}>{config.icon}</span>
-      )}
+      {/* Status indicator - text icons only, no spinner */}
+      <span className={cn('text-xs font-bold leading-none', config.text)}>
+        {tool.status === 'started' ? '⏳' : config.icon}
+      </span>
 
       {/* Tool name */}
       <span className="font-mono font-semibold text-emblem-text">{tool.name}</span>
@@ -130,7 +128,7 @@ function ToolChip({ tool }: ToolChipProps) {
       </Tooltip.Trigger>
       <Tooltip.Portal>
         <Tooltip.Content
-          className="bg-emblem-surface border border-emblem-surface-2 rounded-lg p-3 shadow-xl z-[9999] max-w-[400px]"
+          className="bg-emblem-surface border border-emblem-primary/30 rounded-lg p-3 shadow-xl z-[9999] max-w-[400px]"
           sideOffset={5}
         >
           <div className="text-[10px] font-semibold uppercase tracking-wider text-emblem-primary mb-1.5">
@@ -159,7 +157,7 @@ function ToolChip({ tool }: ToolChipProps) {
               </div>
             </>
           )}
-          <Tooltip.Arrow className="fill-emblem-surface-2" />
+          <Tooltip.Arrow className="fill-emblem-primary/30" />
         </Tooltip.Content>
       </Tooltip.Portal>
     </Tooltip.Root>
