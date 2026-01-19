@@ -55,14 +55,12 @@ function ToolChip({ tool }: ToolChipProps) {
     }).join(', ');
   };
 
-  // Format full input for tooltip
-  const formatFullInput = (input: Record<string, unknown>): string => {
-    return Object.entries(input)
-      .map(([key, value]) => {
-        const strValue = typeof value === 'string' ? value : JSON.stringify(value);
-        return `${key}: ${strValue}`;
-      })
-      .join('\n');
+  // Format full input for tooltip - returns array of {key, value} for rendering
+  const formatFullInput = (input: Record<string, unknown>): Array<{key: string, value: string}> => {
+    return Object.entries(input).map(([key, value]) => ({
+      key,
+      value: typeof value === 'string' ? value : JSON.stringify(value)
+    }));
   };
 
   const statusConfig = {
@@ -134,9 +132,13 @@ function ToolChip({ tool }: ToolChipProps) {
           <div className="text-[10px] font-semibold uppercase tracking-wider text-emblem-primary mb-1.5">
             Input
           </div>
-          <pre className="text-[11px] font-mono text-emblem-muted whitespace-pre-wrap break-all m-0">
-            {fullInput}
-          </pre>
+          <div className="text-[11px] font-mono text-emblem-muted space-y-0.5">
+            {fullInput.map(({ key, value }, i) => (
+              <div key={i} className="break-all">
+                <span className="font-bold text-emblem-text">{key}:</span> {value}
+              </div>
+            ))}
+          </div>
           {tool.result && (
             <>
               <div className="text-[10px] font-semibold uppercase tracking-wider text-emblem-accent mt-3 mb-1.5">
