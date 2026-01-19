@@ -314,12 +314,13 @@ export default function Home() {
           )}
           style={{ width: sidebarOpen ? sidebarWidth : 0 }}
         >
-          <div className="flex flex-wrap gap-1.5">
+          <div className="flex gap-1">
             {TABS.map(({ id, label, icon: Icon }) => (
               <button
                 key={id}
+                title={label}
                 className={cn(
-                  'flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs font-medium transition-all',
+                  'p-2 rounded-lg transition-all',
                   'border border-white/5 cursor-pointer',
                   activePanel === id
                     ? 'bg-gradient-to-r from-emblem-secondary to-emblem-primary text-white border-transparent'
@@ -327,13 +328,12 @@ export default function Home() {
                 )}
                 onClick={() => handlePanelChange(id)}
               >
-                <Icon className="w-3.5 h-3.5" />
-                {label}
+                <Icon className="w-4 h-4" />
               </button>
             ))}
           </div>
 
-          <div className="flex-1 overflow-y-auto">
+          <div className="flex-1 overflow-y-auto scrollbar-styled">
             {activePanel === 'stance' && (
               <StanceViz stance={stance} />
             )}
