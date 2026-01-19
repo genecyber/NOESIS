@@ -120,10 +120,50 @@ registerCliPlugin(myPlugin);
 | Capability | Description |
 |------------|-------------|
 | `webcam` | Camera access via MediaDevices API |
+| `displayCapture` | Screen/window/tab capture via getDisplayMedia |
 | `speaker` | Text-to-speech via Web Speech API |
 | `microphone` | Speech-to-text via Web Speech API |
-| `vision` | AI image analysis via METAMORPH API |
+| `vision` | AI image analysis (prompt-driven) |
 | `storage` | Plugin-scoped localStorage |
+
+### Vision API
+
+The vision capability provides general image inference:
+
+```typescript
+// Analyze any image with a custom prompt
+const analysis = await capabilities.vision.analyzeImage(
+  imageDataUrl,
+  "Describe what you see in this image"
+);
+
+// The prompt determines what to analyze:
+// - Emotions: "What emotion is this person showing?"
+// - Objects: "List all objects visible in this image"
+// - Text: "Extract any text from this image"
+// - Custom: "Is there a cat in this image?"
+```
+
+### Display Capture
+
+Capture screen, window, or browser tab content:
+
+```typescript
+// Start capture (browser shows picker)
+const stream = await capabilities.displayCapture.start();
+
+// Capture frames for analysis
+const frame = await capabilities.displayCapture.captureFrame();
+const analysis = await capabilities.vision.analyzeImage(
+  frame,
+  "What's happening on screen?"
+);
+
+// Stop when done
+capabilities.displayCapture.stop();
+```
+
+Note: `displayCapture` may be `null` if browser doesn't support getDisplayMedia.
 
 ### CLI Capabilities
 

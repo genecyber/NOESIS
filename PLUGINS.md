@@ -412,6 +412,7 @@ Capabilities are platform features your plugin needs. The available capabilities
 | `microphone` | Audio input for speech recognition | `MediaDevices.getUserMedia()` |
 | `speaker` | Audio output for text-to-speech | `SpeechSynthesis` API |
 | `vision` | AI image analysis via Claude Vision | Backend API |
+| `displayCapture` | Screen/window/tab sharing | `navigator.mediaDevices.getDisplayMedia()` |
 | `storage` | Plugin-scoped localStorage | `localStorage` |
 | `notifications` | Browser notifications | `Notification` API |
 | `fullscreen` | Fullscreen mode | `Fullscreen` API |
@@ -590,9 +591,6 @@ function setupVoiceInput(capabilities: PlatformCapabilities) {
 
 ```typescript
 interface VisionCapability {
-  // Analyze image for emotions (Claude Vision)
-  analyzeEmotion(imageDataUrl: string): Promise<EmotionContext>;
-
   // General image analysis with custom prompt
   analyzeImage(imageDataUrl: string, prompt: string): Promise<string>;
 
@@ -614,10 +612,10 @@ async function analyzeUserEmotion(capabilities: PlatformCapabilities) {
   const frame = await capabilities.webcam.captureFrame();
   if (!frame) return;
 
-  const emotion = await capabilities.vision.analyzeEmotion(frame);
-  console.log('Detected emotion:', emotion.currentEmotion);
-  console.log('Valence:', emotion.valence);
-  console.log('Arousal:', emotion.arousal);
+  // The prompt determines what to analyze
+  const analysis = await capabilities.vision.analyzeImage(frame,
+    "Analyze the person's emotional state including their facial expression, body language, and apparent mood. Describe the emotion and estimate valence and arousal levels.");
+  console.log('Emotion analysis:', analysis);
 }
 ```
 
@@ -625,6 +623,48 @@ async function analyzeUserEmotion(capabilities: PlatformCapabilities) {
 - Vision API has a 60-second cooldown between requests
 - Check `canAnalyze` before calling
 - Use browser-side detection (face-api.js) for real-time needs
+
+**Note:** The prompt parameter allows you to analyze images for any purpose (emotions, objects, text, etc.) - the vision capability is general-purpose.
+
+#### Display Capture Capability (Screen Sharing)
+
+```typescript
+interface DisplayCaptureCapability {
+  stream: MediaStream | null;
+  isActive: boolean;
+  start(options?: DisplayMediaStreamOptions): Promise<MediaStream>;
+  stop(): void;
+  captureFrame(format?: 'jpeg' | 'png', quality?: number): Promise<string | null>;
+}
+```
+
+**Usage Example:**
+
+```tsx
+async function captureAndAnalyzeScreen(capabilities: PlatformCapabilities) {
+  // Start screen capture (user selects what to share)
+  const stream = await capabilities.displayCapture.start();
+
+  // Capture frame for analysis
+  const frame = await capabilities.displayCapture.captureFrame('jpeg', 0.8);
+
+  // Analyze the screen content
+  const analysis = await capabilities.vision.analyzeImage(frame,
+    "Describe what's happening on screen");
+
+  console.log('Screen analysis:', analysis);
+
+  // Stop when done
+  capabilities.displayCapture.stop();
+}
+```
+
+**Important Notes:**
+- `displayCapture` may be `null` if the browser doesn't support `getDisplayMedia` API
+- The browser shows its own picker for screen/window/tab selection (not controlled by your plugin)
+- Users can click the browser's "Stop sharing" button to end the capture at any time
+- Plugins decide what to do with the stream (e.g., watch videos, monitor browsing, analyze content)
+- Always check if `displayCapture` is available before using it
 
 #### Storage Capability (Web)
 

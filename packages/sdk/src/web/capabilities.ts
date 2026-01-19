@@ -61,6 +61,123 @@ interface WindowWithSpeechRecognition extends Window {
 }
 
 // =============================================================================
+// Display Capture Capability
+// =============================================================================
+
+/** Represents a display source (screen, window, or tab) */
+export interface DisplaySource {
+  id: string;
+  name: string;
+  type: 'screen' | 'window' | 'tab';
+}
+
+export interface DisplayCaptureCapability {
+  /** Current capture stream (null if not started) */
+  stream: MediaStream | null;
+  /** Whether capture is currently active */
+  isActive: boolean;
+  /** Start capturing display (screen, window, or browser tab) */
+  start(options?: DisplayMediaStreamOptions): Promise<MediaStream>;
+  /** Stop capture */
+  stop(): void;
+  /** Capture current frame as data URL */
+  captureFrame(format?: 'jpeg' | 'png', quality?: number): Promise<string | null>;
+  /** Get available display sources (if supported by browser) */
+  getSources?(): Promise<DisplaySource[]>;
+}
+
+export function createDisplayCaptureCapability(): DisplayCaptureCapability | null {
+  // Check if getDisplayMedia is available
+  if (typeof navigator === 'undefined' ||
+      !navigator.mediaDevices ||
+      typeof navigator.mediaDevices.getDisplayMedia !== 'function') {
+    return null;
+  }
+
+  let stream: MediaStream | null = null;
+  let videoElement: HTMLVideoElement | null = null;
+
+  const capability: DisplayCaptureCapability = {
+    stream: null,
+    isActive: false,
+
+    async start(options?: DisplayMediaStreamOptions): Promise<MediaStream> {
+      if (stream) {
+        return stream;
+      }
+
+      const defaultOptions: DisplayMediaStreamOptions = {
+        video: {
+          displaySurface: 'monitor', // Prefer full screen capture
+        },
+        audio: false, // Audio capture optional, plugins can enable if needed
+      };
+
+      stream = await navigator.mediaDevices.getDisplayMedia(
+        options || defaultOptions
+      );
+
+      // Create hidden video element for frame capture
+      videoElement = document.createElement('video');
+      videoElement.srcObject = stream;
+      videoElement.autoplay = true;
+      videoElement.playsInline = true;
+      await videoElement.play();
+
+      capability.stream = stream;
+      capability.isActive = true;
+
+      // Listen for stream ending (user clicks "Stop sharing")
+      stream.getVideoTracks()[0]?.addEventListener('ended', () => {
+        capability.stop();
+      });
+
+      return stream;
+    },
+
+    stop(): void {
+      if (stream) {
+        stream.getTracks().forEach(track => track.stop());
+        stream = null;
+        capability.stream = null;
+        capability.isActive = false;
+      }
+      if (videoElement) {
+        videoElement.srcObject = null;
+        videoElement = null;
+      }
+    },
+
+    async captureFrame(
+      format: 'jpeg' | 'png' = 'jpeg',
+      quality: number = 0.8
+    ): Promise<string | null> {
+      if (!videoElement || !stream) {
+        return null;
+      }
+
+      const canvas = document.createElement('canvas');
+      canvas.width = videoElement.videoWidth;
+      canvas.height = videoElement.videoHeight;
+
+      const ctx = canvas.getContext('2d');
+      if (!ctx) return null;
+
+      ctx.drawImage(videoElement, 0, 0);
+
+      const mimeType = format === 'png' ? 'image/png' : 'image/jpeg';
+      return canvas.toDataURL(mimeType, quality);
+    },
+
+    // Note: getSources is not widely supported in browsers.
+    // Chrome has experimental support via chrome.desktopCapture API (extension only).
+    // For now, we don't implement it since getDisplayMedia shows its own picker.
+  };
+
+  return capability;
+}
+
+// =============================================================================
 // Webcam Capability
 // =============================================================================
 
@@ -346,14 +463,12 @@ export function createSTTCapability(): STTCapability {
 // =============================================================================
 
 export interface VisionCapability {
+  /** Analyze image with custom prompt - returns the AI response */
+  analyzeImage(imageDataUrl: string, prompt: string): Promise<string>;
   /** Whether analysis is available (not rate limited) */
   canAnalyze: boolean;
   /** Seconds until analysis is available again */
   cooldownRemaining: number;
-  /** Analyze an image for emotions */
-  analyzeEmotion(imageDataUrl: string): Promise<import('../core/types.js').EmotionContext>;
-  /** Analyze an image with a custom prompt */
-  analyzeImage(imageDataUrl: string, prompt: string): Promise<string>;
 }
 
 export interface VisionCapabilityOptions {
@@ -376,7 +491,7 @@ export function createVisionCapability(options?: VisionCapabilityOptions): Visio
     canAnalyze: true,
     cooldownRemaining: 0,
 
-    async analyzeEmotion(imageDataUrl: string) {
+    async analyzeImage(imageDataUrl: string, prompt: string): Promise<string> {
       const now = Date.now();
       const elapsed = now - lastAnalysisTime;
 
@@ -402,11 +517,11 @@ export function createVisionCapability(options?: VisionCapabilityOptions): Visio
       };
       updateCooldown();
 
-      // Call the API
+      // Call the API with the image and prompt
       const response = await fetch(apiEndpoint, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ sessionId, imageDataUrl }),
+        body: JSON.stringify({ sessionId, imageDataUrl, prompt }),
       });
 
       if (!response.ok) {
@@ -414,14 +529,7 @@ export function createVisionCapability(options?: VisionCapabilityOptions): Visio
       }
 
       const result = await response.json();
-      return result.emotionContext;
-    },
-
-    async analyzeImage(imageDataUrl: string, _prompt: string) {
-      // Use the emotion endpoint with custom prompt context
-      // Note: _prompt parameter reserved for future custom prompt support
-      const emotion = await capability.analyzeEmotion(imageDataUrl);
-      return emotion.promptContext || `Detected emotion: ${emotion.currentEmotion}`;
+      return result.response || result.text || '';
     },
   };
 
@@ -497,6 +605,7 @@ export function createBrowserStorage(pluginId: string): PluginStorage {
 
 export interface WebPlatformCapabilities {
   webcam: WebcamCapability;
+  displayCapture: DisplayCaptureCapability | null;
   tts: TTSCapability;
   stt: STTCapability;
   vision: VisionCapability;
@@ -509,6 +618,7 @@ export function createWebPlatformCapabilities(
 ): WebPlatformCapabilities {
   return {
     webcam: createWebcamCapability(),
+    displayCapture: createDisplayCaptureCapability(),
     tts: createTTSCapability(),
     stt: createSTTCapability(),
     vision: createVisionCapability(options),

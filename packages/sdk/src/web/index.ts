@@ -34,6 +34,8 @@ export { defineWebPlugin } from './types.js';
 
 // Capabilities
 export type {
+  DisplayCaptureCapability,
+  DisplaySource,
   WebcamCapability,
   TTSCapability,
   TTSOptions,
@@ -45,6 +47,7 @@ export type {
 } from './capabilities.js';
 
 export {
+  createDisplayCaptureCapability,
   createWebcamCapability,
   createTTSCapability,
   createSTTCapability,
