@@ -420,6 +420,8 @@ export interface UserPreferences {
   theme?: 'dark' | 'light';
   fontSize?: number;
   enableLocalStorage?: boolean;
+  sidebarOpen?: boolean;
+  sidebarWidth?: number;
 }
 
 const DEFAULT_PREFERENCES: UserPreferences = {

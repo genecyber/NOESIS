@@ -1,7 +1,7 @@
 'use client';
 
-import { useState, useEffect, useCallback } from 'react';
-import { Layers, Settings, Heart, Clock, Brain, FolderOpen, MessageSquare } from 'lucide-react';
+import { useState, useEffect, useCallback, useRef } from 'react';
+import { Layers, Settings, Heart, Clock, Brain, FolderOpen, MessageSquare, Menu, X, GripVertical } from 'lucide-react';
 import Chat from '@/components/Chat';
 import StanceViz from '@/components/StanceViz';
 import Config from '@/components/Config';
@@ -40,13 +40,66 @@ export default function Home() {
   const [activePanel, setActivePanel] = useState<PanelType>('stance');
   const [emotionContext, setEmotionContext] = useState<EmotionContext | null>(null);
 
-  // Initialize active panel from localStorage on mount
+  // Sidebar state
+  const [sidebarOpen, setSidebarOpen] = useState(true);
+  const [sidebarWidth, setSidebarWidth] = useState(320);
+  const isResizing = useRef(false);
+  const minSidebarWidth = 280;
+  const maxSidebarWidth = 500;
+
+  // Initialize preferences from localStorage on mount
   useEffect(() => {
     const prefs = getPreferences();
     if (prefs.activePanel) {
       setActivePanel(prefs.activePanel);
     }
+    if (prefs.sidebarOpen !== undefined) {
+      setSidebarOpen(prefs.sidebarOpen);
+    }
+    if (prefs.sidebarWidth) {
+      setSidebarWidth(prefs.sidebarWidth);
+    }
   }, []);
+
+  // Handle sidebar resize
+  const handleMouseDown = useCallback(() => {
+    isResizing.current = true;
+    document.body.style.cursor = 'col-resize';
+    document.body.style.userSelect = 'none';
+  }, []);
+
+  useEffect(() => {
+    const handleMouseMove = (e: MouseEvent) => {
+      if (!isResizing.current) return;
+      const newWidth = Math.min(maxSidebarWidth, Math.max(minSidebarWidth, e.clientX));
+      setSidebarWidth(newWidth);
+    };
+
+    const handleMouseUp = () => {
+      if (isResizing.current) {
+        isResizing.current = false;
+        document.body.style.cursor = '';
+        document.body.style.userSelect = '';
+        // Save width to preferences
+        savePreferences({ sidebarWidth });
+      }
+    };
+
+    document.addEventListener('mousemove', handleMouseMove);
+    document.addEventListener('mouseup', handleMouseUp);
+
+    return () => {
+      document.removeEventListener('mousemove', handleMouseMove);
+      document.removeEventListener('mouseup', handleMouseUp);
+    };
+  }, [sidebarWidth]);
+
+  // Toggle sidebar
+  const toggleSidebar = useCallback(() => {
+    const newState = !sidebarOpen;
+    setSidebarOpen(newState);
+    savePreferences({ sidebarOpen: newState });
+  }, [sidebarOpen]);
 
   // Save active panel preference when it changes
   const handlePanelChange = useCallback((panel: PanelType) => {
@@ -234,30 +287,33 @@ export default function Home() {
   return (
     <main className="h-screen max-h-screen flex flex-col overflow-hidden">
       <header className="flex items-center justify-between px-6 py-4 border-b border-white/5">
-        <div className="flex items-baseline gap-4">
-          <h1 className="text-2xl font-display font-bold gradient-text">METAMORPH</h1>
-          <span className="text-sm text-emblem-muted">Transformation-Maximizing AI</span>
+        <div className="flex items-center gap-4">
+          <button
+            onClick={toggleSidebar}
+            className="p-2 rounded-lg bg-emblem-surface-2 hover:bg-emblem-surface border border-white/10 transition-colors"
+            aria-label={sidebarOpen ? 'Close sidebar' : 'Open sidebar'}
+          >
+            {sidebarOpen ? <X className="w-5 h-5" /> : <Menu className="w-5 h-5" />}
+          </button>
+          <div className="flex items-baseline gap-4">
+            <h1 className="text-2xl font-display font-bold gradient-text">METAMORPH</h1>
+            <span className="text-sm text-emblem-muted max-md:hidden">Transformation-Maximizing AI</span>
+          </div>
         </div>
         <Button variant="outline" onClick={handleNewSession}>
           + New Chat
         </Button>
       </header>
 
-      <div className="flex-1 grid grid-cols-[1fr_320px] gap-4 p-4 h-[calc(100vh-60px)] max-h-[calc(100vh-60px)] max-md:grid-cols-1 max-md:grid-rows-[1fr_auto]">
-        <div className="min-h-0 max-h-full flex flex-col">
-          <Chat
-            sessionId={sessionId}
-            onSessionChange={handleSessionChange}
-            onResponse={handleResponse}
-            onPanelChange={handlePanelChange}
-            onNewSession={handleNewSession}
-            stance={stance}
-            config={config}
-            emotionContext={emotionContext}
-          />
-        </div>
-
-        <aside className="flex flex-col gap-4 min-h-0 max-h-full overflow-y-auto scrollbar-styled max-md:max-h-[300px]">
+      <div className="flex-1 flex h-[calc(100vh-73px)] max-h-[calc(100vh-73px)] overflow-hidden">
+        {/* Sidebar - Left side */}
+        <aside
+          className={cn(
+            'flex flex-col gap-4 min-h-0 max-h-full bg-emblem-surface/50 border-r border-white/5 transition-all duration-300 ease-in-out overflow-hidden',
+            sidebarOpen ? 'p-4' : 'w-0 p-0'
+          )}
+          style={{ width: sidebarOpen ? sidebarWidth : 0 }}
+        >
           <div className="flex flex-wrap gap-1.5">
             {TABS.map(({ id, label, icon: Icon }) => (
               <button
@@ -320,6 +376,30 @@ export default function Home() {
             )}
           </div>
         </aside>
+
+        {/* Resize handle */}
+        {sidebarOpen && (
+          <div
+            className="w-1 hover:w-1.5 bg-transparent hover:bg-emblem-primary/50 cursor-col-resize flex-shrink-0 transition-all group flex items-center justify-center"
+            onMouseDown={handleMouseDown}
+          >
+            <GripVertical className="w-3 h-3 text-emblem-muted opacity-0 group-hover:opacity-100 transition-opacity" />
+          </div>
+        )}
+
+        {/* Chat - Main content */}
+        <div className="flex-1 min-h-0 max-h-full flex flex-col p-4">
+          <Chat
+            sessionId={sessionId}
+            onSessionChange={handleSessionChange}
+            onResponse={handleResponse}
+            onPanelChange={handlePanelChange}
+            onNewSession={handleNewSession}
+            stance={stance}
+            config={config}
+            emotionContext={emotionContext}
+          />
+        </div>
       </div>
     </main>
   );
