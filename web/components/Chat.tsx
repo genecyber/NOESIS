@@ -9,6 +9,7 @@ import CommandPalette, { CommandHelp } from './CommandPalette';
 import CommandOutput from './CommandOutput';
 import ToolUsage, { ActiveToolsBar } from './ToolUsage';
 import { findCommand, parseCommand, COMMANDS, getCommandsByCategory } from '@/lib/commands';
+import { isPluginCommand, executePluginCommand } from '@/lib/plugins/registry';
 import { useInputHistory } from '@/lib/hooks/useLocalStorage';
 import { saveMessages, getMessages, saveLastSessionId } from '@/lib/storage';
 import { cn } from '@/lib/utils';
@@ -195,7 +196,12 @@ export default function Chat({ sessionId, onSessionChange, onResponse, onStanceU
     try {
       let data: unknown = null;
 
-      switch (command) {
+      // Check if this is a plugin command
+      if (cmd && isPluginCommand(cmd)) {
+        const result = await executePluginCommand(cmd, args);
+        data = result.message || (result.success ? 'Command executed successfully' : 'Command failed');
+      } else {
+        switch (command) {
         case 'stance':
           data = stance;
           break;
@@ -359,6 +365,7 @@ export default function Chat({ sessionId, onSessionChange, onResponse, onStanceU
         default:
           // For commands not yet implemented, show a placeholder
           data = `Command /${fullCommand} acknowledged. Full implementation coming soon.`;
+        }
       }
 
       setMessages(prev => [...prev, {

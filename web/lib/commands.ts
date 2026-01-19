@@ -819,7 +819,7 @@ export const COMMANDS: Command[] = new Proxy(coreCommands, {
     if (typeof prop === 'string' && !isNaN(Number(prop))) {
       return getAllCommands()[Number(prop)];
     }
-    if (prop === 'find' || prop === 'filter' || prop === 'map' || prop === 'forEach') {
+    if (prop === 'find' || prop === 'filter' || prop === 'map' || prop === 'forEach' || prop === 'indexOf') {
       return (...args: unknown[]) => {
         const allCmds = getAllCommands();
         return (allCmds as unknown as Record<string, (...args: unknown[]) => unknown>)[prop as string](...args);
