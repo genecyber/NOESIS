@@ -6,3 +6,4 @@ export { Switch } from './switch';
 export { Slider } from './slider';
 export { Badge, badgeVariants, type BadgeProps } from './badge';
 export { ScrollArea, ScrollBar } from './scroll-area';
+export { Tooltip, TooltipTrigger, TooltipContent, TooltipProvider } from './tooltip';

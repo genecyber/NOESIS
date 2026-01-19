@@ -10,7 +10,7 @@ import EvolutionTimeline from '@/components/EvolutionTimeline';
 import SessionBrowser from '@/components/SessionBrowser';
 import MemoryBrowser from '@/components/MemoryBrowser';
 import EmpathyPanel from '@/components/EmpathyPanel';
-import { Button } from '@/components/ui';
+import { Button, Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui';
 import { createSession, updateConfig, getState, getTimeline, getEvolution, resumeSession, syncMemoriesToServer } from '@/lib/api';
 import { getLastSessionId, saveLastSessionId, getPreferences, savePreferences, getMemoriesFromStorage, getPendingSyncItems, removeSyncQueueItem, isOnline } from '@/lib/storage';
 import type { Stance, ModeConfig, ChatResponse, TimelineEntry, EvolutionSnapshot, EmotionContext } from '@/lib/types';
@@ -314,24 +314,34 @@ export default function Home() {
           )}
           style={{ width: sidebarOpen ? sidebarWidth : 0 }}
         >
-          <div className="flex gap-1">
-            {TABS.map(({ id, label, icon: Icon }) => (
-              <button
-                key={id}
-                title={label}
-                className={cn(
-                  'p-2 rounded-lg transition-all',
-                  'border border-white/5 cursor-pointer',
-                  activePanel === id
-                    ? 'bg-gradient-to-r from-emblem-secondary to-emblem-primary text-white border-transparent'
-                    : 'bg-emblem-surface-2 text-emblem-muted hover:text-emblem-text hover:border-emblem-secondary/50'
-                )}
-                onClick={() => handlePanelChange(id)}
-              >
-                <Icon className="w-4 h-4" />
-              </button>
-            ))}
-          </div>
+          <TooltipProvider delayDuration={200}>
+            <div className="flex border-b border-white/10">
+              {TABS.map(({ id, label, icon: Icon }) => (
+                <Tooltip key={id}>
+                  <TooltipTrigger asChild>
+                    <button
+                      className={cn(
+                        'flex-1 py-2.5 flex items-center justify-center transition-all relative',
+                        'cursor-pointer',
+                        activePanel === id
+                          ? 'text-emblem-secondary'
+                          : 'text-emblem-muted hover:text-emblem-text hover:bg-white/5'
+                      )}
+                      onClick={() => handlePanelChange(id)}
+                    >
+                      <Icon className="w-4 h-4" />
+                      {activePanel === id && (
+                        <div className="absolute bottom-0 left-0 right-0 h-0.5 bg-emblem-secondary" />
+                      )}
+                    </button>
+                  </TooltipTrigger>
+                  <TooltipContent side="bottom" sideOffset={8}>
+                    {label}
+                  </TooltipContent>
+                </Tooltip>
+              ))}
+            </div>
+          </TooltipProvider>
 
           <div className="flex-1 overflow-y-auto scrollbar-styled">
             {activePanel === 'stance' && (
