@@ -8,8 +8,10 @@ import OperatorTimeline from '@/components/OperatorTimeline';
 import EvolutionTimeline from '@/components/EvolutionTimeline';
 import SessionBrowser from '@/components/SessionBrowser';
 import MemoryBrowser from '@/components/MemoryBrowser';
-import { createSession, updateConfig, getState, getTimeline, getEvolution } from '@/lib/api';
-import type { Stance, ModeConfig, ChatResponse, TimelineEntry, EvolutionSnapshot } from '@/lib/types';
+import EmpathyPanel from '@/components/EmpathyPanel';
+import { createSession, updateConfig, getState, getTimeline, getEvolution, resumeSession } from '@/lib/api';
+import { getLastSessionId, saveLastSessionId, getPreferences, savePreferences } from '@/lib/storage';
+import type { Stance, ModeConfig, ChatResponse, TimelineEntry, EvolutionSnapshot, EmotionContext } from '@/lib/types';
 import styles from './page.module.css';
 
 export default function Home() {
@@ -17,18 +19,55 @@ export default function Home() {
   const [stance, setStance] = useState<Stance | null>(null);
   const [config, setConfig] = useState<ModeConfig | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [activePanel, setActivePanel] = useState<'stance' | 'config' | 'timeline' | 'evolution' | 'sessions' | 'memories'>('stance');
   const [timelineEntries, setTimelineEntries] = useState<TimelineEntry[]>([]);
   const [evolutionSnapshots, setEvolutionSnapshots] = useState<EvolutionSnapshot[]>([]);
 
-  // Initialize session on mount
+  // Load active panel preference from localStorage
+  const [activePanel, setActivePanel] = useState<'stance' | 'config' | 'timeline' | 'evolution' | 'sessions' | 'memories' | 'empathy'>('stance');
+  const [emotionContext, setEmotionContext] = useState<EmotionContext | null>(null);
+
+  // Initialize active panel from localStorage on mount
+  useEffect(() => {
+    const prefs = getPreferences();
+    if (prefs.activePanel) {
+      setActivePanel(prefs.activePanel);
+    }
+  }, []);
+
+  // Save active panel preference when it changes
+  const handlePanelChange = useCallback((panel: 'stance' | 'config' | 'timeline' | 'evolution' | 'sessions' | 'memories' | 'empathy') => {
+    setActivePanel(panel);
+    savePreferences({ activePanel: panel });
+  }, []);
+
+  // Initialize session on mount - try to resume last session first
   useEffect(() => {
     const initSession = async () => {
       try {
+        // Try to resume last session from localStorage
+        const lastSessionId = getLastSessionId();
+        if (lastSessionId) {
+          try {
+            const resumed = await resumeSession(lastSessionId);
+            if (resumed) {
+              setSessionId(resumed.sessionId);
+              setStance(resumed.stance);
+              setConfig(resumed.config);
+              setError(null);
+              return;
+            }
+          } catch {
+            // Session no longer exists on server, create new one
+            console.log('Last session not found on server, creating new session');
+          }
+        }
+
+        // Create new session
         const session = await createSession();
         setSessionId(session.sessionId);
         setStance(session.stance);
         setConfig(session.config);
+        saveLastSessionId(session.sessionId);
         setError(null);
       } catch (err) {
         setError(err instanceof Error ? err.message : 'Failed to connect to server');
@@ -131,7 +170,7 @@ export default function Home() {
             sessionId={sessionId}
             onSessionChange={handleSessionChange}
             onResponse={handleResponse}
-            onPanelChange={setActivePanel}
+            onPanelChange={handlePanelChange}
             stance={stance}
             config={config}
           />
@@ -141,37 +180,43 @@ export default function Home() {
           <div className={styles.tabs}>
             <button
               className={`${styles.tab} ${activePanel === 'stance' ? styles.active : ''}`}
-              onClick={() => setActivePanel('stance')}
+              onClick={() => handlePanelChange('stance')}
             >
               Stance
             </button>
             <button
               className={`${styles.tab} ${activePanel === 'config' ? styles.active : ''}`}
-              onClick={() => setActivePanel('config')}
+              onClick={() => handlePanelChange('config')}
             >
               Config
             </button>
             <button
+              className={`${styles.tab} ${activePanel === 'empathy' ? styles.active : ''}`}
+              onClick={() => handlePanelChange('empathy')}
+            >
+              Empathy
+            </button>
+            <button
               className={`${styles.tab} ${activePanel === 'timeline' ? styles.active : ''}`}
-              onClick={() => setActivePanel('timeline')}
+              onClick={() => handlePanelChange('timeline')}
             >
               Timeline
             </button>
             <button
               className={`${styles.tab} ${activePanel === 'evolution' ? styles.active : ''}`}
-              onClick={() => setActivePanel('evolution')}
+              onClick={() => handlePanelChange('evolution')}
             >
               Evolution
             </button>
             <button
               className={`${styles.tab} ${activePanel === 'sessions' ? styles.active : ''}`}
-              onClick={() => setActivePanel('sessions')}
+              onClick={() => handlePanelChange('sessions')}
             >
               Sessions
             </button>
             <button
               className={`${styles.tab} ${activePanel === 'memories' ? styles.active : ''}`}
-              onClick={() => setActivePanel('memories')}
+              onClick={() => handlePanelChange('memories')}
             >
               Memories
             </button>
@@ -199,6 +244,13 @@ export default function Home() {
             )}
             {activePanel === 'memories' && (
               <MemoryBrowser sessionId={sessionId} />
+            )}
+            {activePanel === 'empathy' && (
+              <EmpathyPanel
+                enabled={config?.enableEmpathyMode ?? false}
+                emotionContext={emotionContext}
+                onToggle={(enabled) => handleConfigUpdate({ enableEmpathyMode: enabled })}
+              />
             )}
           </div>
         </aside>

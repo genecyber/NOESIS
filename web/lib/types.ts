@@ -41,6 +41,12 @@ export interface ModeConfig {
   maxDriftPerTurn: number;
   driftBudget: number;
   model: string;
+  // Empathy Mode - Webcam emotion detection
+  enableEmpathyMode?: boolean;
+  empathyCameraInterval?: number;    // 100-5000ms
+  empathyMinConfidence?: number;     // 0-1
+  empathyAutoAdjust?: boolean;
+  empathyBoostMax?: number;          // 0-50
 }
 
 export interface Message {
@@ -111,4 +117,15 @@ export interface ToolUseEvent {
   status: 'started' | 'completed' | 'error';
   result?: string;
   error?: string;
+}
+
+// Empathy Mode - Detected emotion context from webcam
+export interface EmotionContext {
+  currentEmotion: string;
+  valence: number;           // -1 to 1
+  arousal: number;           // 0 to 1
+  confidence: number;        // 0 to 1
+  stability: number;         // 0 to 1
+  promptContext?: string;
+  timestamp?: string;
 }

@@ -30,6 +30,10 @@ export default function Config({ config, onUpdate }: ConfigProps) {
     setLocalConfig(prev => prev ? { ...prev, [key]: value } : null);
   };
 
+  const handleBooleanChange = (key: keyof ModeConfig, value: boolean) => {
+    setLocalConfig(prev => prev ? { ...prev, [key]: value } : null);
+  };
+
   const handleApply = () => {
     if (localConfig) {
       onUpdate(localConfig);
@@ -117,6 +121,87 @@ export default function Config({ config, onUpdate }: ConfigProps) {
           />
           <p className={styles.hint}>Total drift budget for the conversation</p>
         </div>
+      </div>
+
+      {/* Empathy Mode Section */}
+      <div className={styles.sectionDivider}>
+        <h4 className={styles.sectionHeader}>Empathy Mode</h4>
+
+        <div className={styles.toggleGroup}>
+          <label htmlFor="enableEmpathyMode">Enable Empathy Mode</label>
+          <div className={styles.toggleSwitch}>
+            <input
+              type="checkbox"
+              id="enableEmpathyMode"
+              checked={localConfig.enableEmpathyMode ?? false}
+              onChange={(e) => handleBooleanChange('enableEmpathyMode', e.target.checked)}
+            />
+            <span className={styles.toggleSlider}></span>
+          </div>
+        </div>
+
+        {localConfig.enableEmpathyMode && (
+          <div className={styles.conditionalSection}>
+            <div className={styles.sliderGroup}>
+              <label>
+                <span>Camera Interval</span>
+                <span className={styles.value}>{localConfig.empathyCameraInterval ?? 1000}ms</span>
+              </label>
+              <input
+                type="range"
+                min="100"
+                max="5000"
+                step="100"
+                value={localConfig.empathyCameraInterval ?? 1000}
+                onChange={(e) => handleChange('empathyCameraInterval', parseInt(e.target.value))}
+              />
+              <p className={styles.hint}>How often to capture webcam frames for emotion detection</p>
+            </div>
+
+            <div className={styles.sliderGroup}>
+              <label>
+                <span>Min Confidence</span>
+                <span className={styles.value}>{Math.round((localConfig.empathyMinConfidence ?? 0.5) * 100)}%</span>
+              </label>
+              <input
+                type="range"
+                min="0"
+                max="100"
+                value={Math.round((localConfig.empathyMinConfidence ?? 0.5) * 100)}
+                onChange={(e) => handleChange('empathyMinConfidence', parseInt(e.target.value) / 100)}
+              />
+              <p className={styles.hint}>Minimum confidence threshold for emotion detection</p>
+            </div>
+
+            <div className={styles.toggleGroup}>
+              <label htmlFor="empathyAutoAdjust">Auto-Adjust Response</label>
+              <div className={styles.toggleSwitch}>
+                <input
+                  type="checkbox"
+                  id="empathyAutoAdjust"
+                  checked={localConfig.empathyAutoAdjust ?? false}
+                  onChange={(e) => handleBooleanChange('empathyAutoAdjust', e.target.checked)}
+                />
+                <span className={styles.toggleSlider}></span>
+              </div>
+            </div>
+
+            <div className={styles.sliderGroup}>
+              <label>
+                <span>Max Boost</span>
+                <span className={styles.value}>{localConfig.empathyBoostMax ?? 10}</span>
+              </label>
+              <input
+                type="range"
+                min="0"
+                max="50"
+                value={localConfig.empathyBoostMax ?? 10}
+                onChange={(e) => handleChange('empathyBoostMax', parseInt(e.target.value))}
+              />
+              <p className={styles.hint}>Maximum empathy boost value applied to responses</p>
+            </div>
+          </div>
+        )}
       </div>
 
       <div className={styles.info}>
