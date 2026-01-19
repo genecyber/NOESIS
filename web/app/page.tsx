@@ -380,10 +380,10 @@ export default function Home() {
         {/* Resize handle */}
         {sidebarOpen && (
           <div
-            className="w-1 hover:w-1.5 bg-transparent hover:bg-emblem-primary/50 cursor-col-resize flex-shrink-0 transition-all group flex items-center justify-center"
+            className="w-3 bg-emblem-surface-2/50 hover:bg-emblem-primary/30 cursor-col-resize flex-shrink-0 transition-all group flex items-center justify-center border-x border-white/5"
             onMouseDown={handleMouseDown}
           >
-            <GripVertical className="w-3 h-3 text-emblem-muted opacity-0 group-hover:opacity-100 transition-opacity" />
+            <GripVertical className="w-4 h-6 text-emblem-muted/50 group-hover:text-emblem-primary transition-colors" />
           </div>
         )}
 
