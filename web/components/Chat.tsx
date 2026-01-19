@@ -601,8 +601,8 @@ export default function Chat({ sessionId, onSessionChange, onResponse, onStanceU
 
   return (
     <div className="flex flex-col h-full min-h-0 glass-panel overflow-hidden relative">
-      {/* Floating status indicator */}
-      <div className="fixed top-[70px] right-[340px] flex items-center gap-1.5 px-2.5 py-1 bg-emblem-surface/95 border border-white/10 rounded-full text-[11px] z-[9999] backdrop-blur-lg max-md:right-4">
+      {/* Floating status indicator - positioned above input */}
+      <div className="absolute bottom-[72px] right-4 flex items-center gap-1.5 px-2.5 py-1 bg-emblem-surface/95 border border-white/10 rounded-full text-[11px] z-50 backdrop-blur-lg">
         <span className={cn('w-1.5 h-1.5 rounded-full animate-pulse', statusColor)} />
         <span className="text-emblem-muted">{statusText}</span>
       </div>
