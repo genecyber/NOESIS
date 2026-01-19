@@ -179,7 +179,14 @@ export const ModeConfigSchema = z.object({
   enableAutoEvolution: z.boolean().default(true),  // Auto-detect evolution opportunities
 
   // Ralph Iteration 5 - Identity Persistence
-  enableIdentityPersistence: z.boolean().default(true)  // Auto-checkpoint identity state
+  enableIdentityPersistence: z.boolean().default(true),  // Auto-checkpoint identity state
+
+  // Empathy Mode - Webcam emotion detection
+  enableEmpathyMode: z.boolean().default(false),  // Master toggle for webcam emotion detection
+  empathyCameraInterval: z.number().min(100).max(5000).default(1000),  // Milliseconds between frame captures (100-5000ms)
+  empathyMinConfidence: z.number().min(0).max(1).default(0.5),  // Minimum confidence threshold to act on detected emotions (0-1)
+  empathyAutoAdjust: z.boolean().default(true),  // Whether to automatically adjust empathy stance value based on detected emotions
+  empathyBoostMax: z.number().min(0).max(50).default(20)  // Maximum empathy boost percentage to apply (0-50)
 });
 
 export type ModeConfig = z.infer<typeof ModeConfigSchema>;

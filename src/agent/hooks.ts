@@ -29,6 +29,16 @@ import {
 } from '../core/coherence-planner.js';
 import type { MemoryStore } from '../memory/store.js';
 import { memoryInjector } from '../memory/proactive-injection.js';
+import { pluginSDK } from '../plugins/sdk.js';
+
+// Type for emotional arc tracker (plugin-provided)
+interface EmotionalArcTracker {
+  recordTurn?(conversationId: string, response: string, turnNumber: number): void;
+  getCurrentState?(conversationId: string): { trend?: string } | undefined;
+}
+
+// Reference to emotional arc tracker (set by empathy plugin if loaded)
+let emotionalArcTracker: EmotionalArcTracker | undefined;
 
 // Track triggers for each turn (used for operator learning)
 let lastTurnTriggers: TriggerResult[] = [];
@@ -93,12 +103,53 @@ export function createTransformationHooks(memoryStore?: MemoryStore): Transforma
         stanceAfterPlan = applyStanceDelta(stanceAfterPlan, op.stanceDelta);
       }
 
+      // 3.5 Emotion context injection for empathy mode
+      let emotionPromptContext: string | undefined;
+      if (config.enableEmpathyMode) {
+        // Try to get the emotion detection plugin
+        const emotionPlugin = pluginSDK?.getPlugin?.('emotion-detection') as {
+          getEmotionalContext?: () => {
+            confidence: number;
+            suggestedEmpathyBoost: number;
+            promptContext?: string;
+          } | undefined;
+        } | null;
+        const emotionContext = (emotionPlugin as unknown as {
+          getEmotionalContext?: () => {
+            confidence: number;
+            suggestedEmpathyBoost: number;
+            promptContext?: string;
+          } | undefined;
+        })?.getEmotionalContext?.();
+
+        if (emotionContext && emotionContext.confidence > (config.empathyMinConfidence || 0.5)) {
+          // Apply empathy boost to stance if auto-adjust is enabled
+          if (config.empathyAutoAdjust) {
+            const maxBoost = config.empathyBoostMax || 20;
+            const boost = Math.min(emotionContext.suggestedEmpathyBoost, maxBoost);
+            stanceAfterPlan.values.empathy = Math.min(100,
+              (stanceAfterPlan.values.empathy || 50) + boost
+            );
+          }
+
+          // Store emotional awareness context to append to system prompt
+          if (emotionContext.promptContext) {
+            emotionPromptContext = emotionContext.promptContext;
+          }
+        }
+      }
+
       // 4. Build the system prompt with stance and operators
       let systemPrompt = buildSystemPrompt({
         stance: stanceAfterPlan,
         operators,
         config
       });
+
+      // Append emotional awareness to system prompt if available
+      if (emotionPromptContext) {
+        systemPrompt += `\n\n## Emotional Awareness\n\n${emotionPromptContext}`;
+      }
 
       // 5. Proactive Memory Injection (Ralph Iteration 5 - Feature 4)
       if (memoryStore && config.enableProactiveMemory !== false) {
@@ -178,6 +229,26 @@ ${injection.attribution.length > 0 ? `Consider: ${injection.attribution.join(', 
             coherenceScore,
             driftCost: driftCost / operators.length  // Split cost among operators
           });
+        }
+      }
+
+      // Record emotional impact of operators for learning
+      if (config.enableEmpathyMode && emotionalArcTracker) {
+        // Get turn number from context if available, otherwise use 0
+        const turnNumber = (context as { turnNumber?: number }).turnNumber || 0;
+        emotionalArcTracker.recordTurn?.(conversationId, response, turnNumber);
+
+        const emotionalImpact = emotionalArcTracker.getCurrentState?.(conversationId);
+
+        // Store emotional effectiveness data if memory store available
+        if (memoryStore && operators?.length > 0) {
+          for (const op of operators) {
+            memoryStore.recordOperatorPerformance?.({
+              operatorName: op.name,
+              triggerType: 'emotional',
+              emotionalImpact: emotionalImpact?.trend === 'improving' ? 1 : -1
+            });
+          }
         }
       }
 
@@ -519,4 +590,19 @@ function extractKeyPhrases(text: string): string[] {
 function truncate(str: string, maxLength: number): string {
   if (str.length <= maxLength) return str;
   return str.substring(0, maxLength - 3) + '...';
+}
+
+/**
+ * Register an emotional arc tracker for empathy mode
+ * This is called by empathy-related plugins to provide emotional tracking
+ */
+export function registerEmotionalArcTracker(tracker: EmotionalArcTracker): void {
+  emotionalArcTracker = tracker;
+}
+
+/**
+ * Unregister the emotional arc tracker
+ */
+export function unregisterEmotionalArcTracker(): void {
+  emotionalArcTracker = undefined;
 }

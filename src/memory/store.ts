@@ -4,6 +4,8 @@
 
 import Database from 'better-sqlite3';
 import { v4 as uuidv4 } from 'uuid';
+import { mkdirSync, existsSync } from 'fs';
+import { dirname } from 'path';
 import {
   MemoryEntry,
   IdentityState,
@@ -20,11 +22,28 @@ export interface MemoryStoreOptions {
 
 export class MemoryStore {
   private db: Database.Database;
+  private readonly dbPath: string;
 
   constructor(options: MemoryStoreOptions = {}) {
-    const dbPath = options.inMemory ? ':memory:' : (options.dbPath || './data/metamorph.db');
-    this.db = new Database(dbPath);
+    this.dbPath = options.inMemory ? ':memory:' : (options.dbPath || './data/metamorph.db');
+
+    // Ensure data directory exists for file-based storage
+    if (this.dbPath !== ':memory:') {
+      const dir = dirname(this.dbPath);
+      if (!existsSync(dir)) {
+        mkdirSync(dir, { recursive: true });
+      }
+    }
+
+    this.db = new Database(this.dbPath);
     this.initSchema();
+  }
+
+  /**
+   * Get the database path
+   */
+  getDbPath(): string {
+    return this.dbPath;
   }
 
   private initSchema(): void {
@@ -909,15 +928,27 @@ export class MemoryStore {
   recordOperatorPerformance(entry: {
     operatorName: string;
     triggerType: string;
-    transformationScore: number;
-    coherenceScore: number;
-    driftCost: number;
+    transformationScore?: number;
+    coherenceScore?: number;
+    driftCost?: number;
+    emotionalImpact?: number;  // For empathy mode: 1 = improving, -1 = worsening
   }): string {
     const id = uuidv4();
     // Effectiveness = transformation gained per unit of drift cost
-    const effectivenessScore = entry.driftCost > 0
-      ? entry.transformationScore / entry.driftCost
-      : entry.transformationScore;
+    // For emotional tracking, use emotional impact as effectiveness
+    const transformationScore = entry.transformationScore ?? 0;
+    const driftCost = entry.driftCost ?? 0;
+    const coherenceScore = entry.coherenceScore ?? 0;
+
+    let effectivenessScore: number;
+    if (entry.emotionalImpact !== undefined) {
+      // For emotional tracking, use emotional impact directly as effectiveness modifier
+      effectivenessScore = entry.emotionalImpact > 0 ? 75 : 25;  // Positive = good, negative = poor
+    } else {
+      effectivenessScore = driftCost > 0
+        ? transformationScore / driftCost
+        : transformationScore;
+    }
 
     this.db.prepare(`
       INSERT INTO operator_performance
@@ -928,9 +959,9 @@ export class MemoryStore {
       entry.operatorName,
       entry.triggerType,
       effectivenessScore,
-      entry.transformationScore,
-      entry.coherenceScore,
-      entry.driftCost,
+      transformationScore,
+      coherenceScore,
+      driftCost,
       new Date().toISOString()
     );
 

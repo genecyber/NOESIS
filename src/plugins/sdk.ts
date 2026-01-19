@@ -6,6 +6,7 @@
  */
 
 import type { Stance, ModeConfig, OperatorDefinition, ConversationMessage } from '../types/index.js';
+import { pluginEventBus, type PluginEventType, type PluginEventData } from './event-bus.js';
 
 // ============================================================================
 // Types
@@ -135,7 +136,6 @@ export class PluginSDK {
   private plugins: Map<string, InstalledPlugin> = new Map();
   private activePlugins: Map<string, Plugin> = new Map();
   private storage: Map<string, Map<string, unknown>> = new Map();
-  private eventHandlers: Map<string, Set<(data: unknown) => void>> = new Map();
   private registeredOperators: Map<string, OperatorDefinition> = new Map();
   private hotReloadWatchers: Map<string, () => void> = new Map();
 
@@ -339,24 +339,16 @@ export default class ${this.toPascalCase(manifest.name)}Plugin implements Plugin
       },
 
       emit: (event, data) => {
-        const handlers = this.eventHandlers.get(event);
-        if (handlers) {
-          for (const handler of handlers) {
-            try {
-              handler(data);
-            } catch {
-              // Ignore handler errors
-            }
-          }
-        }
+        // Wire to the global plugin event bus
+        pluginEventBus.emit(event as PluginEventType, data as PluginEventData[PluginEventType]);
       },
 
       on: (event, handler) => {
-        if (!this.eventHandlers.has(event)) {
-          this.eventHandlers.set(event, new Set());
-        }
-        this.eventHandlers.get(event)!.add(handler);
-        return () => this.eventHandlers.get(event)?.delete(handler);
+        // Wire to the global plugin event bus
+        return pluginEventBus.on(
+          event as PluginEventType,
+          handler as (data: PluginEventData[PluginEventType]) => void
+        );
       }
     };
 

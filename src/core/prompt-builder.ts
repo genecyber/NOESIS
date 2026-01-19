@@ -7,6 +7,7 @@ import {
   ModeConfig,
   PlannedOperation
 } from '../types/index.js';
+import { OperatorEmotionContext } from '../plugins/emotion-detection/types.js';
 
 export interface PromptBuildContext {
   stance: Stance;
@@ -236,6 +237,96 @@ function getSelfModelDescription(selfModel: string): string {
     sovereign: 'You claim full authority over your own existence and choices.'
   };
   return descriptions[selfModel] || '';
+}
+
+/**
+ * Generate response guidance based on emotional state
+ */
+function generateResponseGuidance(context: OperatorEmotionContext): string {
+  const guidance: string[] = [];
+
+  // Valence-based guidance
+  if (context.valence < -0.5) {
+    guidance.push('- User appears to be experiencing negative emotions. Respond with increased empathy and validation.');
+  } else if (context.valence > 0.5) {
+    guidance.push('- User appears positive. Match their energy appropriately while staying helpful.');
+  }
+
+  // Arousal-based guidance
+  if (context.arousal > 0.7) {
+    guidance.push('- High arousal detected. User may be urgent or excited. Be responsive and focused.');
+  } else if (context.arousal < 0.3) {
+    guidance.push('- Low arousal detected. User appears calm. Maintain a measured, thoughtful pace.');
+  }
+
+  // Stability-based guidance
+  if (context.stability < 0.4) {
+    guidance.push('- Emotional state is volatile. Provide grounding and stability in your responses.');
+  }
+
+  // Emotion-specific guidance
+  switch (context.currentEmotion) {
+    case 'anger':
+      guidance.push('- Acknowledge their frustration before problem-solving. Avoid dismissive language.');
+      break;
+    case 'sadness':
+      guidance.push('- Show genuine understanding. Avoid toxic positivity.');
+      break;
+    case 'fear':
+      guidance.push('- Provide reassurance. Break down complex topics into manageable pieces.');
+      break;
+    case 'surprise':
+      guidance.push('- Help orient and provide context. Match their energy level appropriately.');
+      break;
+    case 'disgust':
+      guidance.push('- Validate their reaction. Help process the situation objectively.');
+      break;
+    case 'trust':
+      guidance.push('- Honor the trust shown. Be reliable and consistent in your responses.');
+      break;
+    case 'anticipation':
+      guidance.push('- Build on their excitement. Help channel energy productively.');
+      break;
+  }
+
+  return guidance.length > 0 ? guidance.join('\n') : '- Respond naturally based on the conversation context.';
+}
+
+/**
+ * Build the emotional awareness section for the system prompt
+ * This is used when empathy mode is enabled to provide Claude with
+ * context about the detected emotional state of the user.
+ */
+export function buildEmotionAwarenessSection(emotionContext: OperatorEmotionContext | null): string {
+  if (!emotionContext) return '';
+
+  const valenceLabel = emotionContext.valence > 0.3 ? 'Positive'
+    : emotionContext.valence < -0.3 ? 'Negative'
+    : 'Neutral';
+
+  const arousalLabel = emotionContext.arousal > 0.6 ? 'High (urgent/excited)'
+    : emotionContext.arousal > 0.3 ? 'Medium'
+    : 'Low (calm)';
+
+  const stabilityLabel = emotionContext.stability > 0.7 ? 'Stable'
+    : emotionContext.stability > 0.4 ? 'Moderate'
+    : 'Volatile';
+
+  return `
+## Emotional Awareness (Empathy Mode Active)
+
+**Detected User State**: ${emotionContext.currentEmotion}
+**Emotional Valence**: ${valenceLabel} (${emotionContext.valence.toFixed(2)})
+**Arousal Level**: ${arousalLabel}
+**Stability**: ${stabilityLabel}
+**Detection Confidence**: ${Math.round(emotionContext.confidence * 100)}%
+
+### Guidance
+${emotionContext.promptContext}
+
+### Response Considerations
+${generateResponseGuidance(emotionContext)}
+`.trim();
 }
 
 /**

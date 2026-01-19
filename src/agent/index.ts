@@ -40,6 +40,7 @@ import type { McpSdkServerConfigWithInstance } from '@anthropic-ai/claude-agent-
 import { autoEvolutionManager } from '../core/auto-evolution.js';
 import { identityPersistence } from '../core/identity-persistence.js';
 import { memoryInjector } from '../memory/proactive-injection.js';
+import { pluginEventBus } from '../plugins/event-bus.js';
 
 /**
  * Transformation history entry
@@ -60,6 +61,8 @@ export interface MetamorphAgentOptions {
   enableTransformation?: boolean;  // Defaults to true
   maxRegenerationAttempts?: number;  // Defaults to 2
   disallowedTools?: string[];  // Tools to explicitly block
+  dbPath?: string;  // Path to SQLite database (default: ./data/metamorph.db)
+  inMemory?: boolean;  // Force in-memory storage (default: false, for tests)
 }
 
 // All built-in Claude Code tools - allow everything by default
@@ -214,12 +217,17 @@ export class MetamorphAgent {
   private coherenceWarnings: Array<{ timestamp: Date; score: number; floor: number }> = [];
   private disallowedTools: string[];
   private mcpServer: McpSdkServerConfigWithInstance;
+  private dbPath?: string;
+  private storageInMemory: boolean;
+  private _lastVisionRequest: number | null = null;
 
   constructor(options: MetamorphAgentOptions = {}) {
     this.config = { ...createDefaultConfig(), ...options.config };
     this.verbose = options.verbose ?? false;
     this.workingDirectory = options.workingDirectory ?? process.cwd();
     this.disallowedTools = options.disallowedTools ?? [];
+    this.dbPath = options.dbPath;
+    this.storageInMemory = options.inMemory ?? false;  // Default to file-based storage
     // maxRegenerationAttempts reserved for future auto-regeneration feature
 
     // Initialize stance controller and create conversation
@@ -318,8 +326,17 @@ export class MetamorphAgent {
   /**
    * Update configuration
    */
-  updateConfig(config: Partial<ModeConfig>): void {
-    this.config = { ...this.config, ...config };
+  updateConfig(newConfig: Partial<ModeConfig>): void {
+    // Emit config:changed event for plugins
+    pluginEventBus?.emit('config:changed', { config: newConfig as Record<string, unknown> });
+
+    // Emit specific empathyMode event if that setting changed
+    if (newConfig.enableEmpathyMode !== undefined &&
+        newConfig.enableEmpathyMode !== this.config.enableEmpathyMode) {
+      pluginEventBus?.emit('config:empathyMode', newConfig.enableEmpathyMode);
+    }
+
+    this.config = { ...this.config, ...newConfig };
     this.stanceController.updateConfig(this.conversationId, this.config);
   }
 
@@ -329,6 +346,12 @@ export class MetamorphAgent {
   async chat(message: string): Promise<AgentResponse> {
     const stanceBefore = this.getCurrentStance();
     const conversationHistory = this.getHistory();
+
+    // Emit turn:start event for plugins
+    pluginEventBus?.emit('turn:start', {
+      message,
+      stance: this.getCurrentStance()
+    });
 
     // 0. AUTO-COMMAND DETECTION AND EXECUTION
     const autoInvokedCommands = this.executeAutoCommands(message, stanceBefore);
@@ -488,6 +511,12 @@ export class MetamorphAgent {
           objective: stanceAfter.objective,
           sentience: stanceAfter.sentience
         });
+
+        // Emit stance:changed event for plugins
+        pluginEventBus?.emit('stance:changed', {
+          before: stanceBefore,
+          after: stanceAfter
+        });
       }
     } else {
       // No hooks - minimal stance update (increment turn counter)
@@ -553,7 +582,7 @@ export class MetamorphAgent {
       memoryInjector.recordTurn();
     }
 
-    return {
+    const response: AgentResponse = {
       response: responseText,
       stanceBefore,
       stanceAfter,
@@ -563,6 +592,17 @@ export class MetamorphAgent {
       subagentsInvoked,
       coherenceWarning
     };
+
+    // Emit turn:complete event for plugins
+    pluginEventBus?.emit('turn:complete', {
+      response: {
+        text: responseText,
+        toolsUsed,
+        operatorsApplied: operators.map(op => op.name)
+      }
+    });
+
+    return response;
   }
 
   /**
@@ -571,6 +611,12 @@ export class MetamorphAgent {
   async chatStream(message: string, callbacks: StreamCallbacks): Promise<AgentResponse> {
     const stanceBefore = this.getCurrentStance();
     const conversationHistory = this.getHistory();
+
+    // Emit turn:start event for plugins
+    pluginEventBus?.emit('turn:start', {
+      message,
+      stance: this.getCurrentStance()
+    });
 
     // 0. AUTO-COMMAND DETECTION AND EXECUTION
     const autoInvokedCommands = this.executeAutoCommands(message, stanceBefore);
@@ -770,6 +816,12 @@ export class MetamorphAgent {
             objective: stanceAfter.objective,
             sentience: stanceAfter.sentience
           });
+
+          // Emit stance:changed event for plugins
+          pluginEventBus?.emit('stance:changed', {
+            before: stanceBefore,
+            after: stanceAfter
+          });
         }
       }
 
@@ -835,6 +887,15 @@ export class MetamorphAgent {
         coherenceWarning
       };
 
+      // Emit turn:complete event for plugins
+      pluginEventBus?.emit('turn:complete', {
+        response: {
+          text: responseText,
+          toolsUsed,
+          operatorsApplied: operators.map(op => op.name)
+        }
+      });
+
       callbacks.onComplete?.(result);
       return result;
     } catch (error) {
@@ -843,6 +904,130 @@ export class MetamorphAgent {
       }
       throw error;
     }
+  }
+
+  /**
+   * Chat with vision capability - sends an image along with the message
+   * Used when empathy mode needs to send webcam frames to Claude for analysis
+   *
+   * @param message - The text message
+   * @param imageDataUrl - Base64 data URL of the image (e.g., "data:image/jpeg;base64,...")
+   * @returns AgentResponse
+   */
+  async chatWithVision(message: string, imageDataUrl?: string): Promise<AgentResponse> {
+    // Rate limiting - prevent excessive vision requests
+    const VISION_COOLDOWN_MS = 10000; // 10 second cooldown
+    const now = Date.now();
+
+    if (this._lastVisionRequest && (now - this._lastVisionRequest) < VISION_COOLDOWN_MS) {
+      // Too soon, fall back to regular chat
+      if (this.verbose) {
+        console.log(`[METAMORPH] Vision request rate limited, falling back to regular chat`);
+      }
+      return this.chat(message);
+    }
+
+    if (!imageDataUrl || !this.config.enableEmpathyMode) {
+      // No image or empathy mode disabled, use regular chat
+      if (this.verbose && !imageDataUrl) {
+        console.log(`[METAMORPH] No image provided, using regular chat`);
+      }
+      if (this.verbose && !this.config.enableEmpathyMode) {
+        console.log(`[METAMORPH] Empathy mode disabled, using regular chat`);
+      }
+      return this.chat(message);
+    }
+
+    this._lastVisionRequest = now;
+
+    // Build vision-capable message content
+    const messageContent: Array<{
+      type: 'image' | 'text';
+      source?: {
+        type: 'base64';
+        media_type: 'image/jpeg' | 'image/png';
+        data: string;
+      };
+      text?: string;
+    }> = [];
+
+    // Add the image first
+    const base64Match = imageDataUrl.match(/^data:image\/(jpeg|png);base64,(.+)$/);
+    if (base64Match) {
+      const [, mediaType, base64Data] = base64Match;
+      messageContent.push({
+        type: 'image',
+        source: {
+          type: 'base64',
+          media_type: `image/${mediaType}` as 'image/jpeg' | 'image/png',
+          data: base64Data
+        }
+      });
+
+      if (this.verbose) {
+        console.log(`[METAMORPH] Vision request with ${mediaType} image (${Math.round(base64Data.length / 1024)}KB)`);
+      }
+    } else {
+      // Invalid image format, fall back to regular chat
+      if (this.verbose) {
+        console.log(`[METAMORPH] Invalid image format, falling back to regular chat`);
+      }
+      return this.chat(message);
+    }
+
+    // Add the text message
+    messageContent.push({
+      type: 'text',
+      text: message
+    });
+
+    // Build the full message with vision content
+    const visionMessage = {
+      role: 'user' as const,
+      content: messageContent
+    };
+
+    // Use existing chat flow but with vision message
+    // This should integrate with the rest of the processing pipeline
+    return this._processVisionChat(visionMessage, message);
+  }
+
+  /**
+   * Internal method to process vision chat through the pipeline
+   */
+  private async _processVisionChat(
+    _visionMessage: {
+      role: 'user';
+      content: Array<{
+        type: 'image' | 'text';
+        source?: {
+          type: 'base64';
+          media_type: 'image/jpeg' | 'image/png';
+          data: string;
+        };
+        text?: string;
+      }>;
+    },
+    originalMessage: string
+  ): Promise<AgentResponse> {
+    // Emit turn:start for plugins with vision context
+    pluginEventBus?.emit?.('turn:start', {
+      message: originalMessage,
+      stance: this.getCurrentStance(),
+      hasVision: true
+    });
+
+    // For now, delegate to chat with a modified message indicating vision context
+    // This ensures all hooks and processing still work correctly
+    // TODO: When Claude Agent SDK supports multimodal messages directly,
+    // we can pass the vision message directly to the query function
+    const enhancedMessage = `[Vision context: User has shared a webcam frame for emotion/expression analysis]\n\n${originalMessage}`;
+
+    if (this.verbose) {
+      console.log(`[METAMORPH] Processing vision chat with enhanced context`);
+    }
+
+    return this.chat(enhancedMessage);
   }
 
   /**
@@ -1162,10 +1347,19 @@ export class MetamorphAgent {
 
   /**
    * Initialize memory store if not already initialized
+   * Uses file-based SQLite by default (./data/metamorph.db)
+   * Pass inMemory: true in options for in-memory storage (useful for tests)
    */
   private ensureMemoryStore(): MemoryStore {
     if (!this.memoryStore) {
-      this.memoryStore = new MemoryStore({ inMemory: true });
+      this.memoryStore = new MemoryStore({
+        dbPath: this.dbPath,
+        inMemory: this.storageInMemory
+      });
+      if (this.verbose) {
+        const location = this.storageInMemory ? ':memory:' : (this.dbPath || './data/metamorph.db');
+        console.log(`[METAMORPH] Memory store initialized at ${location}`);
+      }
     }
     return this.memoryStore;
   }

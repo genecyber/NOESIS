@@ -14,6 +14,15 @@ import {
   PlannedOperation
 } from '../types/index.js';
 import { OperatorRegistry } from '../operators/base.js';
+import { emotionalArcTracker } from './emotional-arc.js';
+
+// Emotional trigger types for emotion-aware operator selection
+type EmotionalTriggerType =
+  | 'emotional_escalation'    // Declining valence trend
+  | 'emotional_volatility'    // High swings
+  | 'emotional_stagnation'    // Stuck in one emotion
+  | 'high_emotional_arousal'  // User urgent/excited
+  | 'positive_momentum';      // Improving valence
 
 // Trigger detection patterns
 const TRIGGER_PATTERNS: Record<TriggerType, RegExp[]> = {
@@ -123,6 +132,15 @@ const TRIGGER_OPERATOR_MAP: Record<TriggerType, OperatorName[]> = {
   operator_fatigue: ['PersonaMorph', 'Reframe', 'ConstraintRelax', 'QuestionInvert']  // Force diversity
 };
 
+// Emotional trigger to operator mapping
+const EMOTIONAL_TRIGGER_MAP: Record<EmotionalTriggerType, string[]> = {
+  'emotional_escalation': ['ValueShift', 'ConstraintTighten', 'SentienceDeepen'],
+  'high_emotional_arousal': ['ConstraintTighten', 'PersonaMorph'],
+  'emotional_volatility': ['ConstraintTighten', 'ContradictAndIntegrate'],
+  'emotional_stagnation': ['PersonaMorph', 'Reframe', 'MetaphorSwap'],
+  'positive_momentum': ['GoalFormation', 'IdentityEvolve']
+};
+
 // Operator usage history for fatigue detection (Ralph Iteration 2)
 interface OperatorUsageEntry {
   operators: OperatorName[];
@@ -133,8 +151,15 @@ const operatorUsageHistory: Map<string, OperatorUsageEntry[]> = new Map();
 
 /**
  * Detect triggers in a user message
+ * @param message - The user's message
+ * @param history - Conversation history
+ * @param conversationId - Optional conversation ID for emotional state tracking
  */
-export function detectTriggers(message: string, history: ConversationMessage[]): TriggerResult[] {
+export function detectTriggers(
+  message: string,
+  history: ConversationMessage[],
+  conversationId?: string
+): TriggerResult[] {
   const triggers: TriggerResult[] = [];
 
   // Check message against all patterns
@@ -171,6 +196,63 @@ export function detectTriggers(message: string, history: ConversationMessage[]):
     }
   }
 
+  // =========================================================================
+  // Emotional State Detection (Ralph Integration)
+  // =========================================================================
+  if (conversationId) {
+    const emotionalState = emotionalArcTracker?.getCurrentState?.(conversationId);
+
+    if (emotionalState?.current) {
+      // Declining valence trend - emotional escalation
+      if (emotionalState.trend === 'declining') {
+        triggers.push({
+          type: 'emotional_escalation' as TriggerType,
+          confidence: Math.abs(emotionalState.current.valence) / 100,
+          evidence: emotionalState.recentInsights?.join('; ') || 'Declining emotional trend'
+        });
+      }
+
+      // High arousal - user urgent/excited
+      if (emotionalState.current.arousal > 75) {
+        triggers.push({
+          type: 'high_emotional_arousal' as TriggerType,
+          confidence: emotionalState.current.arousal / 100,
+          evidence: 'User showing high urgency/excitement'
+        });
+      }
+
+      // Emotional volatility (detect via pattern analysis)
+      const arc = emotionalArcTracker.getFullArc(conversationId);
+      if (arc && arc.patterns.some(p => p.type === 'volatile')) {
+        const volatilePattern = arc.patterns.find(p => p.type === 'volatile');
+        triggers.push({
+          type: 'emotional_volatility' as TriggerType,
+          confidence: 0.8,
+          evidence: volatilePattern?.description || 'High emotional volatility detected'
+        });
+      }
+
+      // Emotional stagnation (stuck in same emotion)
+      if (arc && arc.patterns.some(p => p.type === 'stuck')) {
+        const stuckPattern = arc.patterns.find(p => p.type === 'stuck');
+        triggers.push({
+          type: 'emotional_stagnation' as TriggerType,
+          confidence: 0.75,
+          evidence: stuckPattern?.description || 'Stuck in emotional state'
+        });
+      }
+
+      // Positive momentum - improving trajectory
+      if (emotionalState.trend === 'improving' && emotionalState.current.valence > 50) {
+        triggers.push({
+          type: 'positive_momentum' as TriggerType,
+          confidence: emotionalState.current.valence / 100,
+          evidence: 'Positive emotional trajectory'
+        });
+      }
+    }
+  }
+
   // Sort by confidence
   triggers.sort((a, b) => b.confidence - a.confidence);
 
@@ -179,12 +261,18 @@ export function detectTriggers(message: string, history: ConversationMessage[]):
 
 /**
  * Plan operations based on triggers and configuration
+ * @param triggers - Detected triggers from user message
+ * @param stance - Current conversation stance
+ * @param config - Mode configuration
+ * @param registry - Operator registry
+ * @param conversationId - Optional conversation ID for emotional state access
  */
 export function planOperations(
   triggers: TriggerResult[],
   stance: Stance,
   config: ModeConfig,
-  registry: OperatorRegistry
+  registry: OperatorRegistry,
+  conversationId?: string
 ): PlannedOperation[] {
   const operations: PlannedOperation[] = [];
   const usedOperators = new Set<OperatorName>();
@@ -192,18 +280,29 @@ export function planOperations(
   // Calculate how many operators to apply based on intensity
   const maxOperators = Math.ceil(config.intensity / 30);
 
+  // Get emotional state for emotion-aware filtering
+  const emotionalState = conversationId
+    ? emotionalArcTracker?.getCurrentState?.(conversationId)
+    : null;
+
   for (const trigger of triggers) {
     if (operations.length >= maxOperators) break;
 
-    const candidateOperators = TRIGGER_OPERATOR_MAP[trigger.type] || [];
+    // Get candidate operators from standard triggers or emotional triggers
+    let candidateOperators: string[] = TRIGGER_OPERATOR_MAP[trigger.type as TriggerType] || [];
+
+    // Check emotional trigger map if not found in standard map
+    if (candidateOperators.length === 0 && trigger.type in EMOTIONAL_TRIGGER_MAP) {
+      candidateOperators = EMOTIONAL_TRIGGER_MAP[trigger.type as EmotionalTriggerType] || [];
+    }
 
     for (const operatorName of candidateOperators) {
       // Skip if already used or disabled
-      if (usedOperators.has(operatorName)) continue;
-      if (config.disabledOperators.includes(operatorName)) continue;
-      if (config.enabledOperators.length > 0 && !config.enabledOperators.includes(operatorName)) continue;
+      if (usedOperators.has(operatorName as OperatorName)) continue;
+      if (config.disabledOperators.includes(operatorName as OperatorName)) continue;
+      if (config.enabledOperators.length > 0 && !config.enabledOperators.includes(operatorName as OperatorName)) continue;
 
-      const operator = registry.get(operatorName);
+      const operator = registry.get(operatorName as OperatorName);
       if (!operator) continue;
 
       const context = {
@@ -217,15 +316,34 @@ export function planOperations(
       const promptInjection = operator.getPromptInjection(stance, context);
 
       operations.push({
-        name: operatorName,
+        name: operatorName as OperatorName,
         description: operator.description,
         promptInjection,
         stanceDelta
       });
 
-      usedOperators.add(operatorName);
+      usedOperators.add(operatorName as OperatorName);
 
       if (operations.length >= maxOperators) break;
+    }
+  }
+
+  // =========================================================================
+  // Emotion-Aware Operator Filtering
+  // If user is emotionally volatile, prioritize stabilizing operators
+  // =========================================================================
+  if (emotionalState?.current) {
+    const arc = conversationId ? emotionalArcTracker.getFullArc(conversationId) : null;
+    const isVolatile = arc?.patterns.some(p => p.type === 'volatile');
+
+    if (isVolatile && operations.length > 1) {
+      const STABILIZING_OPS: OperatorName[] = ['ConstraintTighten', 'SentienceDeepen'];
+      // Filter to stabilizing operators if available
+      const stabilizing = operations.filter(op => STABILIZING_OPS.includes(op.name));
+      if (stabilizing.length > 0) {
+        // Replace operations with stabilizing ones, keeping max limit
+        return stabilizing.slice(0, maxOperators);
+      }
     }
   }
 
