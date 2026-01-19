@@ -26,18 +26,19 @@ const markdownComponents: Components = {
   code: ({ children, className }) => {
     const isInline = !className;
     return isInline ? (
-      <code className="bg-black/30 px-1.5 py-0.5 rounded font-mono text-[0.9em]">{children}</code>
+      <code className="bg-black/30 px-1.5 py-0.5 rounded font-mono text-[0.9em] break-all">{children}</code>
     ) : (
       <code className={className}>{children}</code>
     );
   },
-  pre: ({ children }) => <pre className="bg-black/40 p-4 rounded-lg overflow-x-auto my-3 font-mono text-sm">{children}</pre>,
+  pre: ({ children }) => <pre className="bg-black/40 p-4 rounded-lg overflow-x-auto my-3 font-mono text-sm max-w-full">{children}</pre>,
   ul: ({ children }) => <ul className="my-2 pl-6 list-disc">{children}</ul>,
   ol: ({ children }) => <ol className="my-2 pl-6 list-decimal">{children}</ol>,
   li: ({ children }) => <li className="my-1">{children}</li>,
   blockquote: ({ children }) => <blockquote className="border-l-3 border-emblem-primary my-3 pl-4 text-emblem-muted">{children}</blockquote>,
   strong: ({ children }) => <strong className="text-emblem-secondary font-semibold">{children}</strong>,
   a: ({ href, children }) => <a href={href} target="_blank" rel="noopener noreferrer" className="text-emblem-primary underline hover:text-emblem-secondary transition-colors">{children}</a>,
+  img: ({ src, alt }) => <img src={src} alt={alt || ''} className="max-w-full h-auto rounded-lg my-2" />,
 };
 
 // Import EmotionContext from types
@@ -626,14 +627,14 @@ export default function Chat({ sessionId, onSessionChange, onResponse, onStanceU
               exit={{ opacity: 0, y: -10, scale: 0.95 }}
               transition={{ type: "spring", stiffness: 500, damping: 30 }}
               className={cn(
-                'max-w-[80%] p-3 rounded-xl leading-relaxed',
+                'max-w-[80%] p-3 rounded-xl leading-relaxed overflow-hidden min-w-0',
                 msg.role === 'user' && !msg.type && 'self-end bg-gradient-to-r from-emblem-secondary to-emblem-primary text-white',
                 msg.role === 'assistant' && 'self-start glass-card',
                 msg.type === 'command' && 'max-w-full',
                 msg.type === 'command' && msg.role === 'user' && 'bg-transparent text-emblem-text'
               )}
             >
-            <div className="break-words prose-chat">
+            <div className="break-words prose-chat overflow-hidden">
               {msg.type === 'command' && msg.commandData ? (
                 <CommandOutput
                   command={msg.commandData.command}
@@ -668,9 +669,9 @@ export default function Chat({ sessionId, onSessionChange, onResponse, onStanceU
               animate={{ opacity: 1, y: 0 }}
               exit={{ opacity: 0, y: -10 }}
               transition={{ type: "spring", stiffness: 400, damping: 25 }}
-              className="self-start glass-card max-w-[80%] p-3 rounded-xl"
+              className="self-start glass-card max-w-[80%] p-3 rounded-xl overflow-hidden min-w-0"
             >
-              <div className="break-words">
+              <div className="break-words overflow-hidden">
                 <ActiveToolsBar tools={activeTools} />
               </div>
             </motion.div>
@@ -683,9 +684,9 @@ export default function Chat({ sessionId, onSessionChange, onResponse, onStanceU
               animate={{ opacity: 1, y: 0 }}
               exit={{ opacity: 0 }}
               transition={{ type: "spring", stiffness: 400, damping: 25 }}
-              className="self-start glass-card max-w-[80%] p-3 rounded-xl"
+              className="self-start glass-card max-w-[80%] p-3 rounded-xl overflow-hidden min-w-0"
             >
-              <div className="break-words prose-chat">
+              <div className="break-words prose-chat overflow-hidden">
                 <ReactMarkdown components={markdownComponents}>{streamingText}</ReactMarkdown>
               </div>
             </motion.div>
