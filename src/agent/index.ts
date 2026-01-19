@@ -63,6 +63,35 @@ const ALL_TOOLS = [
   'AskUserQuestion', 'KillShell', 'TaskOutput'
 ];
 
+// MCP tool names (prefixed with mcp__metamorph-tools__)
+const MCP_TOOL_PREFIX = 'mcp__metamorph-tools__';
+const MCP_TOOLS = [
+  // Introspection
+  'get_stance',
+  'get_transformation_history',
+  'get_sentience_report',
+  'get_emergent_goals',
+  // Memory
+  'store_memory',
+  'recall_memories',
+  'get_memory_types',
+  'delete_memory',
+  // Analysis
+  'dialectical_analysis',
+  'frame_shift_analysis',
+  'value_analysis',
+  'coherence_check',
+  // Commands
+  'invoke_command',
+  'list_commands',
+  // Research
+  'web_search',
+  'web_scrape',
+].map(name => `${MCP_TOOL_PREFIX}${name}`);
+
+// Combined allowed tools
+const ALLOWED_TOOLS = [...ALL_TOOLS, ...MCP_TOOLS];
+
 export interface ToolUseEvent {
   id: string;
   name: string;
@@ -310,7 +339,7 @@ export class MetamorphAgent {
           permissionMode: 'acceptEdits',
           resume: this.sessionId,  // Continue session if we have one
           includePartialMessages: true,
-          allowedTools: ALL_TOOLS,
+          allowedTools: ALLOWED_TOOLS,
           disallowedTools: this.disallowedTools.length > 0 ? this.disallowedTools : undefined,
           mcpServers: {
             'metamorph-tools': this.mcpServer
@@ -519,7 +548,7 @@ export class MetamorphAgent {
           permissionMode: 'acceptEdits',
           resume: this.sessionId,
           includePartialMessages: true,
-          allowedTools: ALL_TOOLS,
+          allowedTools: ALLOWED_TOOLS,
           disallowedTools: this.disallowedTools.length > 0 ? this.disallowedTools : undefined,
           mcpServers: {
             'metamorph-tools': this.mcpServer
@@ -817,7 +846,7 @@ export class MetamorphAgent {
           systemPrompt: subagent.systemPrompt,
           permissionMode: 'acceptEdits',
           includePartialMessages: true,
-          allowedTools: ALL_TOOLS,
+          allowedTools: ALLOWED_TOOLS,
           disallowedTools: this.disallowedTools.length > 0 ? this.disallowedTools : undefined,
           mcpServers: {
             'metamorph-tools': this.mcpServer
