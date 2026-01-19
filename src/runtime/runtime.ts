@@ -10,8 +10,8 @@ import { FileAdapter } from './session/persistence/file-adapter.js';
 import { runtimeRegistry } from './commands/registry.js';
 import { CommandContext, OutputHelper } from './commands/context.js';
 import { CommandResult } from './commands/handler.js';
-import { AgentResponse, ModeConfig } from '../types/index.js';
-import type { StreamCallbacks } from '../agent/index.js';
+import { AgentResponse, ModeConfig, EmotionContext } from '../types/index.js';
+import type { StreamCallbacks, ChatOptions as AgentChatOptions } from '../agent/index.js';
 
 export interface RuntimeOptions extends SessionManagerOptions {
   /** Use in-memory storage (default: false - uses file-based storage) */
@@ -25,6 +25,14 @@ export interface CommandExecutionResult {
   result?: CommandResult;
   output?: string[];
   error?: string;
+}
+
+/**
+ * Chat options including emotion context from webcam detection
+ * Note: Uses EmotionContext from types/index.ts, allows null from frontend
+ */
+export interface ChatOptions {
+  emotionContext?: EmotionContext | null;
 }
 
 /**
@@ -91,11 +99,16 @@ export class MetamorphRuntime {
   async chatStream(
     sessionId: string,
     message: string,
-    callbacks: StreamCallbacks
+    callbacks: StreamCallbacks,
+    options?: ChatOptions
   ): Promise<AgentResponse> {
     const session = this.sessions.getOrCreate(sessionId);
     session.lastActivity = new Date();
-    return session.agent.chatStream(message, callbacks);
+    // Convert null to undefined for agent (agent doesn't accept null)
+    const agentOptions: AgentChatOptions | undefined = options ? {
+      emotionContext: options.emotionContext ?? undefined
+    } : undefined;
+    return session.agent.chatStream(message, callbacks, agentOptions);
   }
 
   /**

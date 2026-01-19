@@ -19,7 +19,7 @@
  */
 
 import type { Plugin, PluginContext } from '../sdk.js';
-import { pluginEventBus, type PluginEventData } from '../event-bus.js';
+import { pluginEventBus } from '../event-bus.js';
 import { emotionDetectionManifest } from './manifest.js';
 import { FaceApiDetector } from './face-api-detector.js';
 import { EmotionProcessor } from './emotion-processor.js';
@@ -250,12 +250,16 @@ export class EmotionDetectionPlugin implements Plugin {
   private emitEmotionDetected(context: OperatorEmotionContext): void {
     this.lastEmittedEmotion = context.currentEmotion;
 
-    const eventData: PluginEventData['emotion:detected'] = {
-      emotion: context.currentEmotion,
-      confidence: context.confidence
-    };
-
-    pluginEventBus.emit('emotion:detected', eventData);
+    // Emit the full emotion context
+    pluginEventBus.emit('emotion:detected', {
+      currentEmotion: context.currentEmotion,
+      valence: context.valence,
+      arousal: context.arousal,
+      confidence: context.confidence,
+      stability: context.stability,
+      promptContext: context.promptContext,
+      suggestedEmpathyBoost: context.suggestedEmpathyBoost
+    });
 
     this.context?.logger.debug(
       `Emotion detected: ${context.currentEmotion} (${(context.confidence * 100).toFixed(1)}%)`

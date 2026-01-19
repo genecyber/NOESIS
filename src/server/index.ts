@@ -19,6 +19,7 @@ import { ModeConfig } from '../types/index.js';
 import { MetamorphRuntime } from '../runtime/index.js';
 import { FaceApiDetector } from '../plugins/emotion-detection/face-api-detector.js';
 import { EmotionProcessor } from '../plugins/emotion-detection/emotion-processor.js';
+import { pluginEventBus } from '../plugins/event-bus.js';
 
 const app = express();
 
@@ -103,7 +104,8 @@ app.get('/api', (_req: Request, res: Response) => {
       'GET /api/commands': 'List available commands',
       'POST /api/emotion/detect': 'Detect emotions from webcam frame (base64 image)',
       'GET /api/emotion/status': 'Get emotion detector status',
-      'POST /api/emotion/reset': 'Clear emotion history'
+      'POST /api/emotion/reset': 'Clear emotion history',
+      'POST /api/chat/vision': 'Send message with webcam frame to Claude for vision-based analysis'
     }
   });
 });
@@ -204,7 +206,7 @@ app.get('/api/chat/stream', apiKeyAuth, async (req: Request, res: Response) => {
 
 // POST version of streaming for better compatibility
 app.post('/api/chat/stream', apiKeyAuth, async (req: Request, res: Response) => {
-  const { message, sessionId } = req.body;
+  const { message, sessionId, emotionContext } = req.body;
 
   if (!message) {
     res.status(400).json({ error: 'Message is required' });
@@ -250,7 +252,8 @@ app.post('/api/chat/stream', apiKeyAuth, async (req: Request, res: Response) => 
   };
 
   try {
-    await runtime.chatStream(effectiveSessionId, message, callbacks);
+    // Pass emotion context to runtime for hooks to access
+    await runtime.chatStream(effectiveSessionId, message, callbacks, { emotionContext });
   } catch (error) {
     res.write(`event: error\ndata: ${JSON.stringify({
       error: error instanceof Error ? error.message : 'Unknown error'
@@ -754,6 +757,85 @@ app.get('/api/emotion/status', apiKeyAuth, (_req: Request, res: Response) => {
 app.post('/api/emotion/reset', apiKeyAuth, (_req: Request, res: Response) => {
   emotionProcessor.clearHistory();
   res.json({ success: true, message: 'Emotion history cleared' });
+});
+
+// Vision analysis state - prevent concurrent requests
+let visionRequestInProgress = false;
+let lastVisionRequestTime = 0;
+const VISION_COOLDOWN_MS = 60000; // 60 second minimum between vision requests (once per minute)
+
+/**
+ * Vision emotion analysis endpoint
+ *
+ * This endpoint ONLY analyzes the image for emotions and stores the result.
+ * It does NOT process a chat message. Use the regular /api/chat endpoint after this
+ * to send messages - the stored emotion context will automatically influence responses.
+ *
+ * Flow:
+ * 1. Frontend captures webcam frame
+ * 2. Frontend calls POST /api/chat/vision with just the image
+ * 3. Backend analyzes image with Claude Vision, stores emotion context
+ * 4. Returns emotion context to frontend
+ * 5. Frontend calls POST /api/chat with message - emotion context is auto-injected
+ */
+app.post('/api/chat/vision', apiKeyAuth, async (req: Request, res: Response) => {
+  try {
+    const { sessionId, imageDataUrl } = req.body;
+
+    if (!imageDataUrl) {
+      res.status(400).json({ error: 'imageDataUrl is required' });
+      return;
+    }
+
+    // Prevent concurrent vision requests
+    if (visionRequestInProgress) {
+      res.status(429).json({
+        error: 'Vision request already in progress',
+        retryAfter: 5
+      });
+      return;
+    }
+
+    // Rate limiting (additional server-side check)
+    const now = Date.now();
+    const timeSinceLastRequest = now - lastVisionRequestTime;
+    if (timeSinceLastRequest < VISION_COOLDOWN_MS) {
+      res.status(429).json({
+        error: 'Too many vision requests',
+        retryAfter: Math.ceil((VISION_COOLDOWN_MS - timeSinceLastRequest) / 1000)
+      });
+      return;
+    }
+
+    const agent = getOrCreateAgent(sessionId);
+
+    visionRequestInProgress = true;
+    lastVisionRequestTime = now;
+
+    try {
+      // Emit event for plugin tracking
+      pluginEventBus.emit('emotion:vision_request', {
+        imageSize: imageDataUrl.length,
+        timestamp: now
+      });
+
+      // Analyze the image for emotions (this stores the result internally)
+      const emotionContext = await agent.analyzeVisionEmotion(imageDataUrl);
+
+      // Return just the emotion context - no chat response
+      res.json({
+        success: true,
+        emotionContext,
+        sessionId: sessionId || DEFAULT_SESSION
+      });
+    } finally {
+      visionRequestInProgress = false;
+    }
+  } catch (error) {
+    visionRequestInProgress = false;
+    console.error('Vision analysis error:', error);
+    res.status(500).json({ error: error instanceof Error ? error.message : 'Unknown error' });
+  }
 });
 
 // Error handling middleware

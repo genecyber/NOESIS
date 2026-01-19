@@ -313,6 +313,7 @@ export interface PreTurnContext {
   config: ModeConfig;
   conversationHistory: ConversationMessage[];
   conversationId: string;  // Ralph Iteration 2 - for operator fatigue tracking
+  emotionContext?: EmotionContext;  // Real-time emotion state from detection
 }
 
 export interface PreTurnResult {
@@ -342,6 +343,24 @@ export interface PostTurnResult {
 export interface TransformationHooks {
   preTurn(context: PreTurnContext): Promise<PreTurnResult>;
   postTurn(context: PostTurnContext): PostTurnResult;
+}
+
+// ============================================================================
+// Emotion Context Types
+// ============================================================================
+
+/**
+ * EmotionContext - Real-time emotional state from emotion detection
+ * Used to flow emotion awareness through hooks and into the planner/operators
+ */
+export interface EmotionContext {
+  currentEmotion: string;       // Primary detected emotion (e.g., "happy", "sad", "anxious")
+  valence: number;              // -1 (negative) to 1 (positive)
+  arousal: number;              // 0 (calm) to 1 (excited/activated)
+  confidence: number;           // 0 to 1 - how confident the detection is
+  stability: number;            // 0 to 1 - how stable the emotion has been
+  promptContext?: string;       // Pre-formatted context to inject into prompts
+  suggestedEmpathyBoost?: number; // Suggested adjustment to empathy stance value
 }
 
 // ============================================================================

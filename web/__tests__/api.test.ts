@@ -155,7 +155,7 @@ describe('API Client', () => {
       // Mock a response that never resolves
       mockFetch.mockReturnValueOnce(new Promise(() => {}));
 
-      const abort = chatStream('test-session', 'Hello', {});
+      const abort = chatStream('test-session', 'Hello', null, {});
 
       expect(typeof abort).toBe('function');
     });
@@ -165,7 +165,7 @@ describe('API Client', () => {
 
       mockFetch.mockRejectedValueOnce(new Error('Network error'));
 
-      chatStream('test-session', 'Hello', { onError });
+      chatStream('test-session', 'Hello', null, { onError });
 
       // Wait for async operation
       await new Promise(resolve => setTimeout(resolve, 10));
@@ -215,7 +215,7 @@ describe('API Client', () => {
         body: mockBody,
       });
 
-      chatStream('test-session', 'Hello', { onToolEvent, onComplete });
+      chatStream('test-session', 'Hello', null, { onToolEvent, onComplete });
 
       // Wait for async stream processing
       await new Promise(resolve => setTimeout(resolve, 100));

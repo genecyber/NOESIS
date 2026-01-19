@@ -5,7 +5,7 @@
  * Provides type-safe event emission and subscription.
  */
 
-import type { Stance, MemoryEntry } from '../types/index.js';
+import type { Stance, MemoryEntry, EmotionContext } from '../types/index.js';
 
 // ============================================================================
 // Event Types
@@ -22,6 +22,7 @@ export type PluginEventType =
   | 'config:empathyMode'
   | 'camera:frame'
   | 'emotion:detected'
+  | 'emotion:vision_request'
   | 'memory:added'
   | 'operator:applied';
 
@@ -58,9 +59,11 @@ export interface PluginEventData {
       timestamp: number;
     };
   };
-  'emotion:detected': {
-    emotion: string;
-    confidence: number;
+  'emotion:detected': EmotionContext;
+  'emotion:vision_request': {
+    imageSize: number;
+    prompt?: string;
+    timestamp?: number;
   };
   'memory:added': {
     memory: MemoryEntry;

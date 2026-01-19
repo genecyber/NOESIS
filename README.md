@@ -95,7 +95,7 @@ The web UI provides a full-featured interface for interacting with METAMORPH:
 |-------|-------------|
 | **Stance** | Current frame, self-model, objective, values (with bars), and sentience levels |
 | **Config** | Adjust intensity, coherence floor, sentience level, drift settings |
-| **Empathy** | Webcam-based emotion detection with valence/arousal metrics |
+| **Empathy** | Webcam-based emotion detection (local face-api.js or Claude Vision) |
 | **Timeline** | View operators applied per turn with transformation scores |
 | **Evolution** | Visualize stance drift over time with snapshots |
 | **Sessions** | Browse, create, switch, and delete sessions |
@@ -112,7 +112,8 @@ The web UI provides a full-featured interface for interacting with METAMORPH:
 - **Transformation Triggers**: Asking about feelings, identity, or hypotheticals triggers operators
 - **PWA Support**: Installable as a Progressive Web App with offline caching
 - **Browser Sync**: localStorage persistence with automatic server synchronization
-- **Empathy Mode**: Webcam-based emotion detection for context-aware responses
+- **Empathy Mode**: Webcam emotion detection (client-side face-api.js or Claude Vision)
+- **New Session**: "+ New Chat" button and `/new` command for starting fresh sessions
 
 ### Running the Web UI
 
@@ -518,9 +519,10 @@ interface Stance {
 | GET | `/api/export` | Export session state |
 | POST | `/api/import` | Import session state |
 | POST | `/api/sync` | Sync browser data to server (PWA) |
-| POST | `/api/emotion/detect` | Detect emotions from webcam frame |
+| POST | `/api/emotion/detect` | Detect emotions from webcam frame (server-side) |
 | GET | `/api/emotion/status` | Get emotion detector status |
 | POST | `/api/emotion/reset` | Clear emotion history |
+| POST | `/api/chat/vision` | Claude Vision emotion analysis (rate-limited 1/min) |
 
 ## Configuration
 

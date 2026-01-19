@@ -13,21 +13,11 @@ import type {
   TimelineEntry,
   EvolutionSnapshot,
   ToolUseEvent,
+  EmotionContext,
 } from './types';
 
-/**
- * Emotion context from webcam detection
- */
-export interface EmotionContext {
-  currentEmotion: string;
-  valence: number;
-  arousal: number;
-  confidence: number;
-  stability: number;
-  suggestedEmpathyBoost: number;
-  promptContext: string;
-  timestamp: string;
-}
+// Re-export EmotionContext for backward compatibility
+export type { EmotionContext } from './types';
 
 /**
  * Emotion detection response
@@ -139,10 +129,12 @@ export async function chat(
 
 /**
  * Send a chat message with streaming
+ * @param emotionContext - Optional emotion context from webcam detection
  */
 export function chatStream(
   sessionId: string | undefined,
   message: string,
+  emotionContext: EmotionContext | null | undefined,
   callbacks: {
     onText?: (text: string) => void;
     onToolEvent?: (event: ToolUseEvent) => void;
@@ -157,7 +149,7 @@ export function chatStream(
       const response = await fetch(`${STREAM_BASE}/chat/stream`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ sessionId, message }),
+        body: JSON.stringify({ sessionId, message, emotionContext: emotionContext || undefined }),
         signal: controller.signal,
       });
 
@@ -450,4 +442,67 @@ export async function resetEmotionHistory(): Promise<{ success: boolean; message
   return fetchJson<{ success: boolean; message: string }>(`${API_BASE}/emotion/reset`, {
     method: 'POST',
   });
+}
+
+/**
+ * Vision emotion analysis response
+ */
+export interface VisionEmotionResponse {
+  success: boolean;
+  emotionContext: EmotionContext;
+  sessionId: string;
+  error?: string;
+}
+
+/**
+ * Analyze a webcam frame for emotions using Claude Vision
+ * This ONLY analyzes the image - it does NOT send a chat message.
+ * The detected emotion is stored server-side and will automatically
+ * influence subsequent chat messages.
+ *
+ * Flow:
+ * 1. Call analyzeVisionEmotion() with webcam frame
+ * 2. Emotion context is stored in session
+ * 3. Call chat() or chatStream() - emotion context auto-injected
+ *
+ * @param sessionId - The session ID
+ * @param imageDataUrl - Base64 data URL of the webcam frame (e.g., "data:image/jpeg;base64,...")
+ * @returns The detected emotion context
+ */
+export async function analyzeVisionEmotion(
+  sessionId: string,
+  imageDataUrl: string
+): Promise<VisionEmotionResponse> {
+  const response = await fetch(`${API_BASE}/chat/vision`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ sessionId, imageDataUrl })
+  });
+
+  if (!response.ok) {
+    // Handle rate limiting gracefully
+    if (response.status === 429) {
+      const data = await response.json().catch(() => ({}));
+      console.log('[Vision] Rate limited, retry after:', data.retryAfter, 'seconds');
+      throw new Error(`Rate limited: ${data.error || 'Too many requests'}`);
+    }
+    const errorData = await response.json().catch(() => ({}));
+    throw new Error(errorData.error || `Vision analysis failed: ${response.statusText}`);
+  }
+
+  return response.json();
+}
+
+/**
+ * @deprecated Use analyzeVisionEmotion() instead. This function is kept for backward compatibility.
+ * The new flow separates emotion analysis from chat - analyze emotion first, then chat normally.
+ */
+export async function chatWithVision(
+  sessionId: string,
+  _message: string,
+  imageDataUrl: string,
+  _emotionPrompt?: string
+): Promise<VisionEmotionResponse> {
+  console.warn('[API] chatWithVision is deprecated. Use analyzeVisionEmotion() instead.');
+  return analyzeVisionEmotion(sessionId, imageDataUrl);
 }

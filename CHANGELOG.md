@@ -112,19 +112,44 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
   - `useMemories` hook for memory CRUD with server sync
 
 #### Emotion Detection (Webcam)
-- **Face Detection API**: Server-side emotion detection using face-api.js
+- **Client-Side Face Detection**: Browser-local emotion detection using face-api.js
+  - `web/lib/face-api.ts` - Client-side wrapper for @vladmandic/face-api
+  - Models loaded from jsDelivr CDN (TinyFaceDetector + FaceExpressionNet)
+  - `detectEmotions()`, `calculateValence()`, `calculateArousal()` utilities
+  - Zero API calls for basic emotion detection - works offline
+- **Claude Vision Integration**: Advanced emotion analysis via Claude's vision capabilities
+  - `POST /api/chat/vision` - Analyze webcam frame with Claude Vision
+  - Rate-limited to 1 request per minute (server-side cooldown)
+  - Stores emotion context for automatic injection into subsequent chat calls
+  - Customizable analysis prompt (saved to localStorage)
+- **Emotion Context Flow**: Full pipeline support for emotion-aware responses
+  - `EmotionContext` type defined in `src/types/index.ts`
+  - Passed through `PreTurnContext` to hooks and operators
+  - Auto-injected into system prompt when empathy mode enabled
+  - Supports both local face-api detection and Claude Vision analysis
+- **Enhanced Empathy Panel**: Unified emotion detection UI
+  - Toggle between local face-api and Claude Vision detection
+  - Configurable detection interval, confidence threshold, auto-adjust settings
+  - Advanced section with customizable Claude Vision prompt
+  - Real-time emotion display with valence/arousal metrics
+  - Permission handling and error states
+- **Server-Side Face Detection** (fallback): Using face-api.js
   - `FaceApiDetector` class wrapping @vladmandic/face-api
   - `EmotionProcessor` for temporal smoothing and stability scoring
   - Lazy initialization for faster server startup
-- **Empathy Panel**: Webcam-based emotion tracking in web UI
-  - `EmpathyPanel.tsx` component with camera preview
-  - Real-time emotion display with valence/arousal metrics
-  - Permission handling and error states
 - **API Endpoints**:
-  - `POST /api/emotion/detect` - Process base64 webcam frame
+  - `POST /api/emotion/detect` - Process base64 webcam frame (server-side)
   - `GET /api/emotion/status` - Detector initialization status
   - `POST /api/emotion/reset` - Clear emotion history
+  - `POST /api/chat/vision` - Claude Vision emotion analysis (rate-limited)
 - **Configuration**: `enableEmpathyMode` toggle in ModeConfig
+
+#### New Session Management
+- **Web UI**: "+ New Chat" button in header with purple hover animation
+- **Chat Commands**: `/new` and `/clear` commands in web chat interface
+- **CLI Runtime**: `/new` command (aliases: `/clear`, `/new-session`) for creating new sessions
+- **State Reset**: Clears timeline, evolution, emotion context on new session
+- **Persistence**: New session ID saved to localStorage for resume
 
 #### Streaming Enhancements
 - `ToolUseEvent` interface for detailed tool tracking (id, name, input, status, result, error)

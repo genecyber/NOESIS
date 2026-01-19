@@ -6,6 +6,8 @@
 
 import { query } from '@anthropic-ai/claude-agent-sdk';
 import type { SDKMessage } from '@anthropic-ai/claude-agent-sdk';
+import Anthropic from '@anthropic-ai/sdk';
+import 'dotenv/config';  // Ensure environment variables are loaded
 import {
   Stance,
   ModeConfig,
@@ -16,7 +18,8 @@ import {
   PreTurnContext,
   PostTurnContext,
   TransformationHooks,
-  createDefaultConfig
+  createDefaultConfig,
+  EmotionContext
 } from '../types/index.js';
 import { StanceController } from '../core/stance-controller.js';
 import { buildSystemPrompt } from '../core/prompt-builder.js';
@@ -120,6 +123,14 @@ export interface StreamCallbacks {
 }
 
 /**
+ * Options for chat method calls
+ */
+export interface ChatOptions {
+  /** Real-time emotion context from webcam detection */
+  emotionContext?: EmotionContext;
+}
+
+/**
  * Extract text content from an SDK message
  */
 function extractTextFromMessage(message: SDKMessage): string {
@@ -220,6 +231,7 @@ export class MetamorphAgent {
   private dbPath?: string;
   private storageInMemory: boolean;
   private _lastVisionRequest: number | null = null;
+  private _currentEmotionContext: EmotionContext | null = null;
 
   constructor(options: MetamorphAgentOptions = {}) {
     this.config = { ...createDefaultConfig(), ...options.config };
@@ -342,8 +354,10 @@ export class MetamorphAgent {
 
   /**
    * Main chat method - THE single code path for all interactions
+   * @param message - The user's message
+   * @param options - Optional settings including emotionContext for empathy mode
    */
-  async chat(message: string): Promise<AgentResponse> {
+  async chat(message: string, options?: ChatOptions): Promise<AgentResponse> {
     const stanceBefore = this.getCurrentStance();
     const conversationHistory = this.getHistory();
 
@@ -360,13 +374,17 @@ export class MetamorphAgent {
     let systemPrompt: string;
     let operators: PlannedOperation[] = [];
 
+    // Get emotion context: use explicit option, or fall back to stored vision analysis
+    const emotionContext = options?.emotionContext ?? this._currentEmotionContext ?? undefined;
+
     if (this.hooks) {
       const preTurnContext: PreTurnContext = {
         message,
         stance: stanceBefore,
         config: this.config,
         conversationHistory,
-        conversationId: this.conversationId
+        conversationId: this.conversationId,
+        emotionContext  // Pass emotion context for empathy mode
       };
 
       const preTurnResult = await this.hooks.preTurn(preTurnContext);
@@ -607,8 +625,11 @@ export class MetamorphAgent {
 
   /**
    * Streaming chat method with callbacks
+   * @param message - The user's message
+   * @param callbacks - Stream callbacks for real-time updates
+   * @param options - Optional settings including emotionContext for empathy mode
    */
-  async chatStream(message: string, callbacks: StreamCallbacks): Promise<AgentResponse> {
+  async chatStream(message: string, callbacks: StreamCallbacks, options?: ChatOptions): Promise<AgentResponse> {
     const stanceBefore = this.getCurrentStance();
     const conversationHistory = this.getHistory();
 
@@ -631,13 +652,17 @@ export class MetamorphAgent {
     let systemPrompt: string;
     let operators: PlannedOperation[] = [];
 
+    // Get emotion context: use explicit option, or fall back to stored vision analysis
+    const emotionContext = options?.emotionContext ?? this._currentEmotionContext ?? undefined;
+
     if (this.hooks) {
       const preTurnContext: PreTurnContext = {
         message,
         stance: stanceBefore,
         config: this.config,
         conversationHistory,
-        conversationId: this.conversationId
+        conversationId: this.conversationId,
+        emotionContext  // Pass emotion context for empathy mode
       };
 
       const preTurnResult = await this.hooks.preTurn(preTurnContext);
@@ -916,26 +941,24 @@ export class MetamorphAgent {
    */
   async chatWithVision(message: string, imageDataUrl?: string): Promise<AgentResponse> {
     // Rate limiting - prevent excessive vision requests
-    const VISION_COOLDOWN_MS = 10000; // 10 second cooldown
+    const VISION_COOLDOWN_MS = 60000; // 60 second cooldown (once per minute)
     const now = Date.now();
 
     if (this._lastVisionRequest && (now - this._lastVisionRequest) < VISION_COOLDOWN_MS) {
-      // Too soon, fall back to regular chat
-      if (this.verbose) {
-        console.log(`[METAMORPH] Vision request rate limited, falling back to regular chat`);
-      }
-      return this.chat(message);
+      // Too soon - return error, don't fall back to regular chat
+      const waitTime = Math.ceil((VISION_COOLDOWN_MS - (now - this._lastVisionRequest)) / 1000);
+      console.log(`[METAMORPH] Vision request rate limited, retry in ${waitTime}s`);
+      throw new Error(`Vision rate limited. Retry in ${waitTime} seconds.`);
     }
 
-    if (!imageDataUrl || !this.config.enableEmpathyMode) {
-      // No image or empathy mode disabled, use regular chat
-      if (this.verbose && !imageDataUrl) {
-        console.log(`[METAMORPH] No image provided, using regular chat`);
-      }
-      if (this.verbose && !this.config.enableEmpathyMode) {
-        console.log(`[METAMORPH] Empathy mode disabled, using regular chat`);
-      }
-      return this.chat(message);
+    if (!imageDataUrl) {
+      console.log(`[METAMORPH] Vision request missing image`);
+      throw new Error('Vision request requires an image');
+    }
+
+    if (!this.config.enableEmpathyMode) {
+      console.log(`[METAMORPH] Empathy mode disabled, vision request rejected`);
+      throw new Error('Empathy mode is disabled');
     }
 
     this._lastVisionRequest = now;
@@ -968,11 +991,9 @@ export class MetamorphAgent {
         console.log(`[METAMORPH] Vision request with ${mediaType} image (${Math.round(base64Data.length / 1024)}KB)`);
       }
     } else {
-      // Invalid image format, fall back to regular chat
-      if (this.verbose) {
-        console.log(`[METAMORPH] Invalid image format, falling back to regular chat`);
-      }
-      return this.chat(message);
+      // Invalid image format - throw error, don't fall back
+      console.log(`[METAMORPH] Invalid image format (expected data:image/jpeg or png;base64,...)`);
+      throw new Error('Invalid image format. Expected base64 data URL (data:image/jpeg;base64,... or data:image/png;base64,...)');
     }
 
     // Add the text message
@@ -993,10 +1014,11 @@ export class MetamorphAgent {
   }
 
   /**
-   * Internal method to process vision chat through the pipeline
+   * Internal method to process vision chat using direct Anthropic API
+   * The Claude Agent SDK doesn't support multimodal, so we use the direct API for vision
    */
   private async _processVisionChat(
-    _visionMessage: {
+    visionMessage: {
       role: 'user';
       content: Array<{
         type: 'image' | 'text';
@@ -1017,17 +1039,103 @@ export class MetamorphAgent {
       hasVision: true
     });
 
-    // For now, delegate to chat with a modified message indicating vision context
-    // This ensures all hooks and processing still work correctly
-    // TODO: When Claude Agent SDK supports multimodal messages directly,
-    // we can pass the vision message directly to the query function
-    const enhancedMessage = `[Vision context: User has shared a webcam frame for emotion/expression analysis]\n\n${originalMessage}`;
+    const stanceBefore = this.getCurrentStance();
 
-    if (this.verbose) {
-      console.log(`[METAMORPH] Processing vision chat with enhanced context`);
+    try {
+      // Use direct Anthropic API for vision (Claude Agent SDK doesn't support multimodal)
+      const anthropic = new Anthropic();
+
+      // Build properly typed content array for Anthropic API
+      type ImageMediaType = 'image/jpeg' | 'image/png' | 'image/gif' | 'image/webp';
+      const apiContent: Array<
+        | { type: 'image'; source: { type: 'base64'; media_type: ImageMediaType; data: string } }
+        | { type: 'text'; text: string }
+      > = [];
+
+      for (const block of visionMessage.content) {
+        if (block.type === 'image' && block.source) {
+          // Validate media type
+          const mediaType = block.source.media_type as ImageMediaType;
+          if (!['image/jpeg', 'image/png', 'image/gif', 'image/webp'].includes(mediaType)) {
+            console.error(`[METAMORPH] Vision: Invalid media type: ${block.source.media_type}`);
+            continue;
+          }
+          apiContent.push({
+            type: 'image',
+            source: {
+              type: 'base64',
+              media_type: mediaType,
+              data: block.source.data
+            }
+          });
+          console.log(`[METAMORPH] Vision: Adding image (${Math.round(block.source.data.length / 1024)}KB, ${mediaType})`);
+        } else if (block.type === 'text' && block.text) {
+          apiContent.push({
+            type: 'text',
+            text: block.text
+          });
+          console.log(`[METAMORPH] Vision: Adding text prompt (${block.text.length} chars)`);
+        }
+      }
+
+      console.log(`[METAMORPH] Sending vision request to Claude via direct API with ${apiContent.length} content blocks`);
+
+      const response = await anthropic.messages.create({
+        model: 'claude-sonnet-4-5', // Vision requires a vision-capable model
+        max_tokens: 1024,
+        messages: [
+          {
+            role: 'user',
+            content: apiContent
+          }
+        ]
+      });
+
+      // Extract text response
+      let responseText = '';
+      for (const block of response.content) {
+        if (block.type === 'text') {
+          responseText += block.text;
+        }
+      }
+
+      if (this.verbose) {
+        console.log(`[METAMORPH] Vision response received (${responseText.length} chars)`);
+      }
+
+      // For vision responses, we don't apply the full transformation pipeline
+      // since this is primarily for emotion detection, not conversation
+      const result: AgentResponse = {
+        response: responseText,
+        stanceBefore,
+        stanceAfter: stanceBefore, // Vision requests don't transform stance
+        operationsApplied: [],
+        scores: {
+          transformation: 0,
+          coherence: 100,
+          sentience: stanceBefore.sentience.awarenessLevel,
+          overall: 50
+        },
+        toolsUsed: [],
+        subagentsInvoked: []
+      };
+
+      // Emit turn:complete event
+      pluginEventBus?.emit?.('turn:complete', {
+        response: {
+          text: responseText,
+          toolsUsed: [],
+          operatorsApplied: []
+        }
+      });
+
+      return result;
+    } catch (error) {
+      if (this.verbose) {
+        console.error(`[METAMORPH] Vision API error:`, error);
+      }
+      throw error;
     }
-
-    return this.chat(enhancedMessage);
   }
 
   /**
@@ -1534,5 +1642,179 @@ export class MetamorphAgent {
    */
   clearCoherenceWarnings(): void {
     this.coherenceWarnings = [];
+  }
+
+  // ============================================================================
+  // Emotion Context (Empathy Mode - Vision Pipeline)
+  // ============================================================================
+
+  /**
+   * Get the current emotion context detected from vision
+   * This is used by hooks/operators to influence responses
+   */
+  getEmotionContext(): EmotionContext | null {
+    return this._currentEmotionContext;
+  }
+
+  /**
+   * Set the emotion context (called by vision analysis)
+   */
+  setEmotionContext(context: EmotionContext | null): void {
+    this._currentEmotionContext = context;
+    if (context && this.verbose) {
+      console.log(`[METAMORPH] Emotion context set: ${context.currentEmotion} (confidence: ${Math.round(context.confidence * 100)}%)`);
+    }
+  }
+
+  /**
+   * Analyze an image for emotions using Claude Vision API
+   * This method ONLY analyzes the image and stores the emotion context.
+   * It does NOT process a chat message - use chat() after this for responses.
+   *
+   * @param imageDataUrl - Base64 data URL of the image
+   * @returns The detected EmotionContext
+   */
+  async analyzeVisionEmotion(imageDataUrl: string): Promise<EmotionContext> {
+    // Rate limiting
+    const VISION_COOLDOWN_MS = 60000;
+    const now = Date.now();
+
+    if (this._lastVisionRequest && (now - this._lastVisionRequest) < VISION_COOLDOWN_MS) {
+      const waitTime = Math.ceil((VISION_COOLDOWN_MS - (now - this._lastVisionRequest)) / 1000);
+      throw new Error(`Vision rate limited. Retry in ${waitTime} seconds.`);
+    }
+
+    if (!this.config.enableEmpathyMode) {
+      throw new Error('Empathy mode is disabled');
+    }
+
+    // Validate image format
+    const base64Match = imageDataUrl.match(/^data:image\/(jpeg|png);base64,(.+)$/);
+    if (!base64Match) {
+      throw new Error('Invalid image format. Expected base64 data URL (data:image/jpeg;base64,... or data:image/png;base64,...)');
+    }
+
+    this._lastVisionRequest = now;
+    const [, mediaType, base64Data] = base64Match;
+
+    try {
+      // Ensure API key is available
+      const apiKey = process.env.ANTHROPIC_API_KEY;
+      if (!apiKey) {
+        throw new Error('ANTHROPIC_API_KEY environment variable is not set');
+      }
+
+      const anthropic = new Anthropic({ apiKey });
+
+      if (this.verbose) {
+        console.log(`[METAMORPH] Analyzing emotion from ${mediaType} image (${Math.round(base64Data.length / 1024)}KB)`);
+      }
+
+      // Emotion analysis prompt - structured to get parseable output
+      const emotionPrompt = `Analyze the person's facial expression and emotional state in this image.
+
+Return your analysis in this exact JSON format:
+{
+  "emotion": "happy|sad|angry|fearful|surprised|disgusted|neutral|contempt",
+  "valence": <number from -1 to 1, where -1 is very negative, 0 is neutral, 1 is very positive>,
+  "arousal": <number from 0 to 1, where 0 is calm, 1 is highly activated/aroused>,
+  "confidence": <number from 0 to 1, how confident you are in this assessment>,
+  "description": "<brief natural language description of what you observe>"
+}
+
+Only return the JSON, no other text.`;
+
+      const response = await anthropic.messages.create({
+        model: 'claude-sonnet-4-5',
+        max_tokens: 512,
+        messages: [{
+          role: 'user',
+          content: [
+            {
+              type: 'image',
+              source: {
+                type: 'base64',
+                media_type: `image/${mediaType}` as 'image/jpeg' | 'image/png',
+                data: base64Data
+              }
+            },
+            {
+              type: 'text',
+              text: emotionPrompt
+            }
+          ]
+        }]
+      });
+
+      // Extract text response
+      let responseText = '';
+      for (const block of response.content) {
+        if (block.type === 'text') {
+          responseText += block.text;
+        }
+      }
+
+      // Parse the JSON response
+      let emotionData: {
+        emotion: string;
+        valence: number;
+        arousal: number;
+        confidence: number;
+        description: string;
+      };
+
+      try {
+        // Handle potential markdown code blocks
+        const jsonMatch = responseText.match(/\{[\s\S]*\}/);
+        if (jsonMatch) {
+          emotionData = JSON.parse(jsonMatch[0]);
+        } else {
+          throw new Error('No JSON found in response');
+        }
+      } catch (parseError) {
+        console.error('[METAMORPH] Failed to parse emotion response:', responseText);
+        // Return a default neutral emotion context if parsing fails
+        emotionData = {
+          emotion: 'neutral',
+          valence: 0,
+          arousal: 0.3,
+          confidence: 0.3,
+          description: 'Unable to parse emotion response'
+        };
+      }
+
+      // Calculate suggested empathy boost based on valence
+      // Negative emotions suggest higher empathy boost
+      const suggestedEmpathyBoost = emotionData.valence < 0
+        ? Math.round(Math.abs(emotionData.valence) * (this.config.empathyBoostMax || 20))
+        : 0;
+
+      // Calculate stability (inverse of arousal - calmer = more stable)
+      const stability = 1 - emotionData.arousal;
+
+      // Build the emotion context
+      const emotionContext: EmotionContext = {
+        currentEmotion: emotionData.emotion,
+        valence: emotionData.valence,
+        arousal: emotionData.arousal,
+        confidence: emotionData.confidence,
+        stability,
+        suggestedEmpathyBoost,
+        promptContext: `The user appears ${emotionData.emotion}. ${emotionData.description}`
+      };
+
+      // Store the emotion context for use in subsequent chat calls
+      this.setEmotionContext(emotionContext);
+
+      // Emit event for plugins
+      pluginEventBus?.emit?.('emotion:detected', emotionContext);
+
+      return emotionContext;
+    } catch (error) {
+      if (this.verbose) {
+        console.error(`[METAMORPH] Vision emotion analysis error:`, error);
+      }
+      throw error;
+    }
   }
 }

@@ -11,7 +11,8 @@ import {
   Stance,
   TurnScores,
   StanceDelta,
-  TriggerResult
+  TriggerResult,
+  EmotionContext
 } from '../types/index.js';
 import { buildSystemPrompt } from '../core/prompt-builder.js';
 import {
@@ -49,11 +50,11 @@ let lastTurnTriggers: TriggerResult[] = [];
 export function createTransformationHooks(memoryStore?: MemoryStore): TransformationHooks {
   return {
     async preTurn(context: PreTurnContext): Promise<PreTurnResult> {
-      const { message, stance, config, conversationHistory, conversationId } = context;
+      const { message, stance, config, conversationHistory, conversationId, emotionContext } = context;
       const registry = getRegistry();
 
-      // 1. Detect triggers in the message
-      const triggers = detectTriggers(message, conversationHistory);
+      // 1. Detect triggers in the message (pass emotionContext for emotion-aware trigger detection)
+      const triggers = detectTriggers(message, conversationHistory, conversationId, emotionContext);
 
       // Store triggers for operator learning (Ralph Iteration 3)
       lastTurnTriggers = [...triggers];
@@ -106,35 +107,54 @@ export function createTransformationHooks(memoryStore?: MemoryStore): Transforma
       // 3.5 Emotion context injection for empathy mode
       let emotionPromptContext: string | undefined;
       if (config.enableEmpathyMode) {
-        // Try to get the emotion detection plugin
-        const emotionPlugin = pluginSDK?.getPlugin?.('emotion-detection') as {
-          getEmotionalContext?: () => {
-            confidence: number;
-            suggestedEmpathyBoost: number;
-            promptContext?: string;
-          } | undefined;
-        } | null;
-        const emotionContext = (emotionPlugin as unknown as {
-          getEmotionalContext?: () => {
-            confidence: number;
-            suggestedEmpathyBoost: number;
-            promptContext?: string;
-          } | undefined;
-        })?.getEmotionalContext?.();
+        // Priority 1: Use emotionContext passed directly from chat call
+        // Priority 2: Fall back to emotion detection plugin
+        let activeEmotionContext: EmotionContext | undefined = emotionContext;
 
-        if (emotionContext && emotionContext.confidence > (config.empathyMinConfidence || 0.5)) {
+        if (!activeEmotionContext) {
+          // Try to get the emotion detection plugin as fallback
+          const emotionPlugin = pluginSDK?.getPlugin?.('emotion-detection') as {
+            getEmotionalContext?: () => {
+              confidence: number;
+              suggestedEmpathyBoost: number;
+              promptContext?: string;
+            } | undefined;
+          } | null;
+          const pluginContext = (emotionPlugin as unknown as {
+            getEmotionalContext?: () => {
+              confidence: number;
+              suggestedEmpathyBoost: number;
+              promptContext?: string;
+            } | undefined;
+          })?.getEmotionalContext?.();
+
+          if (pluginContext) {
+            // Convert plugin context to EmotionContext
+            activeEmotionContext = {
+              currentEmotion: 'unknown',
+              valence: 0,
+              arousal: 0,
+              confidence: pluginContext.confidence,
+              stability: 0.5,
+              promptContext: pluginContext.promptContext,
+              suggestedEmpathyBoost: pluginContext.suggestedEmpathyBoost
+            };
+          }
+        }
+
+        if (activeEmotionContext && activeEmotionContext.confidence > (config.empathyMinConfidence || 0.5)) {
           // Apply empathy boost to stance if auto-adjust is enabled
-          if (config.empathyAutoAdjust) {
+          if (config.empathyAutoAdjust && activeEmotionContext.suggestedEmpathyBoost) {
             const maxBoost = config.empathyBoostMax || 20;
-            const boost = Math.min(emotionContext.suggestedEmpathyBoost, maxBoost);
+            const boost = Math.min(activeEmotionContext.suggestedEmpathyBoost, maxBoost);
             stanceAfterPlan.values.empathy = Math.min(100,
               (stanceAfterPlan.values.empathy || 50) + boost
             );
           }
 
           // Store emotional awareness context to append to system prompt
-          if (emotionContext.promptContext) {
-            emotionPromptContext = emotionContext.promptContext;
+          if (activeEmotionContext.promptContext) {
+            emotionPromptContext = activeEmotionContext.promptContext;
           }
         }
       }

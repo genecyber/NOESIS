@@ -11,7 +11,8 @@ import {
   ModeConfig,
   ConversationMessage,
   OperatorName,
-  PlannedOperation
+  PlannedOperation,
+  EmotionContext
 } from '../types/index.js';
 import { OperatorRegistry } from '../operators/base.js';
 import { emotionalArcTracker } from './emotional-arc.js';
@@ -154,11 +155,13 @@ const operatorUsageHistory: Map<string, OperatorUsageEntry[]> = new Map();
  * @param message - The user's message
  * @param history - Conversation history
  * @param conversationId - Optional conversation ID for emotional state tracking
+ * @param emotionContext - Optional real-time emotion context from detection
  */
 export function detectTriggers(
   message: string,
   history: ConversationMessage[],
-  conversationId?: string
+  conversationId?: string,
+  emotionContext?: EmotionContext
 ): TriggerResult[] {
   const triggers: TriggerResult[] = [];
 
@@ -198,8 +201,59 @@ export function detectTriggers(
 
   // =========================================================================
   // Emotional State Detection (Ralph Integration)
+  // Uses directly passed emotionContext (priority) or emotionalArcTracker (fallback)
   // =========================================================================
-  if (conversationId) {
+
+  // Priority 1: Use directly passed EmotionContext from real-time detection
+  if (emotionContext && emotionContext.confidence > 0.5) {
+    // High arousal - user urgent/excited
+    if (emotionContext.arousal > 0.75) {
+      triggers.push({
+        type: 'high_emotional_arousal' as TriggerType,
+        confidence: emotionContext.arousal,
+        evidence: `High arousal detected: ${emotionContext.currentEmotion} (arousal: ${emotionContext.arousal.toFixed(2)})`
+      });
+    }
+
+    // Negative valence with low stability - emotional escalation
+    if (emotionContext.valence < -0.3 && emotionContext.stability < 0.5) {
+      triggers.push({
+        type: 'emotional_escalation' as TriggerType,
+        confidence: Math.abs(emotionContext.valence) * (1 - emotionContext.stability),
+        evidence: `Negative emotion trend: ${emotionContext.currentEmotion} (valence: ${emotionContext.valence.toFixed(2)}, stability: ${emotionContext.stability.toFixed(2)})`
+      });
+    }
+
+    // Low stability - emotional volatility
+    if (emotionContext.stability < 0.3) {
+      triggers.push({
+        type: 'emotional_volatility' as TriggerType,
+        confidence: 1 - emotionContext.stability,
+        evidence: `Low emotional stability: ${emotionContext.stability.toFixed(2)}`
+      });
+    }
+
+    // High stability with same emotion - potential stagnation
+    if (emotionContext.stability > 0.9 && emotionContext.valence < 0) {
+      triggers.push({
+        type: 'emotional_stagnation' as TriggerType,
+        confidence: emotionContext.stability,
+        evidence: `Stuck in ${emotionContext.currentEmotion} (stability: ${emotionContext.stability.toFixed(2)})`
+      });
+    }
+
+    // Positive valence with good stability - positive momentum
+    if (emotionContext.valence > 0.3 && emotionContext.stability > 0.5) {
+      triggers.push({
+        type: 'positive_momentum' as TriggerType,
+        confidence: emotionContext.valence * emotionContext.stability,
+        evidence: `Positive momentum: ${emotionContext.currentEmotion} (valence: ${emotionContext.valence.toFixed(2)})`
+      });
+    }
+  }
+
+  // Priority 2: Fall back to emotionalArcTracker if no direct context
+  if (!emotionContext && conversationId) {
     const emotionalState = emotionalArcTracker?.getCurrentState?.(conversationId);
 
     if (emotionalState?.current) {

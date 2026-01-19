@@ -72,7 +72,6 @@ export class FaceApiDetector {
       // Dynamically import face-api.js
       // Note: face-api.js must be installed separately
       if (!faceapi) {
-        // @ts-expect-error - face-api.js is an optional dependency
         faceapi = await import('face-api.js');
       }
 
