@@ -1,9 +1,8 @@
 'use client';
 
-import { useState } from 'react';
 import type { ToolUseEvent } from '@/lib/types';
 import { cn } from '@/lib/utils';
-import { Zap, Loader2, CheckCircle2, XCircle } from 'lucide-react';
+import { Zap, Loader2, Check, X } from 'lucide-react';
 
 interface ToolUsageProps {
   tools: ToolUseEvent[];
@@ -13,142 +12,96 @@ export default function ToolUsage({ tools }: ToolUsageProps) {
   if (tools.length === 0) return null;
 
   return (
-    <div className="bg-emblem-primary/10 border border-emblem-primary/30 rounded-lg p-2.5 mb-2">
-      <div className="flex items-center gap-1.5 mb-2 text-[11px] uppercase tracking-wide">
-        <Zap className="w-3 h-3" />
-        <span className="text-emblem-primary font-semibold">Tools Used</span>
-        <span className="bg-emblem-primary/30 text-emblem-primary/90 px-1.5 py-0.5 rounded-full text-[10px]">
+    <div className="mb-3">
+      <div className="flex items-center gap-1.5 mb-1.5 text-[10px] uppercase tracking-wide text-emblem-muted">
+        <Zap className="w-3 h-3 text-emblem-primary" />
+        <span>Tools</span>
+        <span className="bg-emblem-primary/20 text-emblem-primary px-1.5 py-0.5 rounded-full text-[9px] font-medium">
           {tools.length}
         </span>
       </div>
-      <div className="flex flex-col gap-1.5">
+      <div className="flex flex-wrap gap-1.5">
         {tools.map((tool) => (
-          <ToolItem key={tool.id} tool={tool} />
+          <ToolChip key={tool.id} tool={tool} />
         ))}
       </div>
     </div>
   );
 }
 
-interface ToolItemProps {
+interface ToolChipProps {
   tool: ToolUseEvent;
 }
 
-function ToolItem({ tool }: ToolItemProps) {
-  const [showDetails, setShowDetails] = useState(false);
+function ToolChip({ tool }: ToolChipProps) {
+  // Format input params as comma-separated values (just values, not keys)
+  const formatParams = (input: Record<string, unknown>): string => {
+    const values = Object.values(input);
+    if (values.length === 0) return '';
 
-  // Format input params for display
-  const formatInput = (input: Record<string, unknown>): string => {
-    const entries = Object.entries(input);
-    if (entries.length === 0) return '';
-
-    // Show first 2 params inline
-    const preview = entries.slice(0, 2).map(([key, value]) => {
-      const strValue = typeof value === 'string'
-        ? value.slice(0, 50) + (value.length > 50 ? '...' : '')
-        : JSON.stringify(value).slice(0, 50);
-      return `${key}: ${strValue}`;
-    });
-
-    if (entries.length > 2) {
-      preview.push(`+${entries.length - 2} more`);
-    }
-
-    return preview.join(', ');
-  };
-
-  // Truncate result for display
-  const truncateResult = (result: string, maxLen = 500): string => {
-    if (result.length <= maxLen) return result;
-    return result.slice(0, maxLen) + '...';
+    return values.map(value => {
+      if (typeof value === 'string') {
+        // Truncate long strings and show just the value
+        return value.length > 40 ? value.slice(0, 40) + '…' : value;
+      }
+      if (typeof value === 'number' || typeof value === 'boolean') {
+        return String(value);
+      }
+      // For objects/arrays, show a brief representation
+      return JSON.stringify(value).slice(0, 30);
+    }).join(', ');
   };
 
   const statusConfig = {
     started: {
-      icon: Loader2,
-      color: 'text-emblem-warning',
-      borderColor: 'border-l-emblem-warning',
+      bg: 'bg-emblem-warning/15',
+      border: 'border-emblem-warning/40',
+      text: 'text-emblem-warning',
+      showSpinner: true,
     },
     completed: {
-      icon: CheckCircle2,
-      color: 'text-emblem-accent',
-      borderColor: 'border-l-emblem-accent',
+      bg: 'bg-emblem-accent/10',
+      border: 'border-emblem-accent/30',
+      text: 'text-emblem-accent',
+      showSpinner: false,
     },
     error: {
-      icon: XCircle,
-      color: 'text-emblem-danger',
-      borderColor: 'border-l-emblem-danger',
+      bg: 'bg-emblem-danger/10',
+      border: 'border-emblem-danger/30',
+      text: 'text-emblem-danger',
+      showSpinner: false,
     },
   };
 
   const config = statusConfig[tool.status];
-  const StatusIcon = config.icon;
+  const params = formatParams(tool.input);
 
   return (
     <div
       className={cn(
-        'relative bg-emblem-surface border border-emblem-surface-2 rounded-md p-2 cursor-pointer transition-all',
-        'hover:border-emblem-primary hover:bg-emblem-surface-2',
-        'border-l-[3px]',
-        config.borderColor
+        'inline-flex items-center gap-1.5 px-2 py-1 rounded-md border text-[11px]',
+        config.bg,
+        config.border
       )}
-      onMouseEnter={() => setShowDetails(true)}
-      onMouseLeave={() => setShowDetails(false)}
     >
-      <div className="flex items-center gap-1.5">
-        <StatusIcon
-          className={cn(
-            'w-3 h-3',
-            config.color,
-            tool.status === 'started' && 'animate-spin'
-          )}
-        />
-        <span className="font-mono text-xs font-semibold text-emblem-text">
-          {tool.name}
-        </span>
-        {tool.status === 'started' && (
-          <div className="ml-auto w-2.5 h-2.5 border-2 border-emblem-surface-2 border-t-emblem-warning rounded-full animate-spin" />
-        )}
-      </div>
+      {/* Status indicator */}
+      {config.showSpinner ? (
+        <Loader2 className={cn('w-3 h-3 animate-spin', config.text)} />
+      ) : tool.status === 'completed' ? (
+        <Check className={cn('w-3 h-3', config.text)} />
+      ) : (
+        <X className={cn('w-3 h-3', config.text)} />
+      )}
 
-      <div className="font-mono text-[11px] text-emblem-muted mt-1 whitespace-nowrap overflow-hidden text-ellipsis">
-        {formatInput(tool.input)}
-      </div>
+      {/* Tool name */}
+      <span className="font-mono font-semibold text-emblem-text">{tool.name}</span>
 
-      {/* Hover tooltip with full details */}
-      {showDetails && (
-        <div className="absolute top-full left-0 right-0 mt-1 bg-emblem-surface border border-emblem-surface-2 rounded-lg p-3 z-[100] shadow-2xl max-h-[300px] overflow-y-auto">
-          <div className="mb-3">
-            <div className="text-[10px] font-semibold uppercase tracking-wider text-emblem-primary mb-1">
-              Input
-            </div>
-            <pre className="bg-emblem-bg border border-emblem-surface-2 rounded p-2 text-[10px] font-mono text-emblem-muted overflow-x-auto whitespace-pre-wrap break-words max-h-[150px] overflow-y-auto m-0">
-              {JSON.stringify(tool.input, null, 2)}
-            </pre>
-          </div>
-
-          {tool.result && (
-            <div className="mb-3">
-              <div className="text-[10px] font-semibold uppercase tracking-wider text-emblem-primary mb-1">
-                Result
-              </div>
-              <pre className="bg-emblem-bg border border-emblem-surface-2 rounded p-2 text-[10px] font-mono text-emblem-muted overflow-x-auto whitespace-pre-wrap break-words max-h-[150px] overflow-y-auto m-0">
-                {truncateResult(tool.result)}
-              </pre>
-            </div>
-          )}
-
-          {tool.error && (
-            <div className="mb-0">
-              <div className="text-[10px] font-semibold uppercase tracking-wider text-emblem-danger mb-1">
-                Error
-              </div>
-              <div className="bg-emblem-danger/10 border border-emblem-danger/30 rounded p-2 text-[11px] text-emblem-danger">
-                {tool.error}
-              </div>
-            </div>
-          )}
-        </div>
+      {/* Params as comma-separated values */}
+      {params && (
+        <>
+          <span className="text-emblem-muted/50">—</span>
+          <span className="text-emblem-muted font-mono truncate max-w-[300px]">{params}</span>
+        </>
       )}
     </div>
   );
