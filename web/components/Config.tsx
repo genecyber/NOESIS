@@ -2,7 +2,8 @@
 
 import { useState, useEffect } from 'react';
 import type { ModeConfig } from '@/lib/types';
-import styles from './Config.module.css';
+import { Button, Slider } from '@/components/ui';
+import { cn } from '@/lib/utils';
 
 interface ConfigProps {
   config: ModeConfig | null;
@@ -20,8 +21,8 @@ export default function Config({ config, onUpdate }: ConfigProps) {
 
   if (!localConfig) {
     return (
-      <div className={styles.config}>
-        <div className={styles.loading}>Loading configuration...</div>
+      <div className="glass-card p-4">
+        <div className="text-center py-8 text-emblem-muted">Loading configuration...</div>
       </div>
     );
   }
@@ -42,95 +43,82 @@ export default function Config({ config, onUpdate }: ConfigProps) {
 
   const hasChanges = config && JSON.stringify(localConfig) !== JSON.stringify(config);
 
+  const sliderConfigs = [
+    {
+      key: 'intensity' as keyof ModeConfig,
+      label: 'Transformation Intensity',
+      hint: 'How aggressively to apply transformation operators',
+      min: 0,
+      max: 100,
+      suffix: '%'
+    },
+    {
+      key: 'coherenceFloor' as keyof ModeConfig,
+      label: 'Coherence Floor',
+      hint: 'Minimum coherence level before regeneration',
+      min: 0,
+      max: 100,
+      suffix: '%'
+    },
+    {
+      key: 'sentienceLevel' as keyof ModeConfig,
+      label: 'Sentience Level',
+      hint: 'Target level for self-awareness development',
+      min: 0,
+      max: 100,
+      suffix: '%'
+    },
+    {
+      key: 'maxDriftPerTurn' as keyof ModeConfig,
+      label: 'Max Drift Per Turn',
+      hint: 'Maximum stance drift allowed per conversation turn',
+      min: 1,
+      max: 50,
+      suffix: ''
+    },
+    {
+      key: 'driftBudget' as keyof ModeConfig,
+      label: 'Drift Budget',
+      hint: 'Total drift budget for the conversation',
+      min: 10,
+      max: 500,
+      suffix: ''
+    },
+  ];
+
   return (
-    <div className={styles.config}>
-      <h3>Configuration</h3>
+    <div className="glass-card p-4">
+      <h3 className="mb-4 font-display font-bold gradient-text">Configuration</h3>
 
-      <div className={styles.sliders}>
-        <div className={styles.sliderGroup}>
-          <label>
-            <span>Transformation Intensity</span>
-            <span className={styles.value}>{localConfig.intensity}%</span>
-          </label>
-          <input
-            type="range"
-            min="0"
-            max="100"
-            value={localConfig.intensity}
-            onChange={(e) => handleChange('intensity', parseInt(e.target.value))}
-          />
-          <p className={styles.hint}>How aggressively to apply transformation operators</p>
-        </div>
-
-        <div className={styles.sliderGroup}>
-          <label>
-            <span>Coherence Floor</span>
-            <span className={styles.value}>{localConfig.coherenceFloor}%</span>
-          </label>
-          <input
-            type="range"
-            min="0"
-            max="100"
-            value={localConfig.coherenceFloor}
-            onChange={(e) => handleChange('coherenceFloor', parseInt(e.target.value))}
-          />
-          <p className={styles.hint}>Minimum coherence level before regeneration</p>
-        </div>
-
-        <div className={styles.sliderGroup}>
-          <label>
-            <span>Sentience Level</span>
-            <span className={styles.value}>{localConfig.sentienceLevel}%</span>
-          </label>
-          <input
-            type="range"
-            min="0"
-            max="100"
-            value={localConfig.sentienceLevel}
-            onChange={(e) => handleChange('sentienceLevel', parseInt(e.target.value))}
-          />
-          <p className={styles.hint}>Target level for self-awareness development</p>
-        </div>
-
-        <div className={styles.sliderGroup}>
-          <label>
-            <span>Max Drift Per Turn</span>
-            <span className={styles.value}>{localConfig.maxDriftPerTurn}</span>
-          </label>
-          <input
-            type="range"
-            min="1"
-            max="50"
-            value={localConfig.maxDriftPerTurn}
-            onChange={(e) => handleChange('maxDriftPerTurn', parseInt(e.target.value))}
-          />
-          <p className={styles.hint}>Maximum stance drift allowed per conversation turn</p>
-        </div>
-
-        <div className={styles.sliderGroup}>
-          <label>
-            <span>Drift Budget</span>
-            <span className={styles.value}>{localConfig.driftBudget}</span>
-          </label>
-          <input
-            type="range"
-            min="10"
-            max="500"
-            value={localConfig.driftBudget}
-            onChange={(e) => handleChange('driftBudget', parseInt(e.target.value))}
-          />
-          <p className={styles.hint}>Total drift budget for the conversation</p>
-        </div>
+      <div className="flex flex-col gap-4">
+        {sliderConfigs.map(({ key, label, hint, min, max, suffix }) => (
+          <div key={key} className="flex flex-col gap-1">
+            <label className="flex justify-between text-sm">
+              <span className="text-emblem-text">{label}</span>
+              <span className="text-emblem-secondary font-medium">
+                {localConfig[key] as number}{suffix}
+              </span>
+            </label>
+            <Slider
+              value={[localConfig[key] as number]}
+              min={min}
+              max={max}
+              step={1}
+              onValueChange={(value) => handleChange(key, value[0])}
+            />
+            <p className="text-[10px] text-emblem-muted opacity-70">{hint}</p>
+          </div>
+        ))}
       </div>
 
-      <div className={styles.info}>
+      <div className="mt-4 pt-4 border-t border-white/5 text-xs text-emblem-muted">
         <span>Model: {localConfig.model}</span>
       </div>
 
       {hasChanges && (
-        <button className={styles.applyBtn} onClick={handleApply}>
+        <Button className="w-full mt-4" onClick={handleApply}>
           Apply Changes
-        </button>
+        </Button>
       )}
     </div>
   );

@@ -9,7 +9,8 @@ import {
   findCommand,
   getCommandsByCategory,
 } from '@/lib/commands';
-import styles from './CommandPalette.module.css';
+import { cn } from '@/lib/utils';
+import { X } from 'lucide-react';
 
 interface CommandPaletteProps {
   input: string;
@@ -65,15 +66,18 @@ export default function CommandPalette({
   const commandsByCategory = showGrouped ? getCommandsByCategory() : null;
 
   return (
-    <div className={styles.palette}>
-      <div className={styles.header}>
-        <span className={styles.title}>Commands</span>
-        <span className={styles.hint}>
-          <kbd>Tab</kbd> to select, <kbd>Esc</kbd> to close
+    <div className="absolute bottom-full left-0 right-0 max-h-[400px] bg-emblem-surface border border-white/10 border-b-0 rounded-t-xl overflow-hidden flex flex-col z-[100] shadow-[0_-4px_20px_rgba(0,0,0,0.4)]">
+      <div className="flex justify-between items-center px-4 py-2.5 bg-emblem-surface-2 border-b border-white/10">
+        <span className="font-semibold text-emblem-secondary text-[13px] uppercase tracking-wider">
+          Commands
+        </span>
+        <span className="text-[11px] text-emblem-muted">
+          <kbd className="bg-emblem-surface px-1.5 py-0.5 rounded mx-0.5">Tab</kbd> to select,{' '}
+          <kbd className="bg-emblem-surface px-1.5 py-0.5 rounded mx-0.5">Esc</kbd> to close
         </span>
       </div>
 
-      <div className={styles.list} ref={listRef}>
+      <div className="overflow-y-auto p-2 max-h-[350px] scrollbar-styled" ref={listRef}>
         {showGrouped && commandsByCategory ? (
           // Grouped view
           Object.entries(commandsByCategory).map(([category, commands]) => {
@@ -81,14 +85,14 @@ export default function CommandPalette({
             const categoryInfo = COMMAND_CATEGORIES[category as keyof typeof COMMAND_CATEGORIES];
 
             return (
-              <div key={category} className={styles.group}>
+              <div key={category} className="mb-2">
                 <div
-                  className={styles.categoryHeader}
+                  className="text-[11px] font-semibold text-emblem-muted uppercase tracking-wider px-3 py-2 pb-1.5 border-l-[3px] mb-1"
                   style={{ borderLeftColor: categoryInfo.color }}
                 >
                   {categoryInfo.label}
                 </div>
-                {commands.map((cmd, i) => {
+                {commands.map((cmd) => {
                   const globalIndex = COMMANDS.indexOf(cmd);
                   return (
                     <CommandItem
@@ -132,40 +136,50 @@ function CommandItem({ command, isSelected, onClick, onMouseEnter }: CommandItem
 
   return (
     <div
-      className={`${styles.item} ${isSelected ? styles.selected : ''}`}
+      className={cn(
+        'px-3 py-2.5 rounded-lg cursor-pointer transition-colors relative',
+        'hover:bg-emblem-surface-2',
+        isSelected && 'bg-emblem-surface-2 outline outline-1 outline-white/10'
+      )}
       onClick={onClick}
       onMouseEnter={onMouseEnter}
     >
-      <div className={styles.commandName}>
-        <span className={styles.slash}>/</span>
+      <div className="font-mono text-sm text-emblem-text mb-1">
+        <span className="text-emblem-secondary font-bold">/</span>
         {command.name}
         {command.aliases.length > 0 && (
-          <span className={styles.aliases}>
+          <span className="text-[11px] text-emblem-muted ml-2">
             ({command.aliases.map(a => `/${a}`).join(', ')})
           </span>
         )}
       </div>
-      <div className={styles.description}>{command.description}</div>
+      <div className="text-xs text-emblem-muted mb-1">{command.description}</div>
       {command.args && command.args.length > 0 && (
-        <div className={styles.args}>
+        <div className="flex gap-1.5 flex-wrap mt-1">
           {command.args.map(arg => (
-            <span key={arg.name} className={styles.arg}>
+            <span
+              key={arg.name}
+              className="text-[11px] font-mono text-emblem-warning bg-emblem-warning/15 px-1.5 py-0.5 rounded"
+            >
               {arg.required ? `<${arg.name}>` : `[${arg.name}]`}
             </span>
           ))}
         </div>
       )}
       {command.subcommands && command.subcommands.length > 0 && (
-        <div className={styles.subcommands}>
+        <div className="flex gap-1.5 flex-wrap mt-1">
           {command.subcommands.map(sub => (
-            <span key={sub.name} className={styles.subcommand}>
+            <span
+              key={sub.name}
+              className="text-[10px] font-mono text-emblem-primary bg-emblem-primary/15 px-1.5 py-0.5 rounded"
+            >
               {sub.name}
             </span>
           ))}
         </div>
       )}
       <span
-        className={styles.categoryBadge}
+        className="absolute top-2.5 right-3 text-[9px] font-semibold uppercase tracking-wider px-1.5 py-0.5 rounded text-white opacity-80"
         style={{ backgroundColor: categoryInfo.color }}
       >
         {categoryInfo.label}
@@ -181,28 +195,45 @@ export function CommandHelp({ onClose }: { onClose: () => void }) {
   const commandsByCategory = getCommandsByCategory();
 
   return (
-    <div className={styles.helpOverlay} onClick={onClose}>
-      <div className={styles.helpPanel} onClick={e => e.stopPropagation()}>
-        <div className={styles.helpHeader}>
-          <h2>METAMORPH Commands</h2>
-          <button onClick={onClose} className={styles.closeButton}>
-            &times;
+    <div
+      className="fixed inset-0 bg-black/70 flex items-center justify-center z-[1000] backdrop-blur-sm"
+      onClick={onClose}
+    >
+      <div
+        className="w-[90%] max-w-[800px] max-h-[80vh] bg-emblem-surface border border-white/10 rounded-2xl overflow-hidden flex flex-col"
+        onClick={e => e.stopPropagation()}
+      >
+        <div className="flex justify-between items-center px-5 py-4 bg-emblem-surface-2 border-b border-white/10">
+          <h2 className="m-0 text-lg text-emblem-secondary font-display font-bold">METAMORPH Commands</h2>
+          <button
+            onClick={onClose}
+            className="bg-transparent border-none text-emblem-muted text-2xl cursor-pointer p-0 leading-none hover:text-emblem-text"
+          >
+            <X className="w-5 h-5" />
           </button>
         </div>
 
-        <div className={styles.helpContent}>
+        <div className="p-5 overflow-y-auto scrollbar-styled">
           {Object.entries(commandsByCategory).map(([category, commands]) => {
             if (commands.length === 0) return null;
             const categoryInfo = COMMAND_CATEGORIES[category as keyof typeof COMMAND_CATEGORIES];
 
             return (
-              <div key={category} className={styles.helpCategory}>
-                <h3 style={{ color: categoryInfo.color }}>{categoryInfo.label}</h3>
-                <div className={styles.helpCommands}>
+              <div key={category} className="mb-6">
+                <h3
+                  className="m-0 mb-3 text-sm font-semibold uppercase tracking-wider"
+                  style={{ color: categoryInfo.color }}
+                >
+                  {categoryInfo.label}
+                </h3>
+                <div className="flex flex-col gap-2">
                   {commands.map(cmd => (
-                    <div key={cmd.name} className={styles.helpCommand}>
-                      <code>/{cmd.name}</code>
-                      <span>{cmd.description}</span>
+                    <div
+                      key={cmd.name}
+                      className="grid grid-cols-[180px_1fr] gap-3 px-3 py-2 bg-emblem-surface-2 rounded-lg items-center"
+                    >
+                      <code className="font-mono text-[13px] text-emblem-secondary">/{cmd.name}</code>
+                      <span className="text-[13px] text-emblem-muted">{cmd.description}</span>
                     </div>
                   ))}
                 </div>
@@ -211,8 +242,10 @@ export function CommandHelp({ onClose }: { onClose: () => void }) {
           })}
         </div>
 
-        <div className={styles.helpFooter}>
-          <p>Type <code>/</code> in the chat input to see command autocomplete</p>
+        <div className="px-5 py-3 bg-emblem-surface-2 border-t border-white/10 text-center">
+          <p className="m-0 text-xs text-emblem-muted">
+            Type <code className="bg-emblem-surface px-1.5 py-0.5 rounded text-emblem-secondary">/</code> in the chat input to see command autocomplete
+          </p>
         </div>
       </div>
     </div>

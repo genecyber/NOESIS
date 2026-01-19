@@ -1,7 +1,11 @@
 'use client';
 
 import { useState, useEffect, useRef, useCallback } from 'react';
-import styles from './EmpathyPanel.module.css';
+import { cn } from '@/lib/utils';
+import { Camera, Lock, ChevronRight, Settings } from 'lucide-react';
+import { Switch } from '@/components/ui/switch';
+import { Slider } from '@/components/ui/slider';
+import { Button } from '@/components/ui/button';
 import { loadModels, isModelsLoaded, detectEmotions, calculateValence, calculateArousal } from '../lib/face-api';
 import { analyzeVisionEmotion } from '../lib/api';
 import { emotionAggregator, type EmotionAggregate } from '../lib/emotion-aggregator';
@@ -589,18 +593,22 @@ export default function EmpathyPanel({
   };
 
   return (
-    <div className={styles.panel}>
-      <h3>Empathy Mode</h3>
+    <div className="bg-emblem-surface-2 rounded-lg p-4 border border-emblem-surface-2">
+      <h3 className="mb-4 bg-gradient-to-r from-emblem-secondary to-emblem-primary bg-clip-text text-transparent font-semibold">
+        Empathy Mode
+      </h3>
 
       {/* Device selector */}
       {devices.length > 1 && (
-        <div className={styles.deviceSelector}>
-          <label htmlFor="camera-select">Camera:</label>
+        <div className="flex items-center gap-2 mb-3 text-xs">
+          <label htmlFor="camera-select" className="text-emblem-muted">
+            Camera:
+          </label>
           <select
             id="camera-select"
             value={selectedDevice}
             onChange={handleDeviceChange}
-            className={styles.select}
+            className="flex-1 bg-emblem-surface border border-emblem-surface-2 rounded px-2 py-1 text-emblem-text text-xs cursor-pointer focus:outline-none focus:border-emblem-secondary"
           >
             {devices.map(device => (
               <option key={device.deviceId} value={device.deviceId}>
@@ -611,29 +619,29 @@ export default function EmpathyPanel({
         </div>
       )}
 
-      <div className={styles.previewContainer}>
+      <div className="relative w-full max-w-[280px] aspect-[4/3] mx-auto mb-4 rounded-lg overflow-hidden bg-emblem-surface border border-emblem-surface-2">
         {cameraActive ? (
           <video
             ref={videoRef}
-            className={styles.preview}
+            className="w-full h-full object-cover scale-x-[-1] block"
             autoPlay
             playsInline
             muted
-            style={{ width: '100%', height: 'auto', backgroundColor: '#000' }}
+            style={{ backgroundColor: '#000' }}
           />
         ) : (
-          <div className={styles.placeholder}>
+          <div className="w-full h-full flex items-center justify-center text-emblem-muted text-2xl">
             {permissionDenied ? (
-              <span className={styles.permissionIcon}>🔒</span>
+              <Lock className="w-8 h-8 text-emblem-danger opacity-70" />
             ) : (
-              <span className={styles.cameraIcon}>📷</span>
+              <Camera className="w-8 h-8 opacity-50" />
             )}
           </div>
         )}
 
         {cameraActive && emotionContext && (
           <div
-            className={styles.emotionIndicator}
+            className="absolute top-2 right-2 w-3 h-3 rounded-full shadow-[0_0_8px_currentColor] animate-pulse-glow"
             style={{ backgroundColor: getEmotionColor(emotionContext.currentEmotion) }}
           />
         )}
@@ -641,15 +649,15 @@ export default function EmpathyPanel({
 
       {/* Model loading status */}
       {modelsLoading && (
-        <div className={styles.loadingModels}>
-          <span className={styles.pulse} />
+        <div className="flex items-center justify-center gap-2 p-3 mb-3 bg-emblem-secondary/10 border border-emblem-secondary/30 rounded-md text-emblem-secondary text-xs">
+          <span className="w-2 h-2 bg-emblem-secondary rounded-full animate-pulse-glow" />
           Loading face detection models...
         </div>
       )}
 
       {/* Debug info */}
       {(debugInfo || detectionStatus) && !modelsLoading && (
-        <div className={styles.debugInfo}>
+        <div className="bg-emblem-secondary/10 border border-emblem-secondary/30 rounded px-2 py-2 mb-3 text-[10px] text-emblem-secondary font-mono break-all">
           {debugInfo}
           {debugInfo && detectionStatus && ' | '}
           {detectionStatus}
@@ -658,63 +666,63 @@ export default function EmpathyPanel({
       )}
 
       {error && (
-        <div className={styles.error}>
+        <div className="bg-emblem-danger/10 border border-emblem-danger/30 rounded-md p-3 mb-4 text-xs text-emblem-danger text-center">
           {error}
         </div>
       )}
 
       {cameraActive && emotionContext && (
-        <div className={styles.emotionData}>
-          <div className={styles.currentEmotion}>
+        <div className="flex flex-col gap-3 mb-4">
+          <div className="flex items-center gap-2 p-2 bg-emblem-surface rounded-md">
             <span
-              className={styles.emotionDot}
+              className="w-2.5 h-2.5 rounded-full flex-shrink-0"
               style={{ backgroundColor: getEmotionColor(emotionContext.currentEmotion) }}
             />
-            <span className={styles.emotionLabel}>
+            <span className="flex-1 font-medium capitalize text-sm">
               {emotionContext.currentEmotion}
             </span>
-            <span className={styles.confidence}>
+            <span className="text-emblem-secondary text-xs font-semibold">
               {Math.round(emotionContext.confidence * 100)}%
             </span>
           </div>
 
-          <div className={styles.metric}>
-            <div className={styles.metricHeader}>
-              <span className={styles.metricLabel}>Valence</span>
-              <span className={styles.metricValue}>{formatValenceLabel(emotionContext.valence)}</span>
+          <div className="flex flex-col gap-1">
+            <div className="flex justify-between text-xs">
+              <span className="text-emblem-muted">Valence</span>
+              <span className="text-emblem-text font-medium">{formatValenceLabel(emotionContext.valence)}</span>
             </div>
-            <div className={styles.valenceBar}>
-              <div className={styles.valenceTrack}>
+            <div className="flex flex-col gap-0.5">
+              <div className="relative h-1.5 bg-gradient-to-r from-emblem-danger via-emblem-surface 45% via-emblem-surface 55% to-emblem-accent rounded-full">
                 <div
-                  className={styles.valenceIndicator}
+                  className="absolute top-1/2 w-3 h-3 bg-gradient-to-br from-emblem-secondary to-emblem-primary rounded-full -translate-y-1/2 -translate-x-1/2 shadow-[0_0_6px_rgba(0,255,255,0.5)] transition-all duration-300"
                   style={{ left: `${(emotionContext.valence + 1) * 50}%` }}
                 />
               </div>
-              <div className={styles.valenceLabels}>
+              <div className="flex justify-between text-[10px] text-emblem-muted px-0.5">
                 <span>-</span>
                 <span>+</span>
               </div>
             </div>
           </div>
 
-          <div className={styles.metric}>
-            <div className={styles.metricHeader}>
-              <span className={styles.metricLabel}>Arousal</span>
-              <span className={styles.metricValue}>{formatArousalLabel(emotionContext.arousal)}</span>
+          <div className="flex flex-col gap-1">
+            <div className="flex justify-between text-xs">
+              <span className="text-emblem-muted">Arousal</span>
+              <span className="text-emblem-text font-medium">{formatArousalLabel(emotionContext.arousal)}</span>
             </div>
-            <div className={styles.arousalBar}>
+            <div className="relative w-full h-6 bg-emblem-surface rounded overflow-hidden">
               <div
-                className={styles.arousalFill}
+                className="absolute bottom-0 left-0 right-0 bg-gradient-to-t from-emblem-secondary to-emblem-primary rounded transition-all duration-300"
                 style={{ height: `${emotionContext.arousal * 100}%` }}
               />
             </div>
           </div>
 
-          <div className={styles.stability}>
-            <span className={styles.stabilityLabel}>Stability</span>
-            <div className={styles.stabilityBar}>
+          <div className="flex items-center gap-2">
+            <span className="text-xs text-emblem-muted flex-shrink-0">Stability</span>
+            <div className="flex-1 h-1 bg-emblem-surface rounded overflow-hidden">
               <div
-                className={styles.stabilityFill}
+                className="h-full bg-emblem-accent rounded transition-all duration-300"
                 style={{ width: `${emotionContext.stability * 100}%` }}
               />
             </div>
@@ -722,21 +730,26 @@ export default function EmpathyPanel({
 
           {/* Aggregate Stats */}
           {emotionAggregate && (
-            <div className={styles.aggregateStats}>
-              <div className={styles.aggregateRow}>
-                <span className={styles.aggregateLabel}>Samples</span>
-                <span className={styles.aggregateValue}>{emotionAggregate.sampleCount}</span>
+            <div className="mt-2 p-2 bg-emblem-surface rounded-md border border-emblem-surface-2">
+              <div className="flex justify-between items-center py-1 text-[11px]">
+                <span className="text-emblem-muted">Samples</span>
+                <span className="text-emblem-text font-medium">{emotionAggregate.sampleCount}</span>
               </div>
-              <div className={styles.aggregateRow}>
-                <span className={styles.aggregateLabel}>Trend</span>
-                <span className={`${styles.aggregateValue} ${styles[`trend${emotionAggregate.trend.charAt(0).toUpperCase() + emotionAggregate.trend.slice(1)}`]}`}>
+              <div className="flex justify-between items-center py-1 border-t border-emblem-surface-2 text-[11px]">
+                <span className="text-emblem-muted">Trend</span>
+                <span className={cn(
+                  'font-medium',
+                  emotionAggregate.trend === 'improving' && 'text-emblem-accent',
+                  emotionAggregate.trend === 'stable' && 'text-emblem-secondary',
+                  emotionAggregate.trend === 'declining' && 'text-emblem-danger'
+                )}>
                   {emotionAggregate.trend === 'improving' ? '↑' : emotionAggregate.trend === 'declining' ? '↓' : '→'} {emotionAggregate.trend}
                 </span>
               </div>
               {emotionAggregate.suggestedEmpathyBoost > 0 && (
-                <div className={styles.aggregateRow}>
-                  <span className={styles.aggregateLabel}>Empathy Boost</span>
-                  <span className={styles.aggregateValue}>+{emotionAggregate.suggestedEmpathyBoost}</span>
+                <div className="flex justify-between items-center py-1 border-t border-emblem-surface-2 text-[11px]">
+                  <span className="text-emblem-muted">Empathy Boost</span>
+                  <span className="text-emblem-text font-medium">+{emotionAggregate.suggestedEmpathyBoost}</span>
                 </div>
               )}
             </div>
@@ -745,153 +758,155 @@ export default function EmpathyPanel({
       )}
 
       {cameraActive && !emotionContext && !modelsLoading && (
-        <div className={styles.analyzing}>
-          <span className={styles.pulse} />
+        <div className="flex items-center justify-center gap-2 p-3 mb-4 text-emblem-muted text-sm">
+          <span className="w-2 h-2 bg-emblem-secondary rounded-full animate-pulse-glow" />
           Analyzing...
         </div>
       )}
 
-      <button
-        className={`${styles.toggleBtn} ${cameraActive ? styles.active : ''}`}
+      <Button
         onClick={handleToggle}
+        className={cn(
+          'w-full',
+          cameraActive && 'bg-gradient-to-r from-emblem-secondary to-emblem-primary'
+        )}
+        variant={cameraActive ? 'default' : 'secondary'}
       >
         {cameraActive ? 'Turn Off Camera' : 'Turn On Camera'}
-      </button>
+      </Button>
 
       {/* Advanced Settings Section */}
-      <div className={styles.advancedSection}>
+      <div className="mt-4 border border-emblem-surface-2 rounded-lg overflow-hidden bg-emblem-surface">
         <button
-          className={styles.advancedHeader}
+          className="flex items-center gap-2 w-full p-3 bg-transparent border-none text-emblem-text text-xs font-medium cursor-pointer transition-colors hover:bg-emblem-surface-2"
           onClick={() => setAdvancedOpen(!advancedOpen)}
           aria-expanded={advancedOpen}
         >
-          <span className={`${styles.advancedArrow} ${advancedOpen ? styles.open : ''}`}>
-            {'>'}
-          </span>
+          <ChevronRight
+            className={cn(
+              'w-3 h-3 text-emblem-muted transition-transform',
+              advancedOpen && 'rotate-90'
+            )}
+          />
           Advanced Settings
         </button>
 
         {advancedOpen && (
-          <div className={styles.advancedContent}>
+          <div className="p-3 border-t border-emblem-surface-2 flex flex-col gap-3">
             {/* Claude Vision Toggle */}
-            <label className={styles.visionToggle}>
-              <input
-                type="checkbox"
+            <label className="flex items-center gap-3 cursor-pointer select-none">
+              <Switch
                 checked={useClaudeVision}
-                onChange={(e) => setUseClaudeVision(e.target.checked)}
-                className={styles.visionCheckbox}
+                onCheckedChange={setUseClaudeVision}
               />
-              <span className={styles.visionSwitch}>
-                <span className={styles.visionSwitchHandle} />
-              </span>
-              <span className={styles.visionLabel}>AI Emotion Analysis</span>
+              <span className="text-xs text-emblem-text">AI Emotion Analysis</span>
             </label>
 
             {useClaudeVision && (
-              <p className={styles.visionNote}>
+              <p className="m-0 text-[11px] text-emblem-muted leading-relaxed pl-[52px]">
                 Captures frames and sends them to Claude for additional emotion inference.
               </p>
             )}
 
             {/* Emotion Prompt Editor (only visible when Claude Vision is enabled) */}
             {useClaudeVision && (
-              <div className={styles.promptEditorContainer}>
-                <label className={styles.promptLabel}>
+              <div className="flex flex-col gap-2">
+                <label className="text-xs text-emblem-muted">
                   Emotion Analysis Prompt:
                 </label>
                 <textarea
-                  className={styles.promptEditor}
+                  className="w-full min-h-[120px] p-3 bg-emblem-surface-2 border border-emblem-surface-2 rounded-md text-emblem-text font-mono text-[11px] leading-relaxed resize-y transition-all focus:outline-none focus:border-emblem-secondary focus:shadow-[0_0_0_2px_rgba(0,255,255,0.2)]"
                   value={emotionPrompt}
                   onChange={(e) => handlePromptChange(e.target.value)}
                   rows={8}
                   placeholder="Enter the prompt for Claude Vision emotion analysis..."
                 />
-                <button
-                  className={styles.resetPromptBtn}
+                <Button
                   onClick={handleResetPrompt}
                   type="button"
+                  variant="outline"
+                  size="sm"
+                  className="self-start"
                 >
                   Reset to Default
-                </button>
+                </Button>
               </div>
             )}
 
             {/* Detection Settings */}
-            <div className={styles.detectionSettings}>
-              <h4 className={styles.settingsHeader}>Detection Settings</h4>
+            <div className="mt-4 pt-3 border-t border-emblem-surface-2">
+              <h4 className="text-xs font-semibold text-emblem-muted mb-3 uppercase tracking-wider">
+                Detection Settings
+              </h4>
 
               {/* Camera Interval */}
-              <div className={styles.settingGroup}>
-                <div className={styles.settingHeader}>
-                  <span className={styles.settingLabel}>Camera Interval</span>
-                  <span className={styles.settingValue}>{config?.empathyCameraInterval ?? 1000}ms</span>
+              <div className="mb-3">
+                <div className="flex justify-between items-center mb-1">
+                  <span className="text-xs text-emblem-text">Camera Interval</span>
+                  <span className="text-xs text-emblem-secondary font-medium">{config?.empathyCameraInterval ?? 1000}ms</span>
                 </div>
-                <input
-                  type="range"
-                  min="100"
-                  max="5000"
-                  step="100"
-                  value={config?.empathyCameraInterval ?? 1000}
-                  onChange={(e) => onConfigUpdate?.({ empathyCameraInterval: parseInt(e.target.value) })}
-                  className={styles.slider}
+                <Slider
+                  min={100}
+                  max={5000}
+                  step={100}
+                  value={[config?.empathyCameraInterval ?? 1000]}
+                  onValueChange={(values) => onConfigUpdate?.({ empathyCameraInterval: values[0] })}
                 />
-                <p className={styles.settingHint}>How often to capture frames for emotion detection</p>
+                <p className="text-[10px] text-emblem-muted mt-1 opacity-70">
+                  How often to capture frames for emotion detection
+                </p>
               </div>
 
               {/* Min Confidence */}
-              <div className={styles.settingGroup}>
-                <div className={styles.settingHeader}>
-                  <span className={styles.settingLabel}>Min Confidence</span>
-                  <span className={styles.settingValue}>{Math.round((config?.empathyMinConfidence ?? 0.5) * 100)}%</span>
+              <div className="mb-3">
+                <div className="flex justify-between items-center mb-1">
+                  <span className="text-xs text-emblem-text">Min Confidence</span>
+                  <span className="text-xs text-emblem-secondary font-medium">{Math.round((config?.empathyMinConfidence ?? 0.5) * 100)}%</span>
                 </div>
-                <input
-                  type="range"
-                  min="0"
-                  max="100"
-                  value={Math.round((config?.empathyMinConfidence ?? 0.5) * 100)}
-                  onChange={(e) => onConfigUpdate?.({ empathyMinConfidence: parseInt(e.target.value) / 100 })}
-                  className={styles.slider}
+                <Slider
+                  min={0}
+                  max={100}
+                  value={[Math.round((config?.empathyMinConfidence ?? 0.5) * 100)]}
+                  onValueChange={(values) => onConfigUpdate?.({ empathyMinConfidence: values[0] / 100 })}
                 />
-                <p className={styles.settingHint}>Minimum confidence threshold for emotion detection</p>
+                <p className="text-[10px] text-emblem-muted mt-1 opacity-70">
+                  Minimum confidence threshold for emotion detection
+                </p>
               </div>
 
               {/* Auto-Adjust Response */}
-              <div className={styles.settingToggle}>
-                <label className={styles.toggleLabel}>
+              <div className="mb-3">
+                <label className="flex items-center justify-between text-xs text-emblem-text cursor-pointer">
                   <span>Auto-Adjust Response</span>
-                  <div className={styles.toggleSwitch}>
-                    <input
-                      type="checkbox"
-                      checked={config?.empathyAutoAdjust ?? false}
-                      onChange={(e) => onConfigUpdate?.({ empathyAutoAdjust: e.target.checked })}
-                    />
-                    <span className={styles.toggleSlider}></span>
-                  </div>
+                  <Switch
+                    checked={config?.empathyAutoAdjust ?? false}
+                    onCheckedChange={(checked) => onConfigUpdate?.({ empathyAutoAdjust: checked })}
+                  />
                 </label>
               </div>
 
               {/* Max Boost */}
-              <div className={styles.settingGroup}>
-                <div className={styles.settingHeader}>
-                  <span className={styles.settingLabel}>Max Boost</span>
-                  <span className={styles.settingValue}>{config?.empathyBoostMax ?? 10}</span>
+              <div className="mb-0">
+                <div className="flex justify-between items-center mb-1">
+                  <span className="text-xs text-emblem-text">Max Boost</span>
+                  <span className="text-xs text-emblem-secondary font-medium">{config?.empathyBoostMax ?? 10}</span>
                 </div>
-                <input
-                  type="range"
-                  min="0"
-                  max="50"
-                  value={config?.empathyBoostMax ?? 10}
-                  onChange={(e) => onConfigUpdate?.({ empathyBoostMax: parseInt(e.target.value) })}
-                  className={styles.slider}
+                <Slider
+                  min={0}
+                  max={50}
+                  value={[config?.empathyBoostMax ?? 10]}
+                  onValueChange={(values) => onConfigUpdate?.({ empathyBoostMax: values[0] })}
                 />
-                <p className={styles.settingHint}>Maximum empathy boost value applied to responses</p>
+                <p className="text-[10px] text-emblem-muted mt-1 opacity-70">
+                  Maximum empathy boost value applied to responses
+                </p>
               </div>
             </div>
           </div>
         )}
       </div>
 
-      <div className={styles.info}>
+      <div className="mt-4 pt-3 border-t border-emblem-surface-2 text-[11px] text-emblem-muted opacity-70 leading-relaxed">
         Empathy mode uses your webcam to detect emotional context and adapt responses accordingly.
       </div>
     </div>

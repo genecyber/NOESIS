@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useEffect, useCallback } from 'react';
+import { Layers, Settings, Heart, Clock, Brain, FolderOpen, MessageSquare } from 'lucide-react';
 import Chat from '@/components/Chat';
 import StanceViz from '@/components/StanceViz';
 import Config from '@/components/Config';
@@ -9,10 +10,23 @@ import EvolutionTimeline from '@/components/EvolutionTimeline';
 import SessionBrowser from '@/components/SessionBrowser';
 import MemoryBrowser from '@/components/MemoryBrowser';
 import EmpathyPanel from '@/components/EmpathyPanel';
+import { Button } from '@/components/ui';
 import { createSession, updateConfig, getState, getTimeline, getEvolution, resumeSession, syncMemoriesToServer } from '@/lib/api';
 import { getLastSessionId, saveLastSessionId, getPreferences, savePreferences, getMemoriesFromStorage, getPendingSyncItems, removeSyncQueueItem, isOnline } from '@/lib/storage';
 import type { Stance, ModeConfig, ChatResponse, TimelineEntry, EvolutionSnapshot, EmotionContext } from '@/lib/types';
-import styles from './page.module.css';
+import { cn } from '@/lib/utils';
+
+type PanelType = 'stance' | 'config' | 'timeline' | 'evolution' | 'sessions' | 'memories' | 'empathy';
+
+const TABS: { id: PanelType; label: string; icon: React.ElementType }[] = [
+  { id: 'stance', label: 'Stance', icon: Layers },
+  { id: 'config', label: 'Config', icon: Settings },
+  { id: 'empathy', label: 'Empathy', icon: Heart },
+  { id: 'timeline', label: 'Timeline', icon: Clock },
+  { id: 'evolution', label: 'Evolution', icon: Brain },
+  { id: 'sessions', label: 'Sessions', icon: FolderOpen },
+  { id: 'memories', label: 'Memories', icon: MessageSquare },
+];
 
 export default function Home() {
   const [sessionId, setSessionId] = useState<string | undefined>();
@@ -23,7 +37,7 @@ export default function Home() {
   const [evolutionSnapshots, setEvolutionSnapshots] = useState<EvolutionSnapshot[]>([]);
 
   // Load active panel preference from localStorage
-  const [activePanel, setActivePanel] = useState<'stance' | 'config' | 'timeline' | 'evolution' | 'sessions' | 'memories' | 'empathy'>('stance');
+  const [activePanel, setActivePanel] = useState<PanelType>('stance');
   const [emotionContext, setEmotionContext] = useState<EmotionContext | null>(null);
 
   // Initialize active panel from localStorage on mount
@@ -35,7 +49,7 @@ export default function Home() {
   }, []);
 
   // Save active panel preference when it changes
-  const handlePanelChange = useCallback((panel: 'stance' | 'config' | 'timeline' | 'evolution' | 'sessions' | 'memories' | 'empathy') => {
+  const handlePanelChange = useCallback((panel: PanelType) => {
     setActivePanel(panel);
     savePreferences({ activePanel: panel });
   }, []);
@@ -202,35 +216,35 @@ export default function Home() {
 
   if (error) {
     return (
-      <main className={styles.main}>
-        <div className={styles.error}>
-          <h2>Connection Error</h2>
-          <p>{error}</p>
-          <p className={styles.hint}>
+      <main className="h-screen max-h-screen flex flex-col overflow-hidden">
+        <div className="flex flex-col items-center justify-center gap-4 p-12 text-center min-h-screen">
+          <h2 className="text-emblem-danger text-xl font-display font-semibold">Connection Error</h2>
+          <p className="text-emblem-text">{error}</p>
+          <p className="text-sm text-emblem-muted">
             Make sure the METAMORPH server is running on port 3001
           </p>
-          <button onClick={() => window.location.reload()}>
+          <Button onClick={() => window.location.reload()}>
             Retry
-          </button>
+          </Button>
         </div>
       </main>
     );
   }
 
   return (
-    <main className={styles.main}>
-      <header className={styles.header}>
-        <div className={styles.headerLeft}>
-          <h1>METAMORPH</h1>
-          <span className={styles.subtitle}>Transformation-Maximizing AI</span>
+    <main className="h-screen max-h-screen flex flex-col overflow-hidden">
+      <header className="flex items-center justify-between px-6 py-4 border-b border-white/5">
+        <div className="flex items-baseline gap-4">
+          <h1 className="text-2xl font-display font-bold gradient-text">METAMORPH</h1>
+          <span className="text-sm text-emblem-muted">Transformation-Maximizing AI</span>
         </div>
-        <button className={styles.newSessionBtn} onClick={handleNewSession}>
+        <Button variant="outline" onClick={handleNewSession}>
           + New Chat
-        </button>
+        </Button>
       </header>
 
-      <div className={styles.container}>
-        <div className={styles.chatArea}>
+      <div className="flex-1 grid grid-cols-[1fr_320px] gap-4 p-4 h-[calc(100vh-60px)] max-h-[calc(100vh-60px)] max-md:grid-cols-1 max-md:grid-rows-[1fr_auto]">
+        <div className="min-h-0 max-h-full flex flex-col">
           <Chat
             sessionId={sessionId}
             onSessionChange={handleSessionChange}
@@ -243,53 +257,27 @@ export default function Home() {
           />
         </div>
 
-        <aside className={styles.sidebar}>
-          <div className={styles.tabs}>
-            <button
-              className={`${styles.tab} ${activePanel === 'stance' ? styles.active : ''}`}
-              onClick={() => handlePanelChange('stance')}
-            >
-              Stance
-            </button>
-            <button
-              className={`${styles.tab} ${activePanel === 'config' ? styles.active : ''}`}
-              onClick={() => handlePanelChange('config')}
-            >
-              Config
-            </button>
-            <button
-              className={`${styles.tab} ${activePanel === 'empathy' ? styles.active : ''}`}
-              onClick={() => handlePanelChange('empathy')}
-            >
-              Empathy
-            </button>
-            <button
-              className={`${styles.tab} ${activePanel === 'timeline' ? styles.active : ''}`}
-              onClick={() => handlePanelChange('timeline')}
-            >
-              Timeline
-            </button>
-            <button
-              className={`${styles.tab} ${activePanel === 'evolution' ? styles.active : ''}`}
-              onClick={() => handlePanelChange('evolution')}
-            >
-              Evolution
-            </button>
-            <button
-              className={`${styles.tab} ${activePanel === 'sessions' ? styles.active : ''}`}
-              onClick={() => handlePanelChange('sessions')}
-            >
-              Sessions
-            </button>
-            <button
-              className={`${styles.tab} ${activePanel === 'memories' ? styles.active : ''}`}
-              onClick={() => handlePanelChange('memories')}
-            >
-              Memories
-            </button>
+        <aside className="flex flex-col gap-4 min-h-0 max-h-full overflow-y-auto scrollbar-styled max-md:max-h-[300px]">
+          <div className="flex flex-wrap gap-1.5">
+            {TABS.map(({ id, label, icon: Icon }) => (
+              <button
+                key={id}
+                className={cn(
+                  'flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs font-medium transition-all',
+                  'border border-white/5 cursor-pointer',
+                  activePanel === id
+                    ? 'bg-gradient-to-r from-emblem-secondary to-emblem-primary text-white border-transparent'
+                    : 'bg-emblem-surface-2 text-emblem-muted hover:text-emblem-text hover:border-emblem-secondary/50'
+                )}
+                onClick={() => handlePanelChange(id)}
+              >
+                <Icon className="w-3.5 h-3.5" />
+                {label}
+              </button>
+            ))}
           </div>
 
-          <div className={styles.panelContent}>
+          <div className="flex-1 overflow-y-auto">
             {activePanel === 'stance' && (
               <StanceViz stance={stance} />
             )}

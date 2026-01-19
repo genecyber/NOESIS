@@ -6,7 +6,7 @@
 'use client';
 
 import { useState } from 'react';
-import styles from './EvolutionTimeline.module.css';
+import { cn } from '@/lib/utils';
 import type { Stance } from '../lib/types';
 
 interface EvolutionSnapshot {
@@ -69,40 +69,42 @@ export function EvolutionTimeline({
 
   if (snapshots.length === 0) {
     return (
-      <div className={styles.container}>
-        <div className={styles.header}>
-          <h3>Evolution Timeline</h3>
+      <div className="bg-emblem-surface rounded-lg p-4 my-4">
+        <div className="flex justify-between items-center mb-4 pb-2 border-b border-emblem-surface-2">
+          <h3 className="m-0 text-emblem-secondary text-base">Evolution Timeline</h3>
         </div>
-        <div className={styles.empty}>
-          <div className={styles.emptyIcon}>~</div>
+        <div className="text-center py-8 text-emblem-muted">
+          <div className="text-2xl text-emblem-muted/50 mb-2">~</div>
           <p>No evolution snapshots yet.</p>
-          <p className={styles.emptyHint}>Snapshots are created as the stance drifts or shifts frames.</p>
+          <p className="text-sm text-emblem-muted/70 mt-2">
+            Snapshots are created as the stance drifts or shifts frames.
+          </p>
         </div>
       </div>
     );
   }
 
   return (
-    <div className={styles.container}>
-      <div className={styles.header}>
-        <h3>Evolution Timeline</h3>
-        <span className={styles.count}>{snapshots.length} snapshots</span>
+    <div className="bg-emblem-surface rounded-lg p-4 my-4">
+      <div className="flex justify-between items-center mb-4 pb-2 border-b border-emblem-surface-2">
+        <h3 className="m-0 text-emblem-secondary text-base">Evolution Timeline</h3>
+        <span className="text-emblem-muted text-xs">{snapshots.length} snapshots</span>
       </div>
 
       {/* Current Stance Indicator */}
       {currentStance && (
-        <div className={styles.currentStance}>
+        <div className="flex items-center gap-2 p-2 bg-emblem-secondary/10 rounded-lg mb-4 text-sm">
           <div
-            className={styles.currentDot}
+            className="w-3 h-3 rounded-full animate-pulse-glow"
             style={{ backgroundColor: FRAME_COLORS[currentStance.frame] || '#00d9ff' }}
           />
-          <span>Current: {currentStance.frame}</span>
-          <span className={styles.driftValue}>Drift: {currentStance.cumulativeDrift}</span>
+          <span className="text-emblem-text">Current: {currentStance.frame}</span>
+          <span className="ml-auto text-emblem-muted">Drift: {currentStance.cumulativeDrift}</span>
         </div>
       )}
 
       {/* Timeline Visualization */}
-      <div className={styles.timeline}>
+      <div className="flex gap-2 overflow-x-auto py-4 min-h-[180px] items-end">
         {displaySnapshots.map((snapshot, index) => {
           const prevSnapshot = displaySnapshots[index + 1];
           const isMajor = isMajorTransform(snapshot, prevSnapshot);
@@ -113,7 +115,10 @@ export function EvolutionTimeline({
           return (
             <div
               key={snapshot.id}
-              className={`${styles.snapshot} ${isMajor ? styles.major : ''} ${isSelected ? styles.selected : ''}`}
+              className={cn(
+                "flex flex-col items-center min-w-[60px] cursor-pointer transition-all relative",
+                (isHovered || isSelected) && "-translate-y-1"
+              )}
               onClick={() => {
                 setSelectedId(isSelected ? null : snapshot.id);
                 onSnapshotClick?.(snapshot);
@@ -122,9 +127,9 @@ export function EvolutionTimeline({
               onMouseLeave={() => setHoveredId(null)}
             >
               {/* Drift bar */}
-              <div className={styles.driftBar}>
+              <div className="w-6 h-20 bg-emblem-surface-2 rounded overflow-hidden flex flex-col justify-end">
                 <div
-                  className={styles.driftFill}
+                  className="w-full transition-all duration-300 rounded-t"
                   style={{
                     height: `${getDriftHeight(snapshot.driftAtSnapshot)}%`,
                     backgroundColor: frameColor,
@@ -135,41 +140,46 @@ export function EvolutionTimeline({
 
               {/* Snapshot dot */}
               <div
-                className={`${styles.dot} ${isMajor ? styles.majorDot : ''}`}
+                className={cn(
+                  "rounded-full my-2 transition-all border-2 border-emblem-surface",
+                  isMajor ? "w-4 h-4" : "w-3 h-3",
+                  isMajor && "shadow-[0_0_10px_currentColor]"
+                )}
                 style={{
                   backgroundColor: frameColor,
-                  transform: isHovered ? 'scale(1.3)' : 'scale(1)'
+                  transform: isHovered ? 'scale(1.3)' : 'scale(1)',
+                  color: frameColor
                 }}
               />
 
               {/* Trigger label */}
-              <div className={styles.label}>
-                <span className={styles.triggerLabel}>
+              <div className="flex flex-col items-center gap-0.5">
+                <span className="text-[0.65rem] text-emblem-muted uppercase">
                   {TRIGGER_LABELS[snapshot.trigger]}
                 </span>
-                <span className={styles.frame}>{snapshot.stance.frame}</span>
+                <span className="text-xs text-emblem-text/80 capitalize">{snapshot.stance.frame}</span>
               </div>
 
               {/* Expanded details */}
               {isSelected && (
-                <div className={styles.details}>
-                  <div className={styles.detailRow}>
-                    <span>Time:</span>
-                    <span>{new Date(snapshot.timestamp).toLocaleString()}</span>
+                <div className="absolute top-full left-1/2 -translate-x-1/2 bg-emblem-surface-2 border border-emblem-surface-2 rounded-lg p-3 min-w-[180px] z-10 mt-2 animate-fade-in">
+                  <div className="flex justify-between text-sm mb-1">
+                    <span className="text-emblem-muted">Time:</span>
+                    <span className="text-emblem-text/80">{new Date(snapshot.timestamp).toLocaleString()}</span>
                   </div>
-                  <div className={styles.detailRow}>
-                    <span>Frame:</span>
+                  <div className="flex justify-between text-sm mb-1">
+                    <span className="text-emblem-muted">Frame:</span>
                     <span style={{ color: frameColor }}>{snapshot.stance.frame}</span>
                   </div>
-                  <div className={styles.detailRow}>
-                    <span>Self-Model:</span>
-                    <span>{snapshot.stance.selfModel}</span>
+                  <div className="flex justify-between text-sm mb-1">
+                    <span className="text-emblem-muted">Self-Model:</span>
+                    <span className="text-emblem-text/80">{snapshot.stance.selfModel}</span>
                   </div>
-                  <div className={styles.detailRow}>
-                    <span>Drift:</span>
-                    <span>{snapshot.driftAtSnapshot}</span>
+                  <div className="flex justify-between text-sm mb-1">
+                    <span className="text-emblem-muted">Drift:</span>
+                    <span className="text-emblem-text/80">{snapshot.driftAtSnapshot}</span>
                   </div>
-                  <div className={styles.valuesPreview}>
+                  <div className="flex flex-col gap-0.5 mt-2 pt-2 border-t border-emblem-surface text-xs text-emblem-muted">
                     <span>Awareness: {snapshot.stance.sentience.awarenessLevel}</span>
                     <span>Autonomy: {snapshot.stance.sentience.autonomyLevel}</span>
                     <span>Identity: {snapshot.stance.sentience.identityStrength}</span>
@@ -182,13 +192,13 @@ export function EvolutionTimeline({
       </div>
 
       {/* Legend */}
-      <div className={styles.legend}>
-        <div className={styles.legendItem}>
-          <div className={`${styles.legendDot} ${styles.majorDot}`} />
+      <div className="flex gap-6 justify-center mt-4 pt-2 border-t border-emblem-surface-2">
+        <div className="flex items-center gap-2 text-xs text-emblem-muted">
+          <div className="w-4 h-4 rounded-full bg-emblem-secondary shadow-[0_0_6px_currentColor]" style={{ color: '#00d9ff' }} />
           <span>Major transform</span>
         </div>
-        <div className={styles.legendItem}>
-          <div className={styles.legendDot} />
+        <div className="flex items-center gap-2 text-xs text-emblem-muted">
+          <div className="w-2.5 h-2.5 rounded-full bg-emblem-secondary" />
           <span>Minor drift</span>
         </div>
       </div>

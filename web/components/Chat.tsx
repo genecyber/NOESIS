@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useRef, useEffect, useCallback } from 'react';
+import { motion, AnimatePresence } from 'framer-motion';
 import ReactMarkdown from 'react-markdown';
 import type { Message, ChatResponse, Stance, ModeConfig, ToolUseEvent } from '@/lib/types';
 import { chatStream, getState, getHistory, exportState, getSubagents, updateConfig, invokeSubagent, getMemories, getSessions, deleteSession } from '@/lib/api';
@@ -10,7 +11,8 @@ import ToolUsage, { ActiveToolsBar } from './ToolUsage';
 import { findCommand, parseCommand, COMMANDS, getCommandsByCategory } from '@/lib/commands';
 import { useInputHistory } from '@/lib/hooks/useLocalStorage';
 import { saveMessages, getMessages, saveLastSessionId } from '@/lib/storage';
-import styles from './Chat.module.css';
+import { cn } from '@/lib/utils';
+import { Button } from '@/components/ui';
 
 type ConnectionStatus = 'connected' | 'disconnected' | 'streaming';
 
@@ -565,57 +567,49 @@ export default function Chat({ sessionId, onSessionChange, onResponse, onStanceU
     }
   };
 
-  const statusColor = connectionStatus === 'connected' ? '#10b981'
-    : connectionStatus === 'streaming' ? '#3b82f6'
-    : '#ef4444';
+  const statusColor = connectionStatus === 'connected' ? 'bg-emblem-accent'
+    : connectionStatus === 'streaming' ? 'bg-blue-500'
+    : 'bg-emblem-danger';
 
   const statusText = connectionStatus === 'connected' ? 'Connected'
     : connectionStatus === 'streaming' ? 'Streaming...'
     : 'Reconnecting...';
 
   return (
-    <div className={styles.chat}>
+    <div className="flex flex-col h-full min-h-0 glass-panel overflow-hidden relative">
       {/* Floating status indicator */}
-      <div
-        style={{
-          position: 'fixed',
-          top: 70,
-          right: 340,
-          display: 'flex',
-          alignItems: 'center',
-          gap: 6,
-          padding: '4px 10px',
-          background: 'rgba(30, 30, 30, 0.95)',
-          border: '1px solid #333',
-          borderRadius: 16,
-          fontSize: 11,
-          zIndex: 9999,
-          backdropFilter: 'blur(8px)',
-        }}
-      >
-        <span style={{
-          width: 6,
-          height: 6,
-          borderRadius: '50%',
-          backgroundColor: statusColor,
-          animation: 'pulse 2s infinite'
-        }} />
-        <span style={{ color: '#888' }}>{statusText}</span>
+      <div className="fixed top-[70px] right-[340px] flex items-center gap-1.5 px-2.5 py-1 bg-emblem-surface/95 border border-white/10 rounded-full text-[11px] z-[9999] backdrop-blur-lg max-md:right-4">
+        <span className={cn('w-1.5 h-1.5 rounded-full animate-pulse', statusColor)} />
+        <span className="text-emblem-muted">{statusText}</span>
       </div>
-      <div className={styles.messages}>
+
+      <div className="flex-1 overflow-y-auto overflow-x-hidden p-4 flex flex-col gap-4 min-h-0 scrollbar-styled">
         {messages.length === 0 && (
-          <div className={styles.welcome}>
-            <h2>METAMORPH</h2>
-            <p>Transformation-maximizing AI interface</p>
-            <p className={styles.hint}>Type a message or <code>/</code> for commands</p>
+          <div className="text-center py-12 px-4 text-emblem-muted">
+            <h2 className="text-3xl font-display font-bold gradient-text mb-2">METAMORPH</h2>
+            <p className="mb-2">Transformation-maximizing AI interface</p>
+            <p className="text-sm opacity-70">
+              Type a message or <code className="bg-emblem-secondary/20 px-1.5 py-0.5 rounded font-mono text-emblem-secondary">/</code> for commands
+            </p>
           </div>
         )}
-        {messages.map((msg, i) => (
-          <div
-            key={i}
-            className={`${styles.message} ${styles[msg.role]} ${msg.type === 'command' ? styles.commandMessage : ''}`}
-          >
-            <div className={styles.content}>
+        <AnimatePresence mode="popLayout">
+          {messages.map((msg, i) => (
+            <motion.div
+              key={`${msg.timestamp}-${i}`}
+              initial={{ opacity: 0, y: 20, scale: 0.95 }}
+              animate={{ opacity: 1, y: 0, scale: 1 }}
+              exit={{ opacity: 0, y: -10, scale: 0.95 }}
+              transition={{ type: "spring", stiffness: 500, damping: 30 }}
+              className={cn(
+                'max-w-[80%] p-3 rounded-xl leading-relaxed',
+                msg.role === 'user' && !msg.type && 'self-end bg-gradient-to-r from-emblem-secondary to-emblem-primary text-white',
+                msg.role === 'assistant' && 'self-start glass-card',
+                msg.type === 'command' && 'max-w-full',
+                msg.type === 'command' && msg.role === 'user' && 'bg-transparent text-emblem-text'
+              )}
+            >
+            <div className="break-words prose-chat">
               {msg.type === 'command' && msg.commandData ? (
                 <CommandOutput
                   command={msg.commandData.command}
@@ -627,44 +621,107 @@ export default function Chat({ sessionId, onSessionChange, onResponse, onStanceU
                   {msg.tools && msg.tools.length > 0 && (
                     <ToolUsage tools={msg.tools} />
                   )}
-                  <ReactMarkdown>{msg.content}</ReactMarkdown>
+                  <ReactMarkdown
+                    components={{
+                      p: ({ children }) => <p className="mb-3 last:mb-0">{children}</p>,
+                      h1: ({ children }) => <h1 className="text-xl font-display font-bold text-emblem-secondary mt-4 mb-2 first:mt-0">{children}</h1>,
+                      h2: ({ children }) => <h2 className="text-lg font-display font-semibold text-emblem-secondary mt-4 mb-2 first:mt-0">{children}</h2>,
+                      h3: ({ children }) => <h3 className="text-base font-display font-semibold text-emblem-secondary mt-3 mb-2 first:mt-0">{children}</h3>,
+                      code: ({ children, className }) => {
+                        const isInline = !className;
+                        return isInline ? (
+                          <code className="bg-black/30 px-1.5 py-0.5 rounded font-mono text-[0.9em]">{children}</code>
+                        ) : (
+                          <code className={className}>{children}</code>
+                        );
+                      },
+                      pre: ({ children }) => <pre className="bg-black/40 p-4 rounded-lg overflow-x-auto my-3 font-mono text-sm">{children}</pre>,
+                      ul: ({ children }) => <ul className="my-2 pl-6 list-disc">{children}</ul>,
+                      ol: ({ children }) => <ol className="my-2 pl-6 list-decimal">{children}</ol>,
+                      li: ({ children }) => <li className="my-1">{children}</li>,
+                      blockquote: ({ children }) => <blockquote className="border-l-3 border-emblem-primary my-3 pl-4 text-emblem-muted">{children}</blockquote>,
+                      strong: ({ children }) => <strong className="text-emblem-secondary font-semibold">{children}</strong>,
+                      a: ({ href, children }) => <a href={href} className="text-emblem-primary underline hover:text-emblem-secondary transition-colors">{children}</a>,
+                    }}
+                  >
+                    {msg.content}
+                  </ReactMarkdown>
                 </>
               ) : msg.content.startsWith('/') ? (
-                <code className={styles.commandInput}>{msg.content}</code>
+                <code className="block font-mono text-[0.95em] text-emblem-secondary bg-emblem-secondary/10 px-3 py-2 rounded-md border-l-3 border-emblem-secondary">
+                  {msg.content}
+                </code>
               ) : (
                 msg.content
               )}
             </div>
-          </div>
-        ))}
+          </motion.div>
+          ))}
+        </AnimatePresence>
         {/* Show active tools during streaming */}
-        {activeTools.length > 0 && (
-          <div className={`${styles.message} ${styles.assistant}`}>
-            <div className={styles.content}>
-              <ActiveToolsBar tools={activeTools} />
-            </div>
-          </div>
-        )}
-        {streamingText && (
-          <div className={`${styles.message} ${styles.assistant}`}>
-            <div className={styles.content}>
-              <ReactMarkdown>{streamingText}</ReactMarkdown>
-            </div>
-          </div>
-        )}
-        {isLoading && !streamingText && (
-          <div className={`${styles.message} ${styles.assistant}`}>
-            <div className={styles.loading}>
-              <span></span>
-              <span></span>
-              <span></span>
-            </div>
-          </div>
-        )}
+        <AnimatePresence>
+          {activeTools.length > 0 && (
+            <motion.div
+              initial={{ opacity: 0, y: 10 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: -10 }}
+              transition={{ type: "spring", stiffness: 400, damping: 25 }}
+              className="self-start glass-card max-w-[80%] p-3 rounded-xl"
+            >
+              <div className="break-words">
+                <ActiveToolsBar tools={activeTools} />
+              </div>
+            </motion.div>
+          )}
+        </AnimatePresence>
+        <AnimatePresence>
+          {streamingText && (
+            <motion.div
+              initial={{ opacity: 0, y: 10 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0 }}
+              transition={{ type: "spring", stiffness: 400, damping: 25 }}
+              className="self-start glass-card max-w-[80%] p-3 rounded-xl"
+            >
+              <div className="break-words prose-chat">
+                <ReactMarkdown>{streamingText}</ReactMarkdown>
+              </div>
+            </motion.div>
+          )}
+        </AnimatePresence>
+        <AnimatePresence>
+          {isLoading && !streamingText && (
+            <motion.div
+              initial={{ opacity: 0, scale: 0.8 }}
+              animate={{ opacity: 1, scale: 1 }}
+              exit={{ opacity: 0, scale: 0.8 }}
+              transition={{ type: "spring", stiffness: 400, damping: 20 }}
+              className="self-start glass-card p-3 rounded-xl"
+            >
+              <div className="flex gap-1">
+                <motion.span
+                  animate={{ scale: [1, 1.3, 1] }}
+                  transition={{ repeat: Infinity, duration: 0.6, delay: 0 }}
+                  className="w-2 h-2 bg-emblem-secondary rounded-full"
+                />
+                <motion.span
+                  animate={{ scale: [1, 1.3, 1] }}
+                  transition={{ repeat: Infinity, duration: 0.6, delay: 0.2 }}
+                  className="w-2 h-2 bg-emblem-secondary rounded-full"
+                />
+                <motion.span
+                  animate={{ scale: [1, 1.3, 1] }}
+                  transition={{ repeat: Infinity, duration: 0.6, delay: 0.4 }}
+                  className="w-2 h-2 bg-emblem-secondary rounded-full"
+                />
+              </div>
+            </motion.div>
+          )}
+        </AnimatePresence>
         <div ref={messagesEndRef} />
       </div>
 
-      <div className={styles.inputWrapper}>
+      <div className="relative">
         <CommandPalette
           input={input}
           visible={showPalette}
@@ -673,7 +730,7 @@ export default function Chat({ sessionId, onSessionChange, onResponse, onStanceU
           selectedIndex={paletteIndex}
           onIndexChange={setPaletteIndex}
         />
-        <form onSubmit={handleSubmit} className={styles.inputArea}>
+        <form onSubmit={handleSubmit} className="flex gap-2 p-4 bg-emblem-surface-2 border-t border-white/5">
           <input
             ref={inputRef}
             type="text"
@@ -682,16 +739,21 @@ export default function Chat({ sessionId, onSessionChange, onResponse, onStanceU
             onKeyDown={handleKeyDown}
             placeholder="Type a message or / for commands..."
             disabled={isLoading}
-            className={`${styles.input} ${input.startsWith('/') ? styles.commandMode : ''}`}
+            className={cn(
+              'flex-1 px-4 py-3 bg-emblem-surface border border-white/10 rounded-lg text-emblem-text text-base outline-none transition-colors',
+              'focus:border-emblem-secondary',
+              'disabled:opacity-50',
+              input.startsWith('/') && 'font-mono border-emblem-secondary bg-emblem-secondary/5'
+            )}
           />
           {isLoading ? (
-            <button type="button" onClick={handleStop} className={styles.stopButton}>
+            <Button variant="destructive" type="button" onClick={handleStop} className="px-6">
               Stop
-            </button>
+            </Button>
           ) : (
-            <button type="submit" disabled={!input.trim()} className={styles.sendButton}>
+            <Button type="submit" disabled={!input.trim()} className="px-6">
               Send
-            </button>
+            </Button>
           )}
         </form>
       </div>

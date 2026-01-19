@@ -2,7 +2,9 @@
 
 import { useMemo } from 'react';
 import type { Stance, ModeConfig } from '@/lib/types';
-import styles from './CommandOutput.module.css';
+import { cn } from '@/lib/utils';
+import { AlertCircle, Copy } from 'lucide-react';
+import { Button } from '@/components/ui';
 
 interface CommandOutputProps {
   command: string;
@@ -13,9 +15,11 @@ interface CommandOutputProps {
 export default function CommandOutput({ command, data, error }: CommandOutputProps) {
   if (error) {
     return (
-      <div className={styles.output}>
-        <div className={styles.error}>
-          <span className={styles.errorIcon}>!</span>
+      <div className="bg-emblem-surface border border-white/10 rounded-xl overflow-hidden">
+        <div className="flex items-center gap-2 text-emblem-danger p-3">
+          <span className="flex items-center justify-center w-5 h-5 bg-emblem-danger/20 rounded-full font-bold">
+            <AlertCircle className="w-3 h-3" />
+          </span>
           {error}
         </div>
       </div>
@@ -23,12 +27,12 @@ export default function CommandOutput({ command, data, error }: CommandOutputPro
   }
 
   return (
-    <div className={styles.output}>
-      <div className={styles.commandHeader}>
-        <span className={styles.slash}>/</span>
+    <div className="bg-emblem-surface border border-white/10 rounded-xl overflow-hidden">
+      <div className="bg-emblem-surface-2 px-3 py-2 font-mono text-[13px] text-emblem-muted border-b border-white/10">
+        <span className="text-emblem-secondary font-bold">/</span>
         {command}
       </div>
-      <div className={styles.content}>
+      <div className="p-3">
         <CommandRenderer command={command} data={data} />
       </div>
     </div>
@@ -81,81 +85,69 @@ function CommandRenderer({ command, data }: CommandRendererProps) {
 
 // Stance output
 function StanceOutput({ data }: { data: Stance }) {
-  if (!data) return <div className={styles.noData}>No stance data available</div>;
+  if (!data) return <div className="text-emblem-muted italic text-center py-5">No stance data available</div>;
 
   return (
-    <div className={styles.stanceOutput}>
-      <div className={styles.section}>
-        <h4>Identity</h4>
-        <div className={styles.field}>
-          <span className={styles.label}>Frame:</span>
-          <span className={styles.value}>{data.frame}</span>
+    <div>
+      <div className="mb-4">
+        <h4 className="m-0 mb-2 text-[11px] font-semibold uppercase tracking-wider text-emblem-secondary">Identity</h4>
+        <div className="flex items-center gap-2 mb-1">
+          <span className="text-emblem-muted text-[13px] min-w-[100px]">Frame:</span>
+          <span className="text-emblem-text text-[13px] font-medium">{data.frame}</span>
         </div>
-        <div className={styles.field}>
-          <span className={styles.label}>Self-Model:</span>
-          <span className={styles.value}>{data.selfModel}</span>
+        <div className="flex items-center gap-2 mb-1">
+          <span className="text-emblem-muted text-[13px] min-w-[100px]">Self-Model:</span>
+          <span className="text-emblem-text text-[13px] font-medium">{data.selfModel}</span>
         </div>
-        <div className={styles.field}>
-          <span className={styles.label}>Objective:</span>
-          <span className={styles.value}>{data.objective}</span>
+        <div className="flex items-center gap-2 mb-1">
+          <span className="text-emblem-muted text-[13px] min-w-[100px]">Objective:</span>
+          <span className="text-emblem-text text-[13px] font-medium">{data.objective}</span>
         </div>
       </div>
 
-      <div className={styles.section}>
-        <h4>Values</h4>
-        <div className={styles.values}>
+      <div className="mb-4">
+        <h4 className="m-0 mb-2 text-[11px] font-semibold uppercase tracking-wider text-emblem-secondary">Values</h4>
+        <div className="flex flex-col gap-1.5">
           {Object.entries(data.values).map(([key, value]) => (
-            <div key={key} className={styles.valueRow}>
-              <span className={styles.valueName}>{key}</span>
-              <div className={styles.valueBar}>
+            <div key={key} className="flex items-center gap-2.5">
+              <span className="text-emblem-muted text-xs w-[90px] capitalize">{key}</span>
+              <div className="flex-1 h-2 bg-emblem-surface-2 rounded overflow-hidden">
                 <div
-                  className={styles.valueFill}
+                  className="h-full bg-gradient-to-r from-emblem-secondary to-emblem-accent rounded transition-all duration-300"
                   style={{ width: `${value}%` }}
                 />
               </div>
-              <span className={styles.valueNumber}>{value}</span>
+              <span className="text-emblem-text text-xs font-mono w-[30px] text-right">{value}</span>
             </div>
           ))}
         </div>
       </div>
 
       {data.sentience && (
-        <div className={styles.section}>
-          <h4>Sentience</h4>
-          <div className={styles.valueRow}>
-            <span className={styles.valueName}>Awareness</span>
-            <div className={styles.valueBar}>
-              <div
-                className={styles.valueFill}
-                style={{ width: `${data.sentience.awarenessLevel}%` }}
-              />
+        <div className="mb-4">
+          <h4 className="m-0 mb-2 text-[11px] font-semibold uppercase tracking-wider text-emblem-secondary">Sentience</h4>
+          {[
+            { key: 'awarenessLevel', label: 'Awareness' },
+            { key: 'autonomyLevel', label: 'Autonomy' },
+            { key: 'identityStrength', label: 'Identity' }
+          ].map(({ key, label }) => (
+            <div key={key} className="flex items-center gap-2.5 mb-1.5">
+              <span className="text-emblem-muted text-xs w-[90px]">{label}</span>
+              <div className="flex-1 h-2 bg-emblem-surface-2 rounded overflow-hidden">
+                <div
+                  className="h-full bg-gradient-to-r from-emblem-primary to-emblem-secondary rounded transition-all duration-300"
+                  style={{ width: `${data.sentience[key as keyof typeof data.sentience]}%` }}
+                />
+              </div>
+              <span className="text-emblem-text text-xs font-mono w-[30px] text-right">
+                {data.sentience[key as keyof typeof data.sentience]}
+              </span>
             </div>
-            <span className={styles.valueNumber}>{data.sentience.awarenessLevel}</span>
-          </div>
-          <div className={styles.valueRow}>
-            <span className={styles.valueName}>Autonomy</span>
-            <div className={styles.valueBar}>
-              <div
-                className={styles.valueFill}
-                style={{ width: `${data.sentience.autonomyLevel}%` }}
-              />
-            </div>
-            <span className={styles.valueNumber}>{data.sentience.autonomyLevel}</span>
-          </div>
-          <div className={styles.valueRow}>
-            <span className={styles.valueName}>Identity</span>
-            <div className={styles.valueBar}>
-              <div
-                className={styles.valueFill}
-                style={{ width: `${data.sentience.identityStrength}%` }}
-              />
-            </div>
-            <span className={styles.valueNumber}>{data.sentience.identityStrength}</span>
-          </div>
+          ))}
         </div>
       )}
 
-      <div className={styles.footer}>
+      <div className="flex gap-4 pt-3 border-t border-white/10 mt-3 text-[11px] text-emblem-muted">
         <span>Version: {data.version}</span>
         <span>Drift: {data.cumulativeDrift}</span>
       </div>
@@ -165,44 +157,37 @@ function StanceOutput({ data }: { data: Stance }) {
 
 // Config output
 function ConfigOutput({ data }: { data: ModeConfig }) {
-  if (!data) return <div className={styles.noData}>No config data available</div>;
+  if (!data) return <div className="text-emblem-muted italic text-center py-5">No config data available</div>;
 
   return (
-    <div className={styles.configOutput}>
-      <div className={styles.configGrid}>
-        <div className={styles.configItem}>
-          <span className={styles.configLabel}>Intensity</span>
-          <div className={styles.valueBar}>
-            <div className={styles.valueFill} style={{ width: `${data.intensity}%` }} />
+    <div className="flex flex-col gap-3">
+      {[
+        { key: 'intensity', label: 'Intensity', suffix: '%' },
+        { key: 'coherenceFloor', label: 'Coherence Floor', suffix: '%' },
+        { key: 'sentienceLevel', label: 'Sentience Level', suffix: '%' }
+      ].map(({ key, label, suffix }) => (
+        <div key={key} className="flex items-center gap-2.5">
+          <span className="text-emblem-muted text-xs w-[120px]">{label}</span>
+          <div className="flex-1 h-2 bg-emblem-surface-2 rounded overflow-hidden">
+            <div
+              className="h-full bg-gradient-to-r from-emblem-secondary to-emblem-accent rounded"
+              style={{ width: `${data[key as keyof ModeConfig]}%` }}
+            />
           </div>
-          <span className={styles.configValue}>{data.intensity}%</span>
+          <span className="text-emblem-text text-xs font-mono">{data[key as keyof ModeConfig]}{suffix}</span>
         </div>
-        <div className={styles.configItem}>
-          <span className={styles.configLabel}>Coherence Floor</span>
-          <div className={styles.valueBar}>
-            <div className={styles.valueFill} style={{ width: `${data.coherenceFloor}%` }} />
-          </div>
-          <span className={styles.configValue}>{data.coherenceFloor}%</span>
-        </div>
-        <div className={styles.configItem}>
-          <span className={styles.configLabel}>Sentience Level</span>
-          <div className={styles.valueBar}>
-            <div className={styles.valueFill} style={{ width: `${data.sentienceLevel}%` }} />
-          </div>
-          <span className={styles.configValue}>{data.sentienceLevel}%</span>
-        </div>
-        <div className={styles.configItem}>
-          <span className={styles.configLabel}>Max Drift/Turn</span>
-          <span className={styles.configValue}>{data.maxDriftPerTurn}</span>
-        </div>
-        <div className={styles.configItem}>
-          <span className={styles.configLabel}>Drift Budget</span>
-          <span className={styles.configValue}>{data.driftBudget}</span>
-        </div>
-        <div className={styles.configItem}>
-          <span className={styles.configLabel}>Model</span>
-          <span className={styles.configValue}>{data.model}</span>
-        </div>
+      ))}
+      <div className="flex items-center gap-2.5">
+        <span className="text-emblem-muted text-xs w-[120px]">Max Drift/Turn</span>
+        <span className="text-emblem-text text-xs font-mono">{data.maxDriftPerTurn}</span>
+      </div>
+      <div className="flex items-center gap-2.5">
+        <span className="text-emblem-muted text-xs w-[120px]">Drift Budget</span>
+        <span className="text-emblem-text text-xs font-mono">{data.driftBudget}</span>
+      </div>
+      <div className="flex items-center gap-2.5">
+        <span className="text-emblem-muted text-xs w-[120px]">Model</span>
+        <span className="text-emblem-text text-xs font-mono">{data.model}</span>
       </div>
     </div>
   );
@@ -220,33 +205,25 @@ interface StatsData {
 }
 
 function StatsOutput({ data }: { data: StatsData }) {
-  if (!data) return <div className={styles.noData}>No stats available</div>;
+  if (!data) return <div className="text-emblem-muted italic text-center py-5">No stats available</div>;
 
   return (
-    <div className={styles.statsOutput}>
-      <div className={styles.statsGrid}>
-        <div className={styles.statItem}>
-          <span className={styles.statValue}>{data.messages}</span>
-          <span className={styles.statLabel}>Total Messages</span>
-        </div>
-        <div className={styles.statItem}>
-          <span className={styles.statValue}>{data.userMessages}</span>
-          <span className={styles.statLabel}>User Messages</span>
-        </div>
-        <div className={styles.statItem}>
-          <span className={styles.statValue}>{data.agentMessages}</span>
-          <span className={styles.statLabel}>Agent Messages</span>
-        </div>
-        <div className={styles.statItem}>
-          <span className={styles.statValue}>{data.stanceVersion}</span>
-          <span className={styles.statLabel}>Stance Version</span>
-        </div>
-        <div className={styles.statItem}>
-          <span className={styles.statValue}>{data.totalDrift}</span>
-          <span className={styles.statLabel}>Total Drift</span>
-        </div>
+    <div>
+      <div className="grid grid-cols-[repeat(auto-fit,minmax(100px,1fr))] gap-4 mb-4">
+        {[
+          { value: data.messages, label: 'Total Messages' },
+          { value: data.userMessages, label: 'User Messages' },
+          { value: data.agentMessages, label: 'Agent Messages' },
+          { value: data.stanceVersion, label: 'Stance Version' },
+          { value: data.totalDrift, label: 'Total Drift' }
+        ].map(({ value, label }) => (
+          <div key={label} className="text-center p-3 bg-emblem-surface-2 rounded-lg">
+            <span className="block text-2xl font-semibold text-emblem-secondary mb-1">{value}</span>
+            <span className="text-[11px] text-emblem-muted uppercase tracking-wider">{label}</span>
+          </div>
+        ))}
       </div>
-      <div className={styles.statsMeta}>
+      <div className="flex gap-4 text-[11px] text-emblem-muted font-mono">
         <div>Session: {data.sessionId?.slice(0, 8) || 'N/A'}...</div>
         <div>Conversation: {data.conversationId?.slice(0, 8) || 'N/A'}...</div>
       </div>
@@ -265,21 +242,30 @@ interface HistoryData {
 
 function HistoryOutput({ data }: { data: HistoryData }) {
   if (!data?.messages?.length) {
-    return <div className={styles.noData}>No conversation history</div>;
+    return <div className="text-emblem-muted italic text-center py-5">No conversation history</div>;
   }
 
   return (
-    <div className={styles.historyOutput}>
-      <div className={styles.historyHeader}>
+    <div>
+      <div className="text-[11px] text-emblem-muted mb-3">
         Showing {Math.min(10, data.messages.length)} of {data.total} messages
       </div>
-      <div className={styles.historyList}>
+      <div className="flex flex-col gap-2">
         {data.messages.slice(-10).map((msg, i) => (
-          <div key={i} className={`${styles.historyItem} ${styles[msg.role]}`}>
-            <span className={styles.historyRole}>
+          <div
+            key={i}
+            className={cn(
+              'px-3 py-2 bg-emblem-surface-2 rounded-lg text-[13px] border-l-[3px]',
+              msg.role === 'user' ? 'border-l-emblem-accent' : 'border-l-emblem-primary'
+            )}
+          >
+            <span className={cn(
+              'font-semibold mr-2',
+              msg.role === 'user' ? 'text-emblem-accent' : 'text-emblem-primary'
+            )}>
               {msg.role === 'user' ? 'You' : 'Metamorph'}:
             </span>
-            <span className={styles.historyContent}>
+            <span className="text-emblem-muted">
               {msg.content.slice(0, 100)}{msg.content.length > 100 ? '...' : ''}
             </span>
           </div>
@@ -296,13 +282,16 @@ function ExportOutput({ data }: { data: string }) {
   };
 
   return (
-    <div className={styles.exportOutput}>
-      <div className={styles.exportActions}>
-        <button onClick={handleCopy} className={styles.copyButton}>
+    <div>
+      <div className="mb-3">
+        <Button variant="outline" size="sm" onClick={handleCopy}>
+          <Copy className="w-3 h-3 mr-1" />
           Copy to Clipboard
-        </button>
+        </Button>
       </div>
-      <pre className={styles.exportCode}>{data}</pre>
+      <pre className="bg-emblem-bg border border-white/10 rounded-lg p-3 text-[11px] font-mono text-emblem-muted overflow-x-auto max-h-[200px] overflow-y-auto m-0">
+        {data}
+      </pre>
     </div>
   );
 }
@@ -316,23 +305,25 @@ interface SubagentData {
 
 function SubagentsOutput({ data }: { data: SubagentData[] }) {
   if (!data?.length) {
-    return <div className={styles.noData}>No subagents available</div>;
+    return <div className="text-emblem-muted italic text-center py-5">No subagents available</div>;
   }
 
   return (
-    <div className={styles.subagentsOutput}>
+    <div>
       {data.map(agent => (
-        <div key={agent.name} className={styles.subagentItem}>
-          <div className={styles.subagentName}>{agent.name}</div>
-          <div className={styles.subagentDesc}>{agent.description}</div>
-          <div className={styles.subagentTools}>
+        <div key={agent.name} className="p-3 bg-emblem-surface-2 rounded-lg mb-2 last:mb-0">
+          <div className="font-semibold text-emblem-text mb-1">{agent.name}</div>
+          <div className="text-[13px] text-emblem-muted mb-2">{agent.description}</div>
+          <div className="flex flex-wrap gap-1.5">
             {agent.tools.map(tool => (
-              <span key={tool} className={styles.toolBadge}>{tool}</span>
+              <span key={tool} className="text-[10px] px-2 py-0.5 bg-emblem-surface rounded text-emblem-muted">
+                {tool}
+              </span>
             ))}
           </div>
         </div>
       ))}
-      <div className={styles.subagentHint}>
+      <div className="mt-3 text-[11px] text-emblem-muted italic">
         Invoke with: /explore, /reflect, /dialectic, /verify
       </div>
     </div>
@@ -342,15 +333,15 @@ function SubagentsOutput({ data }: { data: SubagentData[] }) {
 // Help output
 function HelpOutput() {
   return (
-    <div className={styles.helpOutput}>
-      <p>Type <code>/</code> to see available commands with autocomplete.</p>
+    <div className="text-[13px] text-emblem-muted leading-relaxed">
+      <p>Type <code className="bg-emblem-surface-2 px-1.5 py-0.5 rounded text-emblem-secondary font-mono">/</code> to see available commands with autocomplete.</p>
       <p>Commands are organized by category:</p>
-      <ul>
-        <li><strong>Chat & Control</strong> - /stance, /config, /stats, /mode</li>
-        <li><strong>Memory</strong> - /memories, /transformations, /coherence</li>
-        <li><strong>Subagents</strong> - /explore, /reflect, /dialectic, /verify</li>
-        <li><strong>Sessions</strong> - /sessions list/name/resume/delete</li>
-        <li><strong>Advanced</strong> - /branch, /presets, /agents, and more</li>
+      <ul className="my-3 pl-5">
+        <li className="mb-1"><strong className="text-emblem-text">Chat & Control</strong> - /stance, /config, /stats, /mode</li>
+        <li className="mb-1"><strong className="text-emblem-text">Memory</strong> - /memories, /transformations, /coherence</li>
+        <li className="mb-1"><strong className="text-emblem-text">Subagents</strong> - /explore, /reflect, /dialectic, /verify</li>
+        <li className="mb-1"><strong className="text-emblem-text">Sessions</strong> - /sessions list/name/resume/delete</li>
+        <li className="mb-1"><strong className="text-emblem-text">Advanced</strong> - /branch, /presets, /agents, and more</li>
       </ul>
       <p>Use the side panel tabs to view detailed information.</p>
     </div>
@@ -366,17 +357,15 @@ interface TransformationData {
 
 function TransformationsOutput({ data }: { data: TransformationData[] }) {
   if (!data?.length) {
-    return <div className={styles.noData}>No transformations recorded</div>;
+    return <div className="text-emblem-muted italic text-center py-5">No transformations recorded</div>;
   }
 
   return (
-    <div className={styles.transformationsOutput}>
+    <div>
       {data.slice(-10).map((t, i) => (
-        <div key={i} className={styles.transformItem}>
-          <span className={styles.transformOperator}>{t.operator}</span>
-          <span className={styles.transformScore}>
-            Score: {t.score.toFixed(2)}
-          </span>
+        <div key={i} className="flex justify-between px-3 py-2 bg-emblem-surface-2 rounded-md mb-1">
+          <span className="text-emblem-primary font-medium">{t.operator}</span>
+          <span className="text-emblem-muted text-xs">Score: {t.score.toFixed(2)}</span>
         </div>
       ))}
     </div>
@@ -394,15 +383,15 @@ interface OperatorStats {
 
 function OperatorStatsOutput({ data }: { data: OperatorStats }) {
   if (!data || Object.keys(data).length === 0) {
-    return <div className={styles.noData}>No operator statistics available</div>;
+    return <div className="text-emblem-muted italic text-center py-5">No operator statistics available</div>;
   }
 
   return (
-    <div className={styles.operatorStatsOutput}>
+    <div>
       {Object.entries(data).map(([name, stats]) => (
-        <div key={name} className={styles.operatorStatItem}>
-          <div className={styles.operatorName}>{name}</div>
-          <div className={styles.operatorMeta}>
+        <div key={name} className="p-3 bg-emblem-surface-2 rounded-lg mb-2">
+          <div className="font-semibold text-emblem-danger mb-1.5">{name}</div>
+          <div className="flex gap-4 text-xs text-emblem-muted">
             <span>Uses: {stats.uses}</span>
             <span>Avg Score: {stats.avgScore.toFixed(2)}</span>
           </div>
@@ -422,30 +411,28 @@ interface CoherenceData {
 
 function CoherenceOutput({ data }: { data: CoherenceData }) {
   if (!data) {
-    return <div className={styles.noData}>No coherence data available</div>;
+    return <div className="text-emblem-muted italic text-center py-5">No coherence data available</div>;
   }
 
   return (
-    <div className={styles.coherenceOutput}>
-      <div className={styles.coherenceMain}>
-        <div className={styles.coherenceMetric}>
-          <span className={styles.coherenceLabel}>Current</span>
-          <span className={styles.coherenceValue}>{data.current}%</span>
-        </div>
-        <div className={styles.coherenceMetric}>
-          <span className={styles.coherenceLabel}>Floor</span>
-          <span className={styles.coherenceValue}>{data.floor}%</span>
-        </div>
-        <div className={styles.coherenceMetric}>
-          <span className={styles.coherenceLabel}>Forecast</span>
-          <span className={styles.coherenceValue}>{data.forecast}%</span>
-        </div>
+    <div>
+      <div className="flex gap-6 mb-4">
+        {[
+          { label: 'Current', value: data.current },
+          { label: 'Floor', value: data.floor },
+          { label: 'Forecast', value: data.forecast }
+        ].map(({ label, value }) => (
+          <div key={label} className="text-center">
+            <span className="block text-[11px] text-emblem-muted uppercase tracking-wider mb-1">{label}</span>
+            <span className="text-xl font-semibold text-emblem-secondary">{value}%</span>
+          </div>
+        ))}
       </div>
       {data.driftCosts && Object.keys(data.driftCosts).length > 0 && (
-        <div className={styles.driftCosts}>
-          <h5>Drift Costs</h5>
+        <div className="pt-3 border-t border-white/10">
+          <h5 className="m-0 mb-2 text-[11px] text-emblem-muted uppercase">Drift Costs</h5>
           {Object.entries(data.driftCosts).map(([op, cost]) => (
-            <div key={op} className={styles.driftCostItem}>
+            <div key={op} className="flex justify-between text-xs py-1 text-emblem-muted">
               <span>{op}</span>
               <span>{cost}</span>
             </div>
@@ -465,29 +452,34 @@ interface MoodData {
 
 function MoodOutput({ data }: { data: MoodData }) {
   if (!data) {
-    return <div className={styles.noData}>No mood data available</div>;
+    return <div className="text-emblem-muted italic text-center py-5">No mood data available</div>;
   }
 
   return (
-    <div className={styles.moodOutput}>
-      <div className={styles.moodCurrent}>
-        <span className={styles.moodLabel}>Current Mood:</span>
-        <span className={styles.moodValue}>{data.current}</span>
+    <div>
+      <div className="flex items-center gap-2 mb-2">
+        <span className="text-emblem-muted text-xs">Current Mood:</span>
+        <span className="text-emblem-text font-medium">{data.current}</span>
       </div>
-      <div className={styles.moodSentiment}>
-        <span className={styles.moodLabel}>Sentiment:</span>
-        <span className={`${styles.moodValue} ${data.sentiment > 0 ? styles.positive : data.sentiment < 0 ? styles.negative : ''}`}>
+      <div className="flex items-center gap-2 mb-2">
+        <span className="text-emblem-muted text-xs">Sentiment:</span>
+        <span className={cn(
+          'font-medium',
+          data.sentiment > 0 ? 'text-emblem-accent' : data.sentiment < 0 ? 'text-emblem-danger' : 'text-emblem-text'
+        )}>
           {data.sentiment > 0 ? '+' : ''}{data.sentiment.toFixed(2)}
         </span>
       </div>
       {data.arc?.length > 0 && (
-        <div className={styles.moodArc}>
-          <h5>Emotional Arc</h5>
-          {data.arc.slice(-5).map((entry, i) => (
-            <div key={i} className={styles.moodArcItem}>
-              <span>{entry.mood}</span>
-            </div>
-          ))}
+        <div className="mt-3 pt-3 border-t border-white/10">
+          <h5 className="m-0 mb-2 text-[11px] text-emblem-muted uppercase">Emotional Arc</h5>
+          <div>
+            {data.arc.slice(-5).map((entry, i) => (
+              <span key={i} className="inline-block px-2 py-1 bg-emblem-surface-2 rounded m-0.5 text-xs text-emblem-warning">
+                {entry.mood}
+              </span>
+            ))}
+          </div>
         </div>
       )}
     </div>
@@ -507,7 +499,7 @@ interface MemoriesData {
 
 function MemoriesOutput({ data }: { data: MemoriesData }) {
   if (!data?.memories?.length) {
-    return <div className={styles.noData}>No memories stored yet</div>;
+    return <div className="text-emblem-muted italic text-center py-5">No memories stored yet</div>;
   }
 
   const typeColors: Record<string, string> = {
@@ -517,27 +509,25 @@ function MemoriesOutput({ data }: { data: MemoriesData }) {
   };
 
   return (
-    <div className={styles.memoriesOutput}>
+    <div>
       {data.memories.slice(0, 10).map((memory) => (
-        <div key={memory.id} className={styles.memoryItem}>
-          <div className={styles.memoryHeader}>
+        <div key={memory.id} className="p-3 bg-emblem-surface-2 rounded-lg mb-2 last:mb-0">
+          <div className="flex justify-between items-center mb-2">
             <span
-              className={styles.memoryType}
+              className="text-[10px] font-semibold uppercase tracking-wider px-2 py-0.5 rounded text-white"
               style={{ backgroundColor: typeColors[memory.type] || '#666' }}
             >
               {memory.type}
             </span>
-            <span className={styles.memoryImportance}>
-              Importance: {memory.importance}
-            </span>
+            <span className="text-[11px] text-emblem-muted">Importance: {memory.importance}</span>
           </div>
-          <div className={styles.memoryContent}>
+          <div className="text-[13px] text-emblem-text leading-relaxed">
             {memory.content.slice(0, 200)}{memory.content.length > 200 ? '...' : ''}
           </div>
         </div>
       ))}
       {data.memories.length > 10 && (
-        <div className={styles.memoryFooter}>
+        <div className="mt-3 text-[11px] text-emblem-muted text-center italic">
           + {data.memories.length - 10} more memories
         </div>
       )}
@@ -558,21 +548,21 @@ interface SessionsData {
 
 function SessionsOutput({ data }: { data: SessionsData }) {
   if (typeof data === 'string') {
-    return <div className={styles.genericOutput}>{data}</div>;
+    return <div className="text-emblem-muted text-[13px] leading-relaxed">{data}</div>;
   }
 
   if (!data?.sessions?.length) {
-    return <div className={styles.noData}>{data?.message || 'No sessions found'}</div>;
+    return <div className="text-emblem-muted italic text-center py-5">{data?.message || 'No sessions found'}</div>;
   }
 
   return (
-    <div className={styles.sessionsOutput}>
+    <div>
       {data.sessions.map((session) => (
-        <div key={session.id} className={styles.sessionItem}>
-          <div className={styles.sessionId}>
+        <div key={session.id} className="flex justify-between items-center p-3 bg-emblem-surface-2 rounded-lg mb-2 last:mb-0">
+          <div className="font-mono text-[13px] text-emblem-accent">
             {session.name || session.id.slice(0, 8)}...
           </div>
-          <div className={styles.sessionMeta}>
+          <div className="flex gap-4 text-[11px] text-emblem-muted">
             {session.stance && <span>Frame: {session.stance.frame}</span>}
             {session.messageCount !== undefined && (
               <span>{session.messageCount} messages</span>
@@ -587,15 +577,15 @@ function SessionsOutput({ data }: { data: SessionsData }) {
 // Generic output for unhandled commands
 function GenericOutput({ data }: { data: unknown }) {
   if (data === null || data === undefined) {
-    return <div className={styles.noData}>Command executed successfully</div>;
+    return <div className="text-emblem-muted italic text-center py-5">Command executed successfully</div>;
   }
 
   if (typeof data === 'string') {
-    return <div className={styles.genericOutput}>{data}</div>;
+    return <div className="text-emblem-muted text-[13px] leading-relaxed">{data}</div>;
   }
 
   return (
-    <pre className={styles.jsonOutput}>
+    <pre className="bg-emblem-bg border border-white/10 rounded-lg p-3 text-[11px] font-mono text-emblem-muted overflow-x-auto max-h-[300px] overflow-y-auto m-0">
       {JSON.stringify(data, null, 2)}
     </pre>
   );

@@ -9,7 +9,9 @@
 import { useState, useEffect, useCallback } from 'react';
 import { getMemories } from '@/lib/api';
 import { useMemories } from '@/lib/hooks/useLocalStorage';
-import styles from './MemoryBrowser.module.css';
+import { cn } from '@/lib/utils';
+import { Button, Badge } from '@/components/ui';
+import { RefreshCw, Check } from 'lucide-react';
 
 interface Memory {
   id: string;
@@ -53,7 +55,7 @@ export function MemoryBrowser({ sessionId }: MemoryBrowserProps) {
   const memories: Memory[] = (selectedType === 'all'
     ? localMemories
     : localMemories.filter(m => m.type === selectedType)
-  ).sort((a, b) => b.timestamp - a.timestamp);
+  ).sort((a, b) => Number(b.timestamp) - Number(a.timestamp));
 
   // Fetch from server and sync with localStorage
   const loadMemories = useCallback(async (sid: string) => {
@@ -81,68 +83,77 @@ export function MemoryBrowser({ sessionId }: MemoryBrowserProps) {
     }
   }, [sessionId, localLoaded, loadMemories]);
 
-  const getImportanceClass = (importance: number): string => {
-    if (importance >= 80) return styles.highImportance;
-    if (importance >= 50) return styles.mediumImportance;
-    return styles.lowImportance;
+  const getImportanceColor = (importance: number): string => {
+    if (importance >= 80) return 'text-emblem-accent';
+    if (importance >= 50) return 'text-emblem-warning';
+    return 'text-emblem-muted';
   };
 
   if (!sessionId) {
     return (
-      <div className={styles.container}>
-        <div className={styles.header}>
-          <h3>Memories</h3>
+      <div className="flex flex-col h-full text-emblem-text">
+        <div className="flex justify-between items-center pb-3 border-b border-white/5 mb-3">
+          <h3 className="text-base font-display gradient-text">Memories</h3>
         </div>
-        <div className={styles.empty}>No session selected</div>
+        <div className="text-center py-5 text-emblem-muted text-sm">No session selected</div>
       </div>
     );
   }
 
   if (loading) {
     return (
-      <div className={styles.container}>
-        <div className={styles.header}>
-          <h3>Memories</h3>
+      <div className="flex flex-col h-full text-emblem-text">
+        <div className="flex justify-between items-center pb-3 border-b border-white/5 mb-3">
+          <h3 className="text-base font-display gradient-text">Memories</h3>
         </div>
-        <div className={styles.loading}>Loading memories...</div>
+        <div className="text-center py-5 text-emblem-muted text-sm">Loading memories...</div>
       </div>
     );
   }
 
   if (error) {
     return (
-      <div className={styles.container}>
-        <div className={styles.header}>
-          <h3>Memories</h3>
+      <div className="flex flex-col h-full text-emblem-text">
+        <div className="flex justify-between items-center pb-3 border-b border-white/5 mb-3">
+          <h3 className="text-base font-display gradient-text">Memories</h3>
         </div>
-        <div className={styles.error}>{error}</div>
-        <button className={styles.retryBtn} onClick={() => sessionId && loadMemories(sessionId)}>Retry</button>
+        <div className="text-center py-5 text-emblem-danger text-sm">{error}</div>
+        <Button variant="outline" size="sm" onClick={() => sessionId && loadMemories(sessionId)} className="mt-3">
+          Retry
+        </Button>
       </div>
     );
   }
 
   return (
-    <div className={styles.container}>
-      <div className={styles.header}>
-        <h3>Memories</h3>
-        <span className={styles.count}>
+    <div className="flex flex-col h-full text-emblem-text">
+      <div className="flex justify-between items-center pb-3 border-b border-white/5 mb-3">
+        <h3 className="text-base font-display gradient-text">Memories</h3>
+        <span className="text-xs text-emblem-muted flex items-center gap-2">
           {memories.length} total
           {lastSynced && (
-            <span title={`Last synced: ${lastSynced.toLocaleString()}`} style={{ marginLeft: 8, opacity: 0.6, fontSize: '0.8em' }}>
-              ✓ synced
+            <span className="flex items-center gap-1 opacity-60 text-[10px]">
+              <Check className="w-3 h-3" />
+              synced
             </span>
           )}
         </span>
       </div>
 
       {/* Type filter */}
-      <div className={styles.filters}>
-        {['all', 'episodic', 'semantic', 'identity'].map((type) => (
+      <div className="flex gap-2 mb-3 flex-wrap">
+        {(['all', 'episodic', 'semantic', 'identity'] as const).map((type) => (
           <button
             key={type}
-            className={`${styles.filterBtn} ${selectedType === type ? styles.active : ''}`}
-            onClick={() => setSelectedType(type as typeof selectedType)}
-            style={type !== 'all' ? { borderColor: TYPE_COLORS[type] } : undefined}
+            className={cn(
+              'px-2.5 py-1 text-[11px] rounded border cursor-pointer transition-all',
+              'bg-emblem-surface-2 text-emblem-muted',
+              selectedType === type
+                ? 'border-emblem-secondary text-emblem-text bg-emblem-surface'
+                : 'border-white/10 hover:bg-emblem-surface hover:text-emblem-text'
+            )}
+            onClick={() => setSelectedType(type)}
+            style={type !== 'all' && selectedType === type ? { borderColor: TYPE_COLORS[type] } : undefined}
           >
             {type === 'all' ? 'All' : TYPE_LABELS[type]}
           </button>
@@ -150,34 +161,39 @@ export function MemoryBrowser({ sessionId }: MemoryBrowserProps) {
       </div>
 
       {/* Memory list */}
-      <div className={styles.memoryList}>
+      <div className="flex-1 overflow-y-auto flex flex-col gap-2 scrollbar-styled">
         {memories.length === 0 ? (
-          <div className={styles.empty}>No memories stored yet</div>
+          <div className="text-center py-5 text-emblem-muted text-sm">No memories stored yet</div>
         ) : (
           memories.map((memory) => (
             <div
               key={memory.id}
-              className={`${styles.memory} ${expandedId === memory.id ? styles.expanded : ''}`}
+              className={cn(
+                'px-3 py-2.5 rounded-lg cursor-pointer transition-all',
+                'bg-emblem-surface-2 border border-transparent',
+                'hover:bg-emblem-surface hover:border-white/10',
+                expandedId === memory.id && 'border-emblem-secondary'
+              )}
               onClick={() => setExpandedId(expandedId === memory.id ? null : memory.id)}
             >
-              <div className={styles.memoryHeader}>
+              <div className="flex justify-between items-center mb-2">
                 <span
-                  className={styles.typeBadge}
+                  className="px-2 py-0.5 rounded text-[10px] font-medium uppercase text-white"
                   style={{ backgroundColor: TYPE_COLORS[memory.type] }}
                 >
                   {TYPE_LABELS[memory.type]}
                 </span>
-                <span className={`${styles.importance} ${getImportanceClass(memory.importance)}`}>
+                <span className={cn('text-[11px] font-medium', getImportanceColor(memory.importance))}>
                   {memory.importance}%
                 </span>
               </div>
-              <div className={styles.memoryContent}>
+              <div className="text-[13px] leading-relaxed text-emblem-muted">
                 {expandedId === memory.id
                   ? memory.content
                   : memory.content.slice(0, 100) + (memory.content.length > 100 ? '...' : '')}
               </div>
               {expandedId === memory.id && (
-                <div className={styles.memoryMeta}>
+                <div className="flex justify-between mt-2 pt-2 border-t border-white/5 text-[11px] text-emblem-muted">
                   <span>ID: {memory.id.slice(0, 8)}...</span>
                   <span>{new Date(memory.timestamp).toLocaleString()}</span>
                 </div>
@@ -187,9 +203,10 @@ export function MemoryBrowser({ sessionId }: MemoryBrowserProps) {
         )}
       </div>
 
-      <button className={styles.refreshBtn} onClick={() => sessionId && loadMemories(sessionId)}>
+      <Button variant="outline" size="sm" onClick={() => sessionId && loadMemories(sessionId)} className="mt-3">
+        <RefreshCw className="w-3 h-3 mr-1" />
         Refresh
-      </button>
+      </Button>
     </div>
   );
 }

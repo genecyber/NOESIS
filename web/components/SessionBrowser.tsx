@@ -8,7 +8,9 @@
 import { useState, useEffect } from 'react';
 import { getSessions, deleteSession } from '@/lib/api';
 import type { Stance } from '@/lib/types';
-import styles from './SessionBrowser.module.css';
+import { cn } from '@/lib/utils';
+import { Button } from '@/components/ui';
+import { RefreshCw, Trash2 } from 'lucide-react';
 
 interface Session {
   id: string;
@@ -78,68 +80,77 @@ export function SessionBrowser({
 
   if (loading) {
     return (
-      <div className={styles.container}>
-        <div className={styles.header}>
-          <h3>Sessions</h3>
+      <div className="flex flex-col h-full text-emblem-text">
+        <div className="flex justify-between items-center pb-3 border-b border-white/5 mb-3">
+          <h3 className="text-base font-display gradient-text">Sessions</h3>
         </div>
-        <div className={styles.loading}>Loading sessions...</div>
+        <div className="text-center py-5 text-emblem-muted text-sm">Loading sessions...</div>
       </div>
     );
   }
 
   if (error) {
     return (
-      <div className={styles.container}>
-        <div className={styles.header}>
-          <h3>Sessions</h3>
+      <div className="flex flex-col h-full text-emblem-text">
+        <div className="flex justify-between items-center pb-3 border-b border-white/5 mb-3">
+          <h3 className="text-base font-display gradient-text">Sessions</h3>
         </div>
-        <div className={styles.error}>{error}</div>
-        <button className={styles.retryBtn} onClick={loadSessions}>Retry</button>
+        <div className="text-center py-5 text-emblem-danger text-sm">{error}</div>
+        <Button variant="outline" size="sm" onClick={loadSessions} className="mt-3">
+          Retry
+        </Button>
       </div>
     );
   }
 
   return (
-    <div className={styles.container}>
-      <div className={styles.header}>
-        <h3>Sessions</h3>
-        <button className={styles.newBtn} onClick={onNewSession}>+ New</button>
+    <div className="flex flex-col h-full text-emblem-text">
+      <div className="flex justify-between items-center pb-3 border-b border-white/5 mb-3">
+        <h3 className="text-base font-display gradient-text">Sessions</h3>
+        <Button size="sm" onClick={onNewSession}>
+          + New
+        </Button>
       </div>
 
-      <div className={styles.sessionList}>
+      <div className="flex-1 overflow-y-auto flex flex-col gap-2 scrollbar-styled">
         {sessions.length === 0 ? (
-          <div className={styles.empty}>No sessions yet</div>
+          <div className="text-center py-5 text-emblem-muted text-sm">No sessions yet</div>
         ) : (
           sessions.map(session => (
             <div
               key={session.id}
-              className={`${styles.session} ${session.id === currentSessionId ? styles.current : ''}`}
+              className={cn(
+                'flex justify-between items-center px-3 py-2.5 rounded-lg cursor-pointer transition-all',
+                'bg-emblem-surface-2 border border-transparent',
+                'hover:bg-emblem-surface hover:border-white/10',
+                session.id === currentSessionId && 'border-emblem-secondary bg-emblem-secondary/10'
+              )}
               onClick={() => onSelectSession(session.id)}
             >
-              <div className={styles.sessionInfo}>
-                <div className={styles.sessionId}>
+              <div className="flex flex-col gap-1">
+                <div className="font-mono text-xs text-emblem-muted">
                   {session.id.slice(0, 8)}...
                 </div>
-                <div className={styles.sessionMeta}>
+                <div className="flex gap-3 text-[11px]">
                   <span
-                    className={styles.frame}
+                    className="font-medium"
                     style={{ color: getFrameColor(session.stance.frame) }}
                   >
                     {session.stance.frame}
                   </span>
-                  <span className={styles.msgCount}>
+                  <span className="text-emblem-muted">
                     {session.messageCount} msgs
                   </span>
                 </div>
               </div>
-              <div className={styles.sessionActions}>
+              <div className="flex items-center">
                 {session.id !== currentSessionId && (
                   <button
-                    className={styles.deleteBtn}
+                    className="w-5 h-5 flex items-center justify-center rounded bg-transparent border border-white/10 text-emblem-muted text-xs cursor-pointer transition-all hover:bg-emblem-danger hover:border-emblem-danger hover:text-white"
                     onClick={(e) => handleDelete(session.id, e)}
                     title="Delete session"
                   >
-                    x
+                    <Trash2 className="w-3 h-3" />
                   </button>
                 )}
               </div>
@@ -148,9 +159,10 @@ export function SessionBrowser({
         )}
       </div>
 
-      <button className={styles.refreshBtn} onClick={loadSessions}>
+      <Button variant="outline" size="sm" onClick={loadSessions} className="mt-3">
+        <RefreshCw className="w-3 h-3 mr-1" />
         Refresh
-      </button>
+      </Button>
     </div>
   );
 }
