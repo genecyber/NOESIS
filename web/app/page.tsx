@@ -9,8 +9,8 @@ import EvolutionTimeline from '@/components/EvolutionTimeline';
 import SessionBrowser from '@/components/SessionBrowser';
 import MemoryBrowser from '@/components/MemoryBrowser';
 import EmpathyPanel from '@/components/EmpathyPanel';
-import { createSession, updateConfig, getState, getTimeline, getEvolution, resumeSession } from '@/lib/api';
-import { getLastSessionId, saveLastSessionId, getPreferences, savePreferences } from '@/lib/storage';
+import { createSession, updateConfig, getState, getTimeline, getEvolution, resumeSession, syncMemoriesToServer } from '@/lib/api';
+import { getLastSessionId, saveLastSessionId, getPreferences, savePreferences, getMemoriesFromStorage, getPendingSyncItems, removeSyncQueueItem, isOnline } from '@/lib/storage';
 import type { Stance, ModeConfig, ChatResponse, TimelineEntry, EvolutionSnapshot, EmotionContext } from '@/lib/types';
 import styles from './page.module.css';
 
@@ -40,6 +40,38 @@ export default function Home() {
     savePreferences({ activePanel: panel });
   }, []);
 
+  // Sync pending items on load (standard PWA pattern)
+  useEffect(() => {
+    const syncOnLoad = async () => {
+      if (!isOnline()) return;
+
+      try {
+        // Process any pending sync queue items
+        const pendingItems = await getPendingSyncItems();
+        for (const item of pendingItems) {
+          try {
+            if (item.type === 'memories' && item.id !== undefined) {
+              await syncMemoriesToServer(item.sessionId, item.data as Parameters<typeof syncMemoriesToServer>[1]);
+              await removeSyncQueueItem(item.id);
+              console.log('[Sync] Synced pending memories for session:', item.sessionId);
+            }
+          } catch (err) {
+            console.error('[Sync] Failed to sync item:', err);
+          }
+        }
+      } catch (err) {
+        console.error('[Sync] Failed to process sync queue:', err);
+      }
+    };
+
+    syncOnLoad();
+
+    // Also sync when coming back online
+    const handleOnline = () => syncOnLoad();
+    window.addEventListener('online', handleOnline);
+    return () => window.removeEventListener('online', handleOnline);
+  }, []);
+
   // Initialize session on mount - try to resume last session first
   useEffect(() => {
     const initSession = async () => {
@@ -54,6 +86,16 @@ export default function Home() {
               setStance(resumed.stance);
               setConfig(resumed.config);
               setError(null);
+
+              // Sync local memories to server on session resume
+              if (isOnline()) {
+                const localMemories = getMemoriesFromStorage(lastSessionId);
+                if (localMemories.length > 0) {
+                  syncMemoriesToServer(lastSessionId, localMemories).catch(err =>
+                    console.error('[Sync] Failed to sync memories on resume:', err)
+                  );
+                }
+              }
               return;
             }
           } catch {

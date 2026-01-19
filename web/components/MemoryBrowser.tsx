@@ -1,12 +1,14 @@
 /**
  * MemoryBrowser - Browse and search memories
  * INCEPTION Phase 7 - Memory browser
+ * Updated: Now persists to localStorage for offline access
  */
 
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { getMemories } from '@/lib/api';
+import { useMemories } from '@/lib/hooks/useLocalStorage';
 import styles from './MemoryBrowser.module.css';
 
 interface Memory {
@@ -14,7 +16,7 @@ interface Memory {
   type: 'episodic' | 'semantic' | 'identity';
   content: string;
   importance: number;
-  timestamp: Date;
+  timestamp: Date | number;
 }
 
 interface MemoryBrowserProps {
@@ -34,31 +36,50 @@ const TYPE_LABELS: Record<string, string> = {
 };
 
 export function MemoryBrowser({ sessionId }: MemoryBrowserProps) {
-  const [memories, setMemories] = useState<Memory[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [selectedType, setSelectedType] = useState<'all' | 'episodic' | 'semantic' | 'identity'>('all');
   const [expandedId, setExpandedId] = useState<string | null>(null);
+  const [lastSynced, setLastSynced] = useState<Date | null>(null);
 
-  const loadMemories = async () => {
-    if (!sessionId) return;
+  // Use localStorage for memory persistence
+  const {
+    memories: localMemories,
+    syncWithServer,
+    isLoaded: localLoaded
+  } = useMemories(sessionId);
 
+  // Filter memories based on selected type (computed during render, no state)
+  const memories: Memory[] = (selectedType === 'all'
+    ? localMemories
+    : localMemories.filter(m => m.type === selectedType)
+  ).sort((a, b) => b.timestamp - a.timestamp);
+
+  // Fetch from server and sync with localStorage
+  const loadMemories = useCallback(async (sid: string) => {
     try {
       setLoading(true);
-      const type = selectedType === 'all' ? undefined : selectedType;
-      const data = await getMemories(sessionId, type);
-      setMemories(data.memories);
+      // Fetch all memories from server (filter locally for better caching)
+      const data = await getMemories(sid);
+
+      // Sync server memories to localStorage
+      syncWithServer(data.memories);
+      setLastSynced(new Date());
       setError(null);
     } catch (err) {
+      // On error, we still have local memories to display
       setError(err instanceof Error ? err.message : 'Failed to load memories');
     } finally {
       setLoading(false);
     }
-  };
+  }, [syncWithServer]);
 
+  // Load memories on mount and when session changes
   useEffect(() => {
-    loadMemories();
-  }, [sessionId, selectedType]);
+    if (localLoaded && sessionId) {
+      loadMemories(sessionId);
+    }
+  }, [sessionId, localLoaded, loadMemories]);
 
   const getImportanceClass = (importance: number): string => {
     if (importance >= 80) return styles.highImportance;
@@ -95,7 +116,7 @@ export function MemoryBrowser({ sessionId }: MemoryBrowserProps) {
           <h3>Memories</h3>
         </div>
         <div className={styles.error}>{error}</div>
-        <button className={styles.retryBtn} onClick={loadMemories}>Retry</button>
+        <button className={styles.retryBtn} onClick={() => sessionId && loadMemories(sessionId)}>Retry</button>
       </div>
     );
   }
@@ -104,7 +125,14 @@ export function MemoryBrowser({ sessionId }: MemoryBrowserProps) {
     <div className={styles.container}>
       <div className={styles.header}>
         <h3>Memories</h3>
-        <span className={styles.count}>{memories.length} total</span>
+        <span className={styles.count}>
+          {memories.length} total
+          {lastSynced && (
+            <span title={`Last synced: ${lastSynced.toLocaleString()}`} style={{ marginLeft: 8, opacity: 0.6, fontSize: '0.8em' }}>
+              ✓ synced
+            </span>
+          )}
+        </span>
       </div>
 
       {/* Type filter */}
@@ -159,7 +187,7 @@ export function MemoryBrowser({ sessionId }: MemoryBrowserProps) {
         )}
       </div>
 
-      <button className={styles.refreshBtn} onClick={loadMemories}>
+      <button className={styles.refreshBtn} onClick={() => sessionId && loadMemories(sessionId)}>
         Refresh
       </button>
     </div>

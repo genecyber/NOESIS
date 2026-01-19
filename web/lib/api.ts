@@ -15,6 +15,40 @@ import type {
   ToolUseEvent,
 } from './types';
 
+/**
+ * Emotion context from webcam detection
+ */
+export interface EmotionContext {
+  currentEmotion: string;
+  valence: number;
+  arousal: number;
+  confidence: number;
+  stability: number;
+  suggestedEmpathyBoost: number;
+  promptContext: string;
+  timestamp: string;
+}
+
+/**
+ * Emotion detection response
+ */
+export interface EmotionDetectionResponse {
+  detected: boolean;
+  emotionContext: EmotionContext | null;
+  message?: string;
+  facesDetected?: number;
+  error?: string;
+}
+
+/**
+ * Emotion detector status
+ */
+export interface EmotionStatusResponse {
+  initialized: boolean;
+  detectorReady: boolean;
+  historyLength: number;
+}
+
 const API_BASE = '/api';
 // Direct connection to backend for SSE streaming (bypasses Next.js proxy buffering)
 // In production, use NEXT_PUBLIC_API_URL; in development, use localhost
@@ -47,6 +81,24 @@ export async function createSession(config?: Partial<ModeConfig>): Promise<Sessi
     method: 'POST',
     body: JSON.stringify({ config }),
   });
+}
+
+/**
+ * Resume an existing session by ID
+ * Returns null if session doesn't exist
+ */
+export async function resumeSession(sessionId: string): Promise<SessionResponse | null> {
+  try {
+    const state = await getState(sessionId);
+    return {
+      sessionId,
+      stance: state.stance,
+      config: state.config,
+    };
+  } catch {
+    // Session doesn't exist
+    return null;
+  }
 }
 
 /**
@@ -323,5 +375,79 @@ export async function executeCommand(
   return fetchJson(`${API_BASE}/command`, {
     method: 'POST',
     body: JSON.stringify({ sessionId, command, args }),
+  });
+}
+
+/**
+ * Sync data from browser to server (PWA background sync)
+ */
+export async function syncToServer(
+  sessionId: string,
+  type: 'messages' | 'memories' | 'preferences' | 'full',
+  data: unknown
+): Promise<{
+  success: boolean;
+  synced?: number | { messages: number; memories: number };
+  type: string;
+  error?: string;
+}> {
+  return fetchJson(`${API_BASE}/sync`, {
+    method: 'POST',
+    body: JSON.stringify({ sessionId, type, data }),
+  });
+}
+
+/**
+ * Sync memories from browser localStorage to server
+ */
+export async function syncMemoriesToServer(
+  sessionId: string,
+  memories: Array<{
+    id: string;
+    type: 'episodic' | 'semantic' | 'identity';
+    content: string;
+    importance: number;
+    timestamp: number;
+    metadata?: Record<string, unknown>;
+  }>
+): Promise<{
+  success: boolean;
+  synced: number;
+  total: number;
+}> {
+  return fetchJson(`${API_BASE}/sync`, {
+    method: 'POST',
+    body: JSON.stringify({
+      sessionId,
+      type: 'memories',
+      data: memories,
+    }),
+  });
+}
+
+/**
+ * Detect emotions from webcam frame
+ * @param image - Base64 encoded image (data URL or raw base64)
+ */
+export async function detectEmotion(image: string): Promise<EmotionDetectionResponse> {
+  return fetchJson<EmotionDetectionResponse>(`${API_BASE}/emotion/detect`, {
+    method: 'POST',
+    body: JSON.stringify({ image }),
+  });
+}
+
+/**
+ * Get emotion detector status
+ */
+export async function getEmotionStatus(): Promise<EmotionStatusResponse> {
+  return fetchJson<EmotionStatusResponse>(`${API_BASE}/emotion/status`);
+}
+
+/**
+ * Reset emotion detection history
+ */
+export async function resetEmotionHistory(): Promise<{ success: boolean; message: string }> {
+  return fetchJson<{ success: boolean; message: string }>(`${API_BASE}/emotion/reset`, {
+    method: 'POST',
   });
 }

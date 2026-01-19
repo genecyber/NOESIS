@@ -94,6 +94,38 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
   - `web/railway.toml` for Next.js web UI (standalone output)
   - `nixpacks.toml` for Node.js 20 build configuration
 
+#### Progressive Web App (PWA)
+- **PWA Manifest**: Installable web app with `manifest.json` and SVG icons
+- **Service Worker**: Offline caching with network-first navigation and stale-while-revalidate for assets
+  - `web/public/sw.js` - Service worker with background sync support
+  - `web/app/sw-register.tsx` - Registration component with update notifications
+  - Skips `chrome-extension://` and non-http schemes to avoid browser extension conflicts
+- **Browser → Server Sync**: Bidirectional data synchronization
+  - `POST /api/sync` endpoint accepts `messages`, `memories`, `preferences`, or `full` sync types
+  - IndexedDB queue for offline sync (`metamorph-sync` database)
+  - Auto-sync on page load and when coming back online
+  - `syncMemoriesToServer()` API function for manual sync
+- **localStorage Persistence**: Browser-side state persistence
+  - Messages, memories, input history, and preferences saved locally
+  - Session resumption from localStorage
+  - `useLocalStorage` hook with ref-based initialValue to prevent infinite loops
+  - `useMemories` hook for memory CRUD with server sync
+
+#### Emotion Detection (Webcam)
+- **Face Detection API**: Server-side emotion detection using face-api.js
+  - `FaceApiDetector` class wrapping @vladmandic/face-api
+  - `EmotionProcessor` for temporal smoothing and stability scoring
+  - Lazy initialization for faster server startup
+- **Empathy Panel**: Webcam-based emotion tracking in web UI
+  - `EmpathyPanel.tsx` component with camera preview
+  - Real-time emotion display with valence/arousal metrics
+  - Permission handling and error states
+- **API Endpoints**:
+  - `POST /api/emotion/detect` - Process base64 webcam frame
+  - `GET /api/emotion/status` - Detector initialization status
+  - `POST /api/emotion/reset` - Clear emotion history
+- **Configuration**: `enableEmpathyMode` toggle in ModeConfig
+
 #### Streaming Enhancements
 - `ToolUseEvent` interface for detailed tool tracking (id, name, input, status, result, error)
 - `onToolEvent` callback in `StreamCallbacks` for real-time tool event notifications

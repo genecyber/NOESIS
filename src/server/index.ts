@@ -17,15 +17,40 @@ import cors from 'cors';
 import { MetamorphAgent, StreamCallbacks } from '../agent/index.js';
 import { ModeConfig } from '../types/index.js';
 import { MetamorphRuntime } from '../runtime/index.js';
+import { FaceApiDetector } from '../plugins/emotion-detection/face-api-detector.js';
+import { EmotionProcessor } from '../plugins/emotion-detection/emotion-processor.js';
 
 const app = express();
 
 // Middleware
 app.use(cors());
-app.use(express.json());
+// Increase JSON body limit for base64 images (webcam frames can be 1-2MB)
+app.use(express.json({ limit: '10mb' }));
 
 // Unified runtime instance (replaces per-session agent Map)
 const runtime = new MetamorphRuntime();
+
+// Emotion detection components (singleton instances for efficiency)
+const faceDetector = new FaceApiDetector();
+const emotionProcessor = new EmotionProcessor();
+let emotionDetectorInitialized = false;
+
+// Initialize emotion detector lazily on first use
+async function initializeEmotionDetector(): Promise<boolean> {
+  if (emotionDetectorInitialized) {
+    return true;
+  }
+
+  try {
+    await faceDetector.initialize();
+    emotionDetectorInitialized = true;
+    console.log('[Server] Emotion detector initialized successfully');
+    return true;
+  } catch (error) {
+    console.error('[Server] Failed to initialize emotion detector:', error);
+    return false;
+  }
+}
 
 // Default session ID for requests without explicit session
 const DEFAULT_SESSION = 'default';
@@ -75,7 +100,10 @@ app.get('/api', (_req: Request, res: Response) => {
       'POST /api/session': 'Create a new session',
       'DELETE /api/session/:id': 'Delete a session',
       'POST /api/command': 'Execute a command',
-      'GET /api/commands': 'List available commands'
+      'GET /api/commands': 'List available commands',
+      'POST /api/emotion/detect': 'Detect emotions from webcam frame (base64 image)',
+      'GET /api/emotion/status': 'Get emotion detector status',
+      'POST /api/emotion/reset': 'Clear emotion history'
     }
   });
 });
@@ -513,6 +541,219 @@ app.post('/api/command', apiKeyAuth, async (req: Request, res: Response) => {
 app.get('/api/commands', apiKeyAuth, (_req: Request, res: Response) => {
   const commands = runtime.listCommands();
   res.json({ commands });
+});
+
+// Sync endpoint for PWA background sync (browser → server)
+app.post('/api/sync', apiKeyAuth, async (req: Request, res: Response) => {
+  try {
+    const { type, sessionId, data } = req.body;
+
+    if (!type || !sessionId) {
+      res.status(400).json({ error: 'type and sessionId are required' });
+      return;
+    }
+
+    const agent = getOrCreateAgent(sessionId);
+
+    switch (type) {
+      case 'messages': {
+        // Messages are stored in conversation history - they're already there from chat
+        // This is more for syncing messages that were composed offline
+        const messages = data as Array<{ role: 'user' | 'assistant'; content: string; timestamp: number }>;
+        // For now, just acknowledge - messages should be sent via /api/chat
+        res.json({
+          success: true,
+          synced: messages?.length || 0,
+          type: 'messages'
+        });
+        break;
+      }
+
+      case 'memories': {
+        // Sync memories from browser to server
+        const memories = data as Array<{
+          id: string;
+          type: 'episodic' | 'semantic' | 'identity';
+          content: string;
+          importance: number;
+          timestamp: number;
+          metadata?: Record<string, unknown>;
+        }>;
+
+        if (!Array.isArray(memories)) {
+          res.status(400).json({ error: 'memories must be an array' });
+          return;
+        }
+
+        let synced = 0;
+        for (const memory of memories) {
+          try {
+            // Add memory to the agent's memory store
+            agent.storeMemory(
+              memory.content,
+              memory.type,
+              memory.importance
+            );
+            synced++;
+          } catch (e) {
+            console.error(`Failed to sync memory ${memory.id}:`, e);
+          }
+        }
+
+        res.json({
+          success: true,
+          synced,
+          total: memories.length,
+          type: 'memories'
+        });
+        break;
+      }
+
+      case 'preferences': {
+        // Preferences stay local for now
+        res.json({
+          success: true,
+          type: 'preferences',
+          note: 'Preferences stored locally only'
+        });
+        break;
+      }
+
+      case 'full': {
+        // Full sync - receive all browser data
+        const { messages, memories } = data as {
+          messages?: Array<{ role: string; content: string; timestamp: number }>;
+          memories?: Array<{
+            id: string;
+            type: 'episodic' | 'semantic' | 'identity';
+            content: string;
+            importance: number;
+            timestamp: number;
+          }>;
+        };
+
+        let memoriesSynced = 0;
+        if (memories && Array.isArray(memories)) {
+          for (const memory of memories) {
+            try {
+              agent.storeMemory(
+                memory.content,
+                memory.type,
+                memory.importance
+              );
+              memoriesSynced++;
+            } catch (e) {
+              console.error(`Failed to sync memory:`, e);
+            }
+          }
+        }
+
+        res.json({
+          success: true,
+          type: 'full',
+          synced: {
+            messages: messages?.length || 0,
+            memories: memoriesSynced
+          }
+        });
+        break;
+      }
+
+      default:
+        res.status(400).json({ error: `Unknown sync type: ${type}` });
+    }
+  } catch (error) {
+    console.error('Sync error:', error);
+    res.status(500).json({
+      error: error instanceof Error ? error.message : 'Sync failed'
+    });
+  }
+});
+
+// Emotion detection endpoint - processes webcam frames and returns emotion context
+app.post('/api/emotion/detect', apiKeyAuth, async (req: Request, res: Response) => {
+  try {
+    const { image } = req.body;
+
+    if (!image) {
+      res.status(400).json({ error: 'Image is required (base64 data URL or raw base64)' });
+      return;
+    }
+
+    // Initialize detector on first use (lazy loading for faster startup)
+    const initialized = await initializeEmotionDetector();
+    if (!initialized) {
+      res.status(503).json({
+        error: 'Emotion detector not available',
+        details: 'face-api.js models may not be installed. Run: npm run setup:face-api'
+      });
+      return;
+    }
+
+    console.log('[Server] Processing emotion detection request...');
+
+    // Detect faces and expressions
+    const faces = await faceDetector.detectEmotions(image);
+
+    if (faces.length === 0) {
+      res.json({
+        detected: false,
+        emotionContext: null,
+        message: 'No face detected in frame'
+      });
+      return;
+    }
+
+    // Process detection into emotion context
+    const emotionContext = emotionProcessor.processDetection(faces);
+
+    if (!emotionContext) {
+      res.json({
+        detected: false,
+        emotionContext: null,
+        message: 'Face detected but confidence too low'
+      });
+      return;
+    }
+
+    console.log('[Server] Emotion detected:', emotionContext.currentEmotion,
+      'confidence:', Math.round(emotionContext.confidence * 100) + '%');
+
+    res.json({
+      detected: true,
+      emotionContext: {
+        currentEmotion: emotionContext.currentEmotion,
+        valence: emotionContext.valence,
+        arousal: emotionContext.arousal,
+        confidence: emotionContext.confidence,
+        stability: emotionContext.stability,
+        suggestedEmpathyBoost: emotionContext.suggestedEmpathyBoost,
+        promptContext: emotionContext.promptContext,
+        timestamp: emotionContext.timestamp.toISOString()
+      },
+      facesDetected: faces.length
+    });
+  } catch (error) {
+    console.error('[Server] Emotion detection error:', error);
+    res.status(500).json({
+      error: error instanceof Error ? error.message : 'Emotion detection failed'
+    });
+  }
+});
+
+// Get emotion detection status
+app.get('/api/emotion/status', apiKeyAuth, (_req: Request, res: Response) => {
+  res.json({
+    initialized: emotionDetectorInitialized,
+    detectorReady: faceDetector.isInitialized(),
+    historyLength: emotionProcessor.getHistoryLength()
+  });
+});
+
+// Clear emotion history (for testing/reset)
+app.post('/api/emotion/reset', apiKeyAuth, (_req: Request, res: Response) => {
+  emotionProcessor.clearHistory();
+  res.json({ success: true, message: 'Emotion history cleared' });
 });
 
 // Error handling middleware

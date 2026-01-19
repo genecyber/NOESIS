@@ -7,6 +7,10 @@
 - [Overview](#overview)
 - [Quick Start](#quick-start)
 - [Web Interface](#web-interface)
+  - [Panels](#panels)
+  - [Features](#features)
+  - [Running the Web UI](#running-the-web-ui)
+  - [Deployment (Railway)](#deployment-railway)
 - [Skills & Capabilities Reference](#skills--capabilities-reference)
   - [Conversation Skills](#conversation-skills)
   - [Introspection Skills](#introspection-skills)
@@ -20,7 +24,17 @@
   - [Session Management Skills](#session-management-skills)
   - [System Skills](#system-skills)
 - [Subagent Capabilities](#subagent-capabilities)
+  - [Explorer Agent](#explorer-agent)
+  - [Verifier Agent](#verifier-agent)
+  - [Reflector Agent](#reflector-agent)
+  - [Dialectic Agent](#dialectic-agent)
 - [Transformation Operators](#transformation-operators)
+  - [Frame Operators](#frame-operators)
+  - [Value Operators](#value-operators)
+  - [Coherence Operators](#coherence-operators)
+  - [Identity Operators](#identity-operators)
+  - [Reasoning Operators](#reasoning-operators)
+  - [Sentience Operators](#sentience-operators)
 - [Architecture](#architecture)
 - [The Stance Object](#the-stance-object)
 - [API Endpoints](#api-endpoints)
@@ -29,6 +43,8 @@
 - [Testing](#testing)
 - [Development](#development)
 - [Ralph Loop Evolution](#ralph-loop-evolution)
+- [License](#license)
+- [Contributing](#contributing)
 
 ---
 
@@ -79,6 +95,7 @@ The web UI provides a full-featured interface for interacting with METAMORPH:
 |-------|-------------|
 | **Stance** | Current frame, self-model, objective, values (with bars), and sentience levels |
 | **Config** | Adjust intensity, coherence floor, sentience level, drift settings |
+| **Empathy** | Webcam-based emotion detection with valence/arousal metrics |
 | **Timeline** | View operators applied per turn with transformation scores |
 | **Evolution** | Visualize stance drift over time with snapshots |
 | **Sessions** | Browse, create, switch, and delete sessions |
@@ -93,6 +110,9 @@ The web UI provides a full-featured interface for interacting with METAMORPH:
 - **Custom Scrollbars**: Styled gradient scrollbars matching theme
 - **Connection Status**: Floating indicator shows connection state
 - **Transformation Triggers**: Asking about feelings, identity, or hypotheticals triggers operators
+- **PWA Support**: Installable as a Progressive Web App with offline caching
+- **Browser Sync**: localStorage persistence with automatic server synchronization
+- **Empathy Mode**: Webcam-based emotion detection for context-aware responses
 
 ### Running the Web UI
 
@@ -497,6 +517,10 @@ interface Stance {
 | GET | `/api/evolution/:sessionId` | Evolution snapshots |
 | GET | `/api/export` | Export session state |
 | POST | `/api/import` | Import session state |
+| POST | `/api/sync` | Sync browser data to server (PWA) |
+| POST | `/api/emotion/detect` | Detect emotions from webcam frame |
+| GET | `/api/emotion/status` | Get emotion detector status |
+| POST | `/api/emotion/reset` | Clear emotion history |
 
 ## Configuration
 
@@ -525,6 +549,7 @@ interface ModeConfig {
   enableAutoEvolution: boolean;      // Auto-detect evolution opportunities (default: true)
   enableIdentityPersistence: boolean; // Auto-checkpoint identity state (default: true)
   enableProactiveMemory: boolean;    // Auto-inject relevant memories (default: true)
+  enableEmpathyMode: boolean;        // Webcam emotion detection (default: false)
 }
 ```
 

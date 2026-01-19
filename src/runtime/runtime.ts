@@ -6,6 +6,7 @@
 
 import { SessionManager, SessionManagerOptions } from './session/session-manager.js';
 import { Session } from './session/session.js';
+import { FileAdapter } from './session/persistence/file-adapter.js';
 import { runtimeRegistry } from './commands/registry.js';
 import { CommandContext, OutputHelper } from './commands/context.js';
 import { CommandResult } from './commands/handler.js';
@@ -13,7 +14,10 @@ import { AgentResponse, ModeConfig } from '../types/index.js';
 import type { StreamCallbacks } from '../agent/index.js';
 
 export interface RuntimeOptions extends SessionManagerOptions {
-  // Future: add runtime-level config
+  /** Use in-memory storage (default: false - uses file-based storage) */
+  inMemory?: boolean;
+  /** Directory for session files (default: ./data/sessions) */
+  sessionDataDir?: string;
 }
 
 export interface CommandExecutionResult {
@@ -58,7 +62,18 @@ export class MetamorphRuntime {
   public readonly sessions: SessionManager;
 
   constructor(options: RuntimeOptions = {}) {
-    this.sessions = new SessionManager(options);
+    // Use file-based persistence by default, in-memory for tests
+    let persistence = options.persistence;
+    if (!persistence && !options.inMemory) {
+      persistence = new FileAdapter({
+        dataDir: options.sessionDataDir ?? './data/sessions'
+      });
+    }
+
+    this.sessions = new SessionManager({
+      ...options,
+      persistence
+    });
   }
 
   /**
