@@ -166,7 +166,8 @@ export const ModeConfigSchema = z.object({
 
   // Auto-command system - Agent-invocable and hook-triggered commands
   enableAutoCommands: z.boolean().default(true),  // Master toggle for auto-invoking commands
-  autoCommandThreshold: z.number().min(0).max(1).default(0.7),  // Confidence threshold for triggering
+  autoCommandThreshold: z.number().min(0).max(1).default(0.7),  // Confidence threshold for regex triggers
+  semanticTriggerThreshold: z.number().min(0).max(1).default(0.4),  // Cosine similarity threshold for semantic triggers (tuned for MiniLM)
   maxAutoCommandsPerTurn: z.number().min(0).max(5).default(2),  // Max commands to auto-invoke per turn
   autoCommandWhitelist: z.array(z.string()).default([]),  // Only these can auto-invoke (empty = all)
   autoCommandBlacklist: z.array(z.string()).default([])  // Never auto-invoke these

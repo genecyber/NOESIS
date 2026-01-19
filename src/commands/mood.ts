@@ -10,6 +10,27 @@ export const moodCommand: CommandDefinition = {
   name: 'mood',
   aliases: ['emotion', 'sentiment', 'feeling'],
   description: 'Show emotional arc and sentiment tracking for the conversation. Use when emotional patterns need to be understood or when de-escalation may be needed.',
+
+  // Semantic triggers (preferred)
+  semanticTriggers: [
+    {
+      type: 'sentiment_shift',
+      intents: [
+        'how are we feeling in this conversation',
+        'what is the emotional tone of our chat',
+        'analyze the sentiment of our discussion',
+        'the mood seems to have changed',
+        'this conversation is getting emotional',
+        'track the feelings throughout our talk',
+        'emotional arc of our interaction',
+        'are things getting heated or calming down',
+        'how has the mood shifted'
+      ],
+      threshold: 0.4
+    }
+  ],
+
+  // Regex triggers (fallback)
   triggers: [
     {
       type: 'sentiment_shift',

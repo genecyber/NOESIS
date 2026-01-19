@@ -59,6 +59,33 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
   - `src/commands/transformations.ts` - Transformation history
   - `src/commands/identity.ts` - Identity and sentience info
 
+#### Semantic Trigger Detection (Embeddings)
+- **Embedding Service**: Local-first embedding system using @xenova/transformers
+  - `EmbeddingService` class with automatic provider selection and caching
+  - Uses MiniLM-L6-v2 model (~23MB, 384-dimensional embeddings) by default
+  - LRU cache for embedding reuse across requests
+  - Cosine similarity for semantic matching
+  - `findMostSimilar()` for ranking candidate texts
+- **Embedding Providers**: Pluggable provider architecture
+  - `LocalEmbeddingProvider` using @xenova/transformers (default, no API key needed)
+  - `OpenAIEmbeddingProvider` (stub) for text-embedding-3-small (1536 dimensions)
+  - `OllamaEmbeddingProvider` (stub) for nomic-embed-text (768 dimensions)
+  - `EmbeddingProvider` interface for custom providers
+- **Semantic Trigger Detector**: Intent-based command triggering
+  - `SemanticTriggerDetector` class for embedding-based trigger matching
+  - Pre-computes embeddings for command intents at initialization
+  - Matches user messages against intent vectors via cosine similarity
+  - Supports stance conditions for context-aware triggering
+  - Configurable threshold (default: 0.4, tuned for MiniLM)
+- **Command Enhancements**: Commands now have `semanticTriggers` arrays
+  - Each trigger has `intents` (example phrases), `threshold`, and optional `stanceConditions`
+  - Semantic matching supplements existing regex patterns
+  - Commands: memories, evolution, identity, mood, coherence, strategies
+- **Configuration Options** (ModeConfig):
+  - `semanticTriggerThreshold: number` (default: 0.4) - Cosine similarity threshold
+- **Test Suite**: Comprehensive tests for embedding system
+  - `src/test/embeddings.test.ts` - 22 tests covering service, providers, triggers
+
 ### Changed
 - `PreTurnResult` now includes `autoInvokedCommands` field for transparency
 - Agent `chat()` and `chatStream()` methods detect and execute auto-commands

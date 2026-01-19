@@ -12,6 +12,25 @@ export const strategiesCommand: CommandDefinition = {
   name: 'strategies',
   aliases: ['strategy', 'strat'],
   description: 'View and manage multi-turn operator strategies. Use when the user asks about approach, game plan, or how to tackle a complex topic.',
+
+  // Semantic triggers (preferred)
+  semanticTriggers: [
+    {
+      type: 'strategy_inquiry',
+      intents: [
+        'what is your approach or strategy',
+        'what is the game plan here',
+        'how should we tackle this topic',
+        'what strategic approach will you use',
+        'plan for handling this conversation',
+        'multi-turn strategy for this discussion',
+        'how will you approach this complex topic'
+      ],
+      threshold: 0.4
+    }
+  ],
+
+  // Regex triggers (fallback)
   triggers: [
     {
       type: 'strategy_inquiry',

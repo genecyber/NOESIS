@@ -16,6 +16,7 @@ METAMORPH wraps Claude via the official `@anthropic-ai/claude-agent-sdk` with tr
 - **Semantic Memory**: TF-IDF embeddings with similarity search (Ralph Iteration 4)
 - **Auto-Evolution**: Self-initiated introspection triggers (Ralph Iteration 4)
 - **Context Management**: Intelligent window compaction (Ralph Iteration 4)
+- **Semantic Triggers**: Local embeddings (MiniLM-L6-v2) for intent-based command detection
 
 ## Quick Start
 
@@ -138,21 +139,24 @@ METAMORPH provides extensive skills organized by category. All capabilities can 
 
 ### Autonomous Commands
 
-Commands that can be auto-invoked based on conversation context:
+Commands that can be auto-invoked based on conversation context using **semantic trigger detection**:
 
-| Command | Triggers | Description | Programmatic |
-|---------|----------|-------------|--------------|
-| **memories** | "remember when...", "recall...", "what was..." | Query stored memories | `agent.invokeCommand('memories')` |
-| **evolution** | "how have you evolved", "stance history" | View stance evolution timeline | `agent.invokeCommand('evolution')` |
-| **strategies** | "what's your strategy", "game plan" | Multi-turn operator sequences | `agent.invokeCommand('strategies')` |
-| **mood** | "how are we feeling", "emotional state" | Emotional arc analysis | `agent.invokeCommand('mood')` |
-| **coherence** | "coherence", "drift budget" | Coherence forecast and budget | `agent.invokeCommand('coherence')` |
+| Command | Example Intents | Description | Programmatic |
+|---------|-----------------|-------------|--------------|
+| **memories** | "recall from earlier", "what do you remember" | Query stored memories | `agent.invokeCommand('memories')` |
+| **evolution** | "how have you changed", "your transformation journey" | View stance evolution timeline | `agent.invokeCommand('evolution')` |
+| **strategies** | "what's your approach", "game plan for this" | Multi-turn operator sequences | `agent.invokeCommand('strategies')` |
+| **mood** | "emotional tone of our chat", "how has the mood shifted" | Emotional arc analysis | `agent.invokeCommand('mood')` |
+| **coherence** | "coherence budget", "staying consistent" | Coherence forecast and budget | `agent.invokeCommand('coherence')` |
 | **transformations** | "what happened", "why the shift" | Transformation history | `agent.invokeCommand('transformations')` |
-| **identity** | "who are you", "your values" | Identity and sentience info | `agent.invokeCommand('identity')` |
+| **identity** | "who are you", "tell me about yourself" | Identity and sentience info | `agent.invokeCommand('identity')` |
+
+**Trigger Detection**: Uses local embeddings (MiniLM-L6-v2) for semantic similarity matching against command intents. Regex patterns serve as fallback when embeddings are unavailable.
 
 **Configuration Options**:
 - `enableAutoCommands: boolean` - Master toggle (default: true)
-- `autoCommandThreshold: number` - Confidence threshold (default: 0.7)
+- `autoCommandThreshold: number` - Confidence threshold for regex (default: 0.7)
+- `semanticTriggerThreshold: number` - Cosine similarity threshold (default: 0.4)
 - `maxAutoCommandsPerTurn: number` - Rate limiting (default: 2)
 - `autoCommandWhitelist: string[]` - Only these can auto-invoke
 - `autoCommandBlacklist: string[]` - Never auto-invoke these

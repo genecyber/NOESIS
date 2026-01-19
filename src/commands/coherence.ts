@@ -14,6 +14,28 @@ export const coherenceCommand: CommandDefinition = {
   name: 'coherence',
   aliases: ['coh', 'budget'],
   description: 'Show coherence forecast, available budget, and operator drift costs. Auto-triggered when coherence is low.',
+
+  // Semantic triggers (preferred)
+  semanticTriggers: [
+    {
+      type: 'coherence_warning',
+      intents: [
+        'check the coherence of our conversation',
+        'am I losing consistency or coherence',
+        'what is the drift budget',
+        'operator transformation costs',
+        'staying consistent and coherent',
+        'risk of becoming incoherent',
+        'how much drift can we handle'
+      ],
+      threshold: 0.4,
+      stanceConditions: [
+        { field: 'cumulativeDrift', operator: 'gt', value: 50 }
+      ]
+    }
+  ],
+
+  // Regex triggers (fallback)
   triggers: [
     {
       type: 'coherence_warning',

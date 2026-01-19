@@ -1,10 +1,13 @@
 /**
  * Command Registry - Central registry for all slash commands
  * Enables agent-invocable and hook-triggered command execution
+ * Supports both regex and semantic (embedding-based) trigger detection
  */
 
 import type { MetamorphAgent } from '../agent/index.js';
 import type { Stance, ModeConfig } from '../types/index.js';
+import type { SemanticTriggerDetector } from '../embeddings/semantic-triggers.js';
+import type { EmbeddingService } from '../embeddings/service.js';
 
 // ============================================================================
 // Types
@@ -25,6 +28,13 @@ export interface TriggerCondition {
   patterns: RegExp[];
   stanceConditions?: StanceCondition[];
   confidence: number; // 0-1 threshold for triggering
+}
+
+export interface SemanticTrigger {
+  type: TriggerType;
+  intents: string[];  // Example phrases representing this intent
+  threshold: number;  // Cosine similarity threshold (0-1)
+  stanceConditions?: StanceCondition[];
 }
 
 export interface StanceCondition {
@@ -53,7 +63,8 @@ export interface CommandDefinition {
   name: string;
   aliases: string[];
   description: string;
-  triggers: TriggerCondition[];
+  triggers: TriggerCondition[];           // Regex-based triggers (fallback)
+  semanticTriggers?: SemanticTrigger[];   // Semantic/embedding-based triggers (preferred)
   execute: (context: CommandContext, args: string[]) => CommandResult;
   agentInvocable: boolean;
   hookTriggerable: boolean;
@@ -64,6 +75,7 @@ export interface DetectedTrigger {
   trigger: TriggerCondition;
   confidence: number;
   matchedPattern?: string;
+  semantic?: boolean;  // True if detected via semantic matching
 }
 
 // ============================================================================
@@ -73,6 +85,8 @@ export interface DetectedTrigger {
 class CommandRegistry {
   private commands: Map<string, CommandDefinition> = new Map();
   private aliasMap: Map<string, string> = new Map();
+  private semanticDetector: SemanticTriggerDetector | null = null;
+  private semanticInitialized = false;
 
   /**
    * Register a command
@@ -116,6 +130,41 @@ class CommandRegistry {
   }
 
   /**
+   * List commands with semantic triggers
+   */
+  listWithSemanticTriggers(): CommandDefinition[] {
+    return this.list().filter(cmd => cmd.semanticTriggers && cmd.semanticTriggers.length > 0);
+  }
+
+  /**
+   * Initialize semantic trigger detection
+   */
+  async initializeSemanticTriggers(embeddingService: EmbeddingService): Promise<void> {
+    if (this.semanticInitialized) return;
+
+    const { SemanticTriggerDetector } = await import('../embeddings/semantic-triggers.js');
+    this.semanticDetector = new SemanticTriggerDetector(embeddingService);
+
+    // Collect commands with semantic triggers
+    const commandsWithSemantic = this.listWithSemanticTriggers().map(cmd => ({
+      name: cmd.name,
+      semanticTriggers: cmd.semanticTriggers,
+    }));
+
+    if (commandsWithSemantic.length > 0) {
+      await this.semanticDetector.initialize(commandsWithSemantic);
+      this.semanticInitialized = true;
+    }
+  }
+
+  /**
+   * Check if semantic triggers are initialized
+   */
+  isSemanticInitialized(): boolean {
+    return this.semanticInitialized;
+  }
+
+  /**
    * Execute a command
    */
   execute(nameOrAlias: string, context: CommandContext, args: string[] = []): CommandResult | null {
@@ -128,8 +177,57 @@ class CommandRegistry {
 
   /**
    * Detect which commands should be triggered based on message and stance
+   * Tries semantic detection first, falls back to regex
+   */
+  async detectTriggersAsync(
+    message: string,
+    stance: Stance,
+    config: ModeConfig,
+    maxTriggers: number = 2
+  ): Promise<DetectedTrigger[]> {
+    if (!config.enableAutoCommands) {
+      return [];
+    }
+
+    // Try semantic detection first if available
+    if (this.semanticDetector && this.semanticInitialized) {
+      try {
+        const semanticTriggers = await this.semanticDetector.detectTriggers(
+          message,
+          stance,
+          config,
+          maxTriggers
+        );
+
+        if (semanticTriggers.length > 0) {
+          // Mark as semantic matches
+          return semanticTriggers.map(t => ({ ...t, semantic: true }));
+        }
+      } catch (error) {
+        console.warn('Semantic trigger detection failed, falling back to regex:', error);
+      }
+    }
+
+    // Fall back to regex detection
+    return this.detectTriggersRegex(message, stance, config, maxTriggers);
+  }
+
+  /**
+   * Synchronous regex-based trigger detection (original method, kept for backward compatibility)
    */
   detectTriggers(
+    message: string,
+    stance: Stance,
+    config: ModeConfig,
+    maxTriggers: number = 2
+  ): DetectedTrigger[] {
+    return this.detectTriggersRegex(message, stance, config, maxTriggers);
+  }
+
+  /**
+   * Regex-based trigger detection
+   */
+  private detectTriggersRegex(
     message: string,
     stance: Stance,
     config: ModeConfig,
@@ -171,7 +269,8 @@ class CommandRegistry {
                   command: command.name,
                   trigger,
                   confidence,
-                  matchedPattern: pattern.source
+                  matchedPattern: pattern.source,
+                  semantic: false
                 });
                 break; // Only one trigger per command
               }

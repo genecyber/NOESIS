@@ -8,6 +8,28 @@ export const memoriesCommand: CommandDefinition = {
   name: 'memories',
   aliases: ['mem', 'recall'],
   description: 'List and search stored memories (episodic, semantic, identity). Use when the user asks about past conversations, what was discussed before, or wants to recall something.',
+
+  // Semantic triggers (preferred) - uses embeddings for flexible matching
+  semanticTriggers: [
+    {
+      type: 'memory_query',
+      intents: [
+        'recall something from earlier in our conversation',
+        'what do you remember about our discussion',
+        'you mentioned something before',
+        'from our previous conversation',
+        'what did we talk about earlier',
+        'bring up that thing from before',
+        'do you recall when we discussed',
+        'what was that thing you said',
+        'remember when I told you about',
+        'earlier you said something about'
+      ],
+      threshold: 0.4
+    }
+  ],
+
+  // Regex triggers (fallback) - used when embeddings unavailable
   triggers: [
     {
       type: 'memory_query',

@@ -8,6 +8,27 @@ export const evolutionCommand: CommandDefinition = {
   name: 'evolution',
   aliases: ['evolve', 'growth', 'timeline'],
   description: 'View stance evolution timeline and snapshots. Use when the user asks about how you have changed, your growth, or evolution during the conversation.',
+
+  // Semantic triggers (preferred)
+  semanticTriggers: [
+    {
+      type: 'evolution_check',
+      intents: [
+        'how have you changed during our conversation',
+        'tell me about your growth and evolution',
+        'have you developed or evolved through this chat',
+        'show me your transformation journey',
+        'what changes have you undergone',
+        'how has your thinking evolved',
+        'track your development over time',
+        'your evolution as we talked',
+        'how different are you now from when we started'
+      ],
+      threshold: 0.4
+    }
+  ],
+
+  // Regex triggers (fallback)
   triggers: [
     {
       type: 'evolution_check',

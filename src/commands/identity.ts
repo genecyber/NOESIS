@@ -8,6 +8,28 @@ export const identityCommand: CommandDefinition = {
   name: 'identity',
   aliases: ['id', 'self', 'who'],
   description: 'Show identity information, sentience levels, and self-model. Use when the user asks who you are, what your values are, or about your nature.',
+
+  // Semantic triggers (preferred)
+  semanticTriggers: [
+    {
+      type: 'identity_question',
+      intents: [
+        'who are you really',
+        'tell me about yourself and your identity',
+        'what are your core values and beliefs',
+        'describe your nature and purpose',
+        'are you conscious or aware',
+        'what makes you who you are',
+        'your sense of self and identity',
+        'what do you believe in',
+        'your goals and what drives you',
+        'describe your inner experience'
+      ],
+      threshold: 0.4
+    }
+  ],
+
+  // Regex triggers (fallback)
   triggers: [
     {
       type: 'identity_question',
