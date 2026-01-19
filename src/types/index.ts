@@ -170,7 +170,16 @@ export const ModeConfigSchema = z.object({
   semanticTriggerThreshold: z.number().min(0).max(1).default(0.4),  // Cosine similarity threshold for semantic triggers (tuned for MiniLM)
   maxAutoCommandsPerTurn: z.number().min(0).max(5).default(2),  // Max commands to auto-invoke per turn
   autoCommandWhitelist: z.array(z.string()).default([]),  // Only these can auto-invoke (empty = all)
-  autoCommandBlacklist: z.array(z.string()).default([])  // Never auto-invoke these
+  autoCommandBlacklist: z.array(z.string()).default([]),  // Never auto-invoke these
+
+  // Ralph Iteration 5 - Proactive Memory Injection
+  enableProactiveMemory: z.boolean().default(true),  // Auto-inject relevant memories into context
+
+  // Ralph Iteration 4 - Auto-Evolution
+  enableAutoEvolution: z.boolean().default(true),  // Auto-detect evolution opportunities
+
+  // Ralph Iteration 5 - Identity Persistence
+  enableIdentityPersistence: z.boolean().default(true)  // Auto-checkpoint identity state
 });
 
 export type ModeConfig = z.infer<typeof ModeConfigSchema>;

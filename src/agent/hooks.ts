@@ -28,6 +28,7 @@ import {
   generateCoherenceForecast
 } from '../core/coherence-planner.js';
 import type { MemoryStore } from '../memory/store.js';
+import { memoryInjector } from '../memory/proactive-injection.js';
 
 // Track triggers for each turn (used for operator learning)
 let lastTurnTriggers: TriggerResult[] = [];
@@ -93,11 +94,46 @@ export function createTransformationHooks(memoryStore?: MemoryStore): Transforma
       }
 
       // 4. Build the system prompt with stance and operators
-      const systemPrompt = buildSystemPrompt({
+      let systemPrompt = buildSystemPrompt({
         stance: stanceAfterPlan,
         operators,
         config
       });
+
+      // 5. Proactive Memory Injection (Ralph Iteration 5 - Feature 4)
+      if (memoryStore && config.enableProactiveMemory !== false) {
+        try {
+          const allMemories = memoryStore.searchMemories({ limit: 100 });
+          if (allMemories.length > 0) {
+            const injection = await memoryInjector.findMemoriesToInject(
+              message,
+              allMemories,
+              stanceAfterPlan
+            );
+
+            if (injection.memories.length > 0) {
+              // Build memory injection section
+              const memoryLines = injection.memories.map(m =>
+                `- [${m.memory.type}] ${m.memory.content} (relevance: ${Math.round(m.totalScore * 100)}%)`
+              );
+
+              const memorySection = `
+## Relevant Context from Memory
+
+The following memories may be relevant to this conversation. Draw on them naturally if appropriate:
+
+${memoryLines.join('\n')}
+
+${injection.attribution.length > 0 ? `Consider: ${injection.attribution.join(', ')}` : ''}`;
+
+              systemPrompt = systemPrompt + '\n' + memorySection;
+            }
+          }
+        } catch (error) {
+          // Memory injection is optional - don't fail the turn if it errors
+          console.warn('[METAMORPH] Memory injection error:', error);
+        }
+      }
 
       return {
         systemPrompt,

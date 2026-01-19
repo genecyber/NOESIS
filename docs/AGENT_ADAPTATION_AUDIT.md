@@ -10,8 +10,16 @@
 | Status | Count |
 |--------|-------|
 | WORKING | 11 |
-| NOT INTEGRATED | 6 |
+| NEWLY INTEGRATED | 3 |
+| NOT INTEGRATED | 3 |
 | STUB/INCOMPLETE | 3 |
+
+**Update 2026-01-18:** Integrated 3 previously dormant mechanisms into the chat loop:
+- Auto-Evolution Manager (now detects evolution triggers every turn)
+- Identity Persistence Manager (now creates checkpoints every 10 turns)
+- Proactive Memory Injection (now injects relevant memories into system prompt)
+
+All new integrations controllable via config flags (`enableAutoEvolution`, `enableIdentityPersistence`, `enableProactiveMemory`).
 
 **Critical Finding:** All mechanisms use in-memory SQLite storage (`MemoryStore({ inMemory: true })`), causing complete data loss on server restart.
 
@@ -132,36 +140,47 @@
 
 ---
 
-## Not Integrated (6) - Code Exists But Never Called
+## Newly Integrated (3) - Now Called in Chat Loop
 
-### 1. Auto-Evolution Manager
+### 1. Auto-Evolution Manager ✅ INTEGRATED
 - **Location:** `src/core/auto-evolution.ts` (lines 1-435)
 - **Desired Outcome:** Self-detect evolution opportunities without user input via 6 trigger types
-- **Trigger:** Should be called during chat, but only used in CLI
-- **Status:** STUB - Defined but NOT INTEGRATED into main chat loop
+- **Trigger:** Now called in post-turn of both `chat()` and `chatStream()` methods
+- **Status:** ✅ INTEGRATED - Added 2026-01-18
+- **Integration:**
+  - `src/agent/index.ts` lines 526-538: `autoEvolutionManager.recordStance()`, `recordCoherence()`, and `checkForTriggers()` called every turn
+  - Controlled by `config.enableAutoEvolution` (defaults to true)
+  - Triggers logged in verbose mode
 - **Evidence:**
   - Lines 13-31: 6 trigger types defined: pattern_repetition, sentience_plateau, identity_drift, value_stagnation, coherence_degradation, growth_opportunity
   - Lines 133-181: `checkForTriggers()` detects each trigger type
   - Lines 357-385: `generateProposal()` creates evolution suggestions
-- **Gap:** No code path to auto-trigger evolution proposals during conversations. Only used in CLI.
 
-### 2. Identity Persistence Manager
+### 2. Identity Persistence Manager ✅ INTEGRATED
 - **Location:** `src/core/identity-persistence.ts` (lines 1-463)
 - **Desired Outcome:** Create identity checkpoints, track core values, detect drift, restore identity across sessions
-- **Trigger:** Should be called every turn via `recordTurn()`, but never called
-- **Status:** PARTIAL - Manager defined and auto-checkpoint logic exists, but NOT automatically triggered
+- **Trigger:** Now called every turn via `recordTurn()` and auto-checkpointing
+- **Status:** ✅ INTEGRATED - Added 2026-01-18
+- **Integration:**
+  - `src/agent/index.ts` lines 540-549: `identityPersistence.recordTurn()` and `createCheckpoint()` called
+  - Auto-checkpoints created when `shouldAutoCheckpoint()` returns true (every 10 turns by default)
+  - Controlled by `config.enableIdentityPersistence` (defaults to true)
 - **Evidence:**
   - Lines 137-180: `createCheckpoint()` creates snapshots with fingerprints and emergent traits
   - Lines 233-291: `diffCheckpoints()` calculates identity drift magnitude and significance
   - Lines 362-382: `addCoreValue()` reinforces core values across sessions
   - Lines 394-397: `shouldAutoCheckpoint()` checks if checkpoint due
-- **Gap:** `recordTurn()` (line 402) never called during conversations, so auto-checkpoint never triggered
 
-### 3. Proactive Memory Injection
+### 3. Proactive Memory Injection ✅ INTEGRATED
 - **Location:** `src/memory/proactive-injection.ts` (lines 1-394)
 - **Desired Outcome:** Auto-inject relevant past memories into context based on semantic similarity
-- **Trigger:** Should be pre-turn, but NOT currently called
-- **Status:** STUB - Defined but NOT INTEGRATED into agent chat loop
+- **Trigger:** Now called in pre-turn hook
+- **Status:** ✅ INTEGRATED - Added 2026-01-18
+- **Integration:**
+  - `src/agent/hooks.ts` lines 103-136: `memoryInjector.findMemoriesToInject()` called during pre-turn
+  - Relevant memories appended to system prompt with relevance scores
+  - `memoryInjector.recordTurn()` called in post-turn for cooldown tracking
+  - Controlled by `config.enableProactiveMemory` (defaults to true)
 - **Evidence:**
   - Lines 71-391: `ProactiveMemoryInjector` class fully implemented with:
     - Semantic similarity scoring (line 184)
@@ -169,7 +188,10 @@
     - Stance alignment (line 145-170)
     - Cooldown tracking (line 125-129)
   - Lines 106-109: `recordTurn()` method exists to track turns for cooldown
-- **Gap:** No invocation in hooks.ts or agent/index.ts
+
+---
+
+## Not Integrated (3) - Code Exists But Never Called
 
 ### 4. Coherence Gates for Streaming
 - **Location:** `src/streaming/coherence-gates.ts` (lines 1-100+)

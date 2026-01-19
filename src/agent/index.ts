@@ -37,6 +37,9 @@ import { setStanceProvider as setAnalysisStanceProvider } from '../tools/analysi
 import { setMemoryProvider } from '../tools/memory.js';
 import { createMetamorphMcpServer } from '../tools/mcp-server.js';
 import type { McpSdkServerConfigWithInstance } from '@anthropic-ai/claude-agent-sdk';
+import { autoEvolutionManager } from '../core/auto-evolution.js';
+import { identityPersistence } from '../core/identity-persistence.js';
+import { memoryInjector } from '../memory/proactive-injection.js';
 
 /**
  * Transformation history entry
@@ -520,6 +523,36 @@ export class MetamorphAgent {
     // Check for auto-snapshot (evolution persistence)
     this.checkAndAutoSnapshot(stanceAfter);
 
+    // Auto-Evolution Manager integration (Ralph Iteration 4 - Feature 2)
+    if (this.config.enableAutoEvolution !== false) {
+      autoEvolutionManager.recordStance(this.conversationId, stanceAfter);
+      autoEvolutionManager.recordCoherence(this.conversationId, scores.coherence);
+      const evolutionTrigger = autoEvolutionManager.checkForTriggers(
+        this.conversationId,
+        stanceAfter,
+        this.stanceController.getHistory(this.conversationId)
+      );
+      if (evolutionTrigger && this.verbose) {
+        console.log(`[METAMORPH] Auto-evolution trigger: ${evolutionTrigger.type} (confidence: ${evolutionTrigger.confidence})`);
+      }
+    }
+
+    // Identity Persistence Manager integration (Ralph Iteration 5 - Feature 2)
+    if (this.config.enableIdentityPersistence !== false) {
+      identityPersistence.recordTurn();
+      if (identityPersistence.shouldAutoCheckpoint()) {
+        identityPersistence.createCheckpoint(stanceAfter, `auto-turn-${stanceAfter.version}`);
+        if (this.verbose) {
+          console.log(`[METAMORPH] Identity checkpoint created at version ${stanceAfter.version}`);
+        }
+      }
+    }
+
+    // Proactive Memory Injection - record turn for cooldown tracking
+    if (this.config.enableProactiveMemory !== false) {
+      memoryInjector.recordTurn();
+    }
+
     return {
       response: responseText,
       stanceBefore,
@@ -760,6 +793,36 @@ export class MetamorphAgent {
 
       // Check for auto-snapshot (evolution persistence)
       this.checkAndAutoSnapshot(stanceAfter);
+
+      // Auto-Evolution Manager integration (Ralph Iteration 4 - Feature 2)
+      if (this.config.enableAutoEvolution !== false) {
+        autoEvolutionManager.recordStance(this.conversationId, stanceAfter);
+        autoEvolutionManager.recordCoherence(this.conversationId, scores.coherence);
+        const evolutionTrigger = autoEvolutionManager.checkForTriggers(
+          this.conversationId,
+          stanceAfter,
+          this.stanceController.getHistory(this.conversationId)
+        );
+        if (evolutionTrigger && this.verbose) {
+          console.log(`[METAMORPH] Auto-evolution trigger: ${evolutionTrigger.type} (confidence: ${evolutionTrigger.confidence})`);
+        }
+      }
+
+      // Identity Persistence Manager integration (Ralph Iteration 5 - Feature 2)
+      if (this.config.enableIdentityPersistence !== false) {
+        identityPersistence.recordTurn();
+        if (identityPersistence.shouldAutoCheckpoint()) {
+          identityPersistence.createCheckpoint(stanceAfter, `auto-turn-${stanceAfter.version}`);
+          if (this.verbose) {
+            console.log(`[METAMORPH] Identity checkpoint created at version ${stanceAfter.version}`);
+          }
+        }
+      }
+
+      // Proactive Memory Injection - record turn for cooldown tracking
+      if (this.config.enableProactiveMemory !== false) {
+        memoryInjector.recordTurn();
+      }
 
       const result: AgentResponse = {
         response: responseText,
