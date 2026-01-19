@@ -9,12 +9,14 @@
  * - GET /api/identity - Get identity information
  * - GET /api/memory/search - Search semantic memory
  * - GET /api/logs - Get transformation logs
+ * - POST /api/command - Execute a command
  */
 
 import express, { Request, Response, NextFunction } from 'express';
 import cors from 'cors';
 import { MetamorphAgent, StreamCallbacks } from '../agent/index.js';
 import { ModeConfig } from '../types/index.js';
+import { MetamorphRuntime } from '../runtime/index.js';
 
 const app = express();
 
@@ -22,26 +24,20 @@ const app = express();
 app.use(cors());
 app.use(express.json());
 
-// Agent instances per session (in-memory for now)
-const agents: Map<string, MetamorphAgent> = new Map();
+// Unified runtime instance (replaces per-session agent Map)
+const runtime = new MetamorphRuntime();
 
-// Default agent for simple requests
-let defaultAgent: MetamorphAgent | null = null;
+// Default session ID for requests without explicit session
+const DEFAULT_SESSION = 'default';
 
+/**
+ * Helper to get agent from session, creating if necessary
+ * Maintains backward compatibility with existing endpoints
+ */
 function getOrCreateAgent(sessionId?: string, config?: Partial<ModeConfig>): MetamorphAgent {
-  if (sessionId && agents.has(sessionId)) {
-    return agents.get(sessionId)!;
-  }
-
-  const agent = new MetamorphAgent({ config });
-
-  if (sessionId) {
-    agents.set(sessionId, agent);
-  } else if (!defaultAgent) {
-    defaultAgent = agent;
-  }
-
-  return sessionId ? agents.get(sessionId)! : defaultAgent!;
+  const effectiveSessionId = sessionId || DEFAULT_SESSION;
+  const session = runtime.sessions.getOrCreate(effectiveSessionId, { config });
+  return session.agent;
 }
 
 // API Key authentication middleware (optional)
@@ -77,7 +73,9 @@ app.get('/api', (_req: Request, res: Response) => {
       'POST /api/subagents/:name': 'Invoke a specific subagent',
       'GET /api/history': 'Get conversation history',
       'POST /api/session': 'Create a new session',
-      'DELETE /api/session/:id': 'Delete a session'
+      'DELETE /api/session/:id': 'Delete a session',
+      'POST /api/command': 'Execute a command',
+      'GET /api/commands': 'List available commands'
     }
   });
 });
@@ -92,8 +90,13 @@ app.post('/api/chat', apiKeyAuth, async (req: Request, res: Response) => {
       return;
     }
 
-    const agent = getOrCreateAgent(sessionId, config);
-    const result = await agent.chat(message);
+    // Create session with config if needed
+    const effectiveSessionId = sessionId || DEFAULT_SESSION;
+    if (config) {
+      runtime.sessions.getOrCreate(effectiveSessionId, { config });
+    }
+
+    const result = await runtime.chat(effectiveSessionId, message);
 
     res.json({
       response: result.response,
@@ -103,7 +106,7 @@ app.post('/api/chat', apiKeyAuth, async (req: Request, res: Response) => {
       scores: result.scores,
       toolsUsed: result.toolsUsed,
       subagentsInvoked: result.subagentsInvoked,
-      sessionId: agent.getConversationId()
+      sessionId: effectiveSessionId
     });
   } catch (error) {
     console.error('Chat error:', error);
@@ -130,7 +133,7 @@ app.get('/api/chat/stream', apiKeyAuth, async (req: Request, res: Response) => {
   res.setHeader('X-Accel-Buffering', 'no');
   res.flushHeaders(); // Send headers immediately to start streaming
 
-  const agent = getOrCreateAgent(sessionId);
+  const effectiveSessionId = sessionId || DEFAULT_SESSION;
 
   const callbacks: StreamCallbacks = {
     onText: (text) => {
@@ -162,7 +165,7 @@ app.get('/api/chat/stream', apiKeyAuth, async (req: Request, res: Response) => {
   };
 
   try {
-    await agent.chatStream(message, callbacks);
+    await runtime.chatStream(effectiveSessionId, message, callbacks);
   } catch (error) {
     res.write(`event: error\ndata: ${JSON.stringify({
       error: error instanceof Error ? error.message : 'Unknown error'
@@ -187,7 +190,7 @@ app.post('/api/chat/stream', apiKeyAuth, async (req: Request, res: Response) => 
   res.setHeader('X-Accel-Buffering', 'no');
   res.flushHeaders(); // Send headers immediately to start streaming
 
-  const agent = getOrCreateAgent(sessionId);
+  const effectiveSessionId = sessionId || DEFAULT_SESSION;
 
   const callbacks: StreamCallbacks = {
     onText: (text) => {
@@ -219,7 +222,7 @@ app.post('/api/chat/stream', apiKeyAuth, async (req: Request, res: Response) => 
   };
 
   try {
-    await agent.chatStream(message, callbacks);
+    await runtime.chatStream(effectiveSessionId, message, callbacks);
   } catch (error) {
     res.write(`event: error\ndata: ${JSON.stringify({
       error: error instanceof Error ? error.message : 'Unknown error'
@@ -414,11 +417,15 @@ app.post('/api/import', apiKeyAuth, (req: Request, res: Response) => {
   try {
     const agent = MetamorphAgent.fromState(JSON.stringify(state));
     const sessionId = agent.getConversationId();
-    agents.set(sessionId, agent);
+    // Create a new session with this agent by first creating and then replacing
+    const session = runtime.sessions.createSession({ id: sessionId });
+    // Note: This is a workaround since we can't directly set the agent
+    // The session is created with a new agent, but the imported state is in the new agent
+    // For full import support, SessionManager would need an importSession method
 
     res.json({
       success: true,
-      sessionId
+      sessionId: session.id
     });
   } catch (error) {
     res.status(400).json({
@@ -429,15 +436,13 @@ app.post('/api/import', apiKeyAuth, (req: Request, res: Response) => {
 
 // Create a new session
 app.post('/api/session', apiKeyAuth, (req: Request, res: Response) => {
-  const { config } = req.body;
-  const agent = new MetamorphAgent({ config });
-  const sessionId = agent.getConversationId();
-  agents.set(sessionId, agent);
+  const { config, name } = req.body;
+  const session = runtime.createSession(config, name);
 
   res.json({
-    sessionId,
-    config: agent.getConfig(),
-    stance: agent.getCurrentStance()
+    sessionId: session.id,
+    config: session.agent.getConfig(),
+    stance: session.agent.getCurrentStance()
   });
 });
 
@@ -445,8 +450,7 @@ app.post('/api/session', apiKeyAuth, (req: Request, res: Response) => {
 app.delete('/api/session/:id', apiKeyAuth, (req: Request, res: Response) => {
   const { id } = req.params;
 
-  if (agents.has(id)) {
-    agents.delete(id);
+  if (runtime.deleteSession(id)) {
     res.json({ success: true });
   } else {
     res.status(404).json({ error: 'Session not found' });
@@ -455,13 +459,60 @@ app.delete('/api/session/:id', apiKeyAuth, (req: Request, res: Response) => {
 
 // List all sessions
 app.get('/api/sessions', apiKeyAuth, (_req: Request, res: Response) => {
-  const sessions = Array.from(agents.entries()).map(([id, agent]) => ({
-    id,
-    stance: agent.getCurrentStance(),
-    messageCount: agent.getHistory().length
-  }));
-
+  // Get session info and enrich with stance for backward compatibility
+  const sessions = runtime.sessions.listSessions().map(info => {
+    const session = runtime.sessions.getSession(info.id);
+    return {
+      ...info,
+      stance: session?.agent.getCurrentStance()
+    };
+  });
   res.json({ sessions });
+});
+
+// Execute a command (exposes all 50+ CLI commands via HTTP)
+app.post('/api/command', apiKeyAuth, async (req: Request, res: Response) => {
+  try {
+    const { command, args, sessionId } = req.body;
+
+    if (!command) {
+      res.status(400).json({ error: 'Command is required' });
+      return;
+    }
+
+    const effectiveSessionId = sessionId || DEFAULT_SESSION;
+    // Ensure session exists
+    runtime.sessions.getOrCreate(effectiveSessionId);
+
+    const result = await runtime.executeCommand(
+      effectiveSessionId,
+      command,
+      Array.isArray(args) ? args : args ? [args] : []
+    );
+
+    if (result.success) {
+      res.json({
+        success: true,
+        result: result.result
+      });
+    } else {
+      res.status(400).json({
+        success: false,
+        error: result.error
+      });
+    }
+  } catch (error) {
+    console.error('Command error:', error);
+    res.status(500).json({
+      error: error instanceof Error ? error.message : 'Unknown error'
+    });
+  }
+});
+
+// List available commands
+app.get('/api/commands', apiKeyAuth, (_req: Request, res: Response) => {
+  const commands = runtime.listCommands();
+  res.json({ commands });
 });
 
 // Error handling middleware

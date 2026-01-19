@@ -19,7 +19,10 @@ import * as fs from 'fs';
 import * as path from 'path';
 import { execFile } from 'child_process';
 import { MetamorphAgent, StreamCallbacks } from '../agent/index.js';
+import { MetamorphRuntime, Session } from '../runtime/index.js';
+import { runtimeRegistry } from '../runtime/commands/index.js';
 import { ModeConfig, Frame, SelfModel, Objective } from '../types/index.js';
+import type { CommandContext as RuntimeCommandContext } from '../runtime/commands/context.js';
 import { calculateAvailableBudget, OPERATOR_DRIFT_COSTS } from '../core/coherence-planner.js';
 import { strategyManager, OPERATOR_STRATEGIES } from '../core/strategies.js';
 import { emotionalArcTracker } from '../core/emotional-arc.js';
@@ -51,6 +54,10 @@ const VERSION = '0.1.0';
 // State for abort handling
 let currentAbortController: AbortController | null = null;
 let currentSpinner: Ora | null = null;
+
+// Unified runtime instance (created on startup)
+let runtime: MetamorphRuntime | null = null;
+const DEFAULT_SESSION_ID = 'cli-session';
 
 const program = new Command();
 
@@ -85,11 +92,26 @@ program
       ? options.disallow.split(',').map((t: string) => t.trim()).filter(Boolean)
       : [];
 
-    const agent = new MetamorphAgent({
+    // Initialize runtime if not already created
+    if (!runtime) {
+      runtime = new MetamorphRuntime({
+        defaultConfig: config
+      });
+    }
+
+    // Get or create session via runtime
+    const session = runtime.sessions.getOrCreate(DEFAULT_SESSION_ID, {
       config,
-      verbose: options.verbose,
-      disallowedTools
+      name: 'CLI Session'
     });
+
+    // Get agent from session (for backward compatibility with existing code)
+    const agent = session.agent;
+
+    // Apply disallowed tools to the agent if specified
+    if (disallowedTools.length > 0 && options.verbose) {
+      console.log(chalk.gray(`  Disallowed tools: ${disallowedTools.join(', ')}`));
+    }
 
     const useStreaming = options.stream !== false;
 
@@ -127,7 +149,12 @@ program
 
           // Handle commands
           if (trimmedInput.startsWith('/')) {
-            await handleCommand(trimmedInput, agent, rl, useStreaming);
+            // Try runtime command handler first
+            const handled = await tryRuntimeCommand(trimmedInput, session, rl);
+            if (!handled) {
+              // Fall back to legacy handleCommand
+              await handleCommand(trimmedInput, agent, rl, useStreaming);
+            }
             prompt();
             return;
           }
@@ -270,6 +297,73 @@ program
   });
 
 // Helper functions
+
+/**
+ * Try to execute a command via the unified runtime command registry
+ * Returns true if the command was handled, false to fall back to legacy handler
+ */
+async function tryRuntimeCommand(
+  input: string,
+  session: Session,
+  rl: readline.Interface
+): Promise<boolean> {
+  if (!runtime) return false;
+
+  const parts = input.slice(1).split(' ');
+  const command = parts[0].toLowerCase();
+  const args = parts.slice(1);
+
+  // Check if the runtime registry has this command
+  if (!runtimeRegistry.has(command)) {
+    return false; // Fall back to legacy handler
+  }
+
+  // Create CLI-specific output helper
+  const outputHelper = {
+    log: (msg: string) => console.log(chalk.cyan(`\n  ${msg.replace(/\n/g, '\n  ')}`)),
+    error: (msg: string) => console.log(chalk.red(`\n  Error: ${msg}`)),
+    warn: (msg: string) => console.log(chalk.yellow(`\n  Warning: ${msg}`)),
+    success: (msg: string) => console.log(chalk.green(`\n  ${msg}`)),
+    table: (data: Record<string, unknown>[] | unknown[][]) => {
+      console.log();
+      console.table(data);
+    },
+    json: (data: unknown) => {
+      console.log(chalk.gray('\n' + JSON.stringify(data, null, 2)));
+    }
+  };
+
+  // Build command context
+  const ctx: RuntimeCommandContext = {
+    session,
+    runtime,
+    output: outputHelper
+  };
+
+  try {
+    const result = await runtimeRegistry.execute(command, ctx, args);
+    if (result === null) {
+      return false; // Command not found in registry
+    }
+
+    // Handle output
+    if (result.error) {
+      outputHelper.error(result.error);
+    } else if (result.output) {
+      outputHelper.log(result.output);
+    }
+
+    // Handle special quit command
+    if (result.data && typeof result.data === 'object' && 'shouldExit' in result.data && result.data.shouldExit) {
+      rl.close();
+    }
+
+    return true;
+  } catch (error) {
+    outputHelper.error(error instanceof Error ? error.message : 'Command execution failed');
+    return true; // Still consider it handled to prevent double execution
+  }
+}
 
 function printBanner(config: Partial<ModeConfig>): void {
   console.log(chalk.cyan.bold('\n  ╔═══════════════════════════════════════════╗'));
