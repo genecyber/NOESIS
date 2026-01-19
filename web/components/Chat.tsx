@@ -33,7 +33,7 @@ const markdownComponents: Components = {
     );
   },
   pre: ({ children }) => (
-    <pre className="bg-black/40 p-4 rounded-lg overflow-x-auto my-3 font-mono text-sm max-w-full scrollbar-styled">{children}</pre>
+    <pre className="bg-black/40 p-4 rounded-lg overflow-x-auto my-3 font-mono text-sm scrollbar-styled">{children}</pre>
   ),
   ul: ({ children }) => <ul className="my-2 pl-6 list-disc">{children}</ul>,
   ol: ({ children }) => <ol className="my-2 pl-6 list-decimal">{children}</ol>,
@@ -636,14 +636,14 @@ export default function Chat({ sessionId, onSessionChange, onResponse, onStanceU
               exit={{ opacity: 0, y: -10, scale: 0.95 }}
               transition={{ type: "spring", stiffness: 500, damping: 30 }}
               className={cn(
-                'max-w-[80%] p-3 rounded-xl leading-relaxed overflow-hidden min-w-0 flex-shrink-0',
+                'max-w-[80%] p-3 rounded-xl leading-relaxed min-w-0 flex-shrink-0',
                 msg.role === 'user' && !msg.type && 'self-end bg-gradient-to-r from-emblem-secondary to-emblem-primary text-white',
                 msg.role === 'assistant' && 'self-start glass-card',
                 msg.type === 'command' && 'max-w-full',
                 msg.type === 'command' && msg.role === 'user' && 'bg-transparent text-emblem-text'
               )}
             >
-            <div className="break-words prose-chat overflow-hidden w-0 min-w-full">
+            <div className="break-words prose-chat overflow-x-auto max-w-full">
               {msg.type === 'command' && msg.commandData ? (
                 <CommandOutput
                   command={msg.commandData.command}
@@ -680,7 +680,7 @@ export default function Chat({ sessionId, onSessionChange, onResponse, onStanceU
               transition={{ type: "spring", stiffness: 400, damping: 25 }}
               className="self-start glass-card max-w-[80%] p-3 rounded-xl overflow-hidden min-w-0 flex-shrink-0"
             >
-              <div className="break-words overflow-hidden w-0 min-w-full">
+              <div className="break-words overflow-x-auto max-w-full">
                 <ActiveToolsBar tools={activeTools} />
               </div>
             </motion.div>
@@ -695,7 +695,7 @@ export default function Chat({ sessionId, onSessionChange, onResponse, onStanceU
               transition={{ type: "spring", stiffness: 400, damping: 25 }}
               className="self-start glass-card max-w-[80%] p-3 rounded-xl overflow-hidden min-w-0 flex-shrink-0"
             >
-              <div className="break-words prose-chat overflow-hidden w-0 min-w-full">
+              <div className="break-words prose-chat overflow-x-auto max-w-full">
                 <ReactMarkdown components={markdownComponents}>{streamingText}</ReactMarkdown>
               </div>
             </motion.div>
