@@ -204,6 +204,17 @@ import { defineCliPlugin, cliPluginRegistry } from '@metamorph/plugin-sdk/cli';
 import { usePluginRegistry, usePluginCapabilities } from '@metamorph/plugin-sdk/react';
 ```
 
+## Documentation
+
+For comprehensive documentation including:
+- Complete API reference
+- Web panel plugin tutorials
+- CLI operator and hooks guide
+- Platform capabilities deep dive
+- Best practices and troubleshooting
+
+See **[PLUGINS.md](../../PLUGINS.md)** - the full plugin system documentation.
+
 ## License
 
 MIT
