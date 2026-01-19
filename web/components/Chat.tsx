@@ -31,7 +31,11 @@ const markdownComponents: Components = {
       <code className={className}>{children}</code>
     );
   },
-  pre: ({ children }) => <pre className="bg-black/40 p-4 rounded-lg overflow-x-auto my-3 font-mono text-sm max-w-full">{children}</pre>,
+  pre: ({ children }) => (
+    <div className="w-full overflow-hidden my-3">
+      <pre className="bg-black/40 p-4 rounded-lg overflow-x-auto font-mono text-sm">{children}</pre>
+    </div>
+  ),
   ul: ({ children }) => <ul className="my-2 pl-6 list-disc">{children}</ul>,
   ol: ({ children }) => <ol className="my-2 pl-6 list-decimal">{children}</ol>,
   li: ({ children }) => <li className="my-1">{children}</li>,
@@ -627,14 +631,14 @@ export default function Chat({ sessionId, onSessionChange, onResponse, onStanceU
               exit={{ opacity: 0, y: -10, scale: 0.95 }}
               transition={{ type: "spring", stiffness: 500, damping: 30 }}
               className={cn(
-                'max-w-[80%] p-3 rounded-xl leading-relaxed overflow-hidden min-w-0',
+                'max-w-[80%] p-3 rounded-xl leading-relaxed overflow-hidden min-w-0 flex-shrink-0',
                 msg.role === 'user' && !msg.type && 'self-end bg-gradient-to-r from-emblem-secondary to-emblem-primary text-white',
                 msg.role === 'assistant' && 'self-start glass-card',
                 msg.type === 'command' && 'max-w-full',
                 msg.type === 'command' && msg.role === 'user' && 'bg-transparent text-emblem-text'
               )}
             >
-            <div className="break-words prose-chat overflow-hidden">
+            <div className="break-words prose-chat overflow-hidden w-full">
               {msg.type === 'command' && msg.commandData ? (
                 <CommandOutput
                   command={msg.commandData.command}
@@ -669,9 +673,9 @@ export default function Chat({ sessionId, onSessionChange, onResponse, onStanceU
               animate={{ opacity: 1, y: 0 }}
               exit={{ opacity: 0, y: -10 }}
               transition={{ type: "spring", stiffness: 400, damping: 25 }}
-              className="self-start glass-card max-w-[80%] p-3 rounded-xl overflow-hidden min-w-0"
+              className="self-start glass-card max-w-[80%] p-3 rounded-xl overflow-hidden min-w-0 flex-shrink-0"
             >
-              <div className="break-words overflow-hidden">
+              <div className="break-words overflow-hidden w-full">
                 <ActiveToolsBar tools={activeTools} />
               </div>
             </motion.div>
@@ -684,9 +688,9 @@ export default function Chat({ sessionId, onSessionChange, onResponse, onStanceU
               animate={{ opacity: 1, y: 0 }}
               exit={{ opacity: 0 }}
               transition={{ type: "spring", stiffness: 400, damping: 25 }}
-              className="self-start glass-card max-w-[80%] p-3 rounded-xl overflow-hidden min-w-0"
+              className="self-start glass-card max-w-[80%] p-3 rounded-xl overflow-hidden min-w-0 flex-shrink-0"
             >
-              <div className="break-words prose-chat overflow-hidden">
+              <div className="break-words prose-chat overflow-hidden w-full">
                 <ReactMarkdown components={markdownComponents}>{streamingText}</ReactMarkdown>
               </div>
             </motion.div>
