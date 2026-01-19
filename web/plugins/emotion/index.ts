@@ -12,7 +12,7 @@
 
 import { Heart } from 'lucide-react';
 import { definePlugin } from '@/lib/plugins';
-import type { WebPlugin } from '@/lib/plugins/types';
+import type { WebPlugin, PluginCommand, PluginCommandContext, PluginCommandResult } from '@/lib/plugins/types';
 import EmotionPanel from './EmotionPanel';
 
 /**
@@ -39,6 +39,49 @@ export const emotionPlugin: WebPlugin = definePlugin({
     order: 3,
     defaultEnabled: true,
   },
+
+  commands: [
+    {
+      name: 'emotion',
+      aliases: ['empathy'],
+      description: 'Control emotion detection (on/off)',
+      usage: '/emotion <on|off>',
+      agentInvocable: true,
+      execute: async (args: string[], ctx: PluginCommandContext): Promise<PluginCommandResult> => {
+        const action = args[0]?.toLowerCase();
+
+        if (action === 'on') {
+          try {
+            await ctx.capabilities.webcam.start();
+            console.log('[EmotionPlugin] Emotion detection enabled via command');
+            return {
+              success: true,
+              message: 'Emotion detection enabled. Webcam started.',
+            };
+          } catch (error) {
+            const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+            console.error('[EmotionPlugin] Failed to start webcam:', errorMessage);
+            return {
+              success: false,
+              message: `Failed to enable emotion detection: ${errorMessage}`,
+            };
+          }
+        } else if (action === 'off') {
+          ctx.capabilities.webcam.stop();
+          console.log('[EmotionPlugin] Emotion detection disabled via command');
+          return {
+            success: true,
+            message: 'Emotion detection disabled. Webcam stopped.',
+          };
+        }
+
+        return {
+          success: false,
+          message: 'Usage: /emotion <on|off>',
+        };
+      },
+    },
+  ],
 
   onActivate: async (capabilities) => {
     console.log('[EmotionPlugin] Activated');

@@ -53,6 +53,9 @@ export type {
   STTOptions,
   PluginRegistration,
   PluginRegistry,
+  PluginCommand,
+  PluginCommandResult,
+  PluginCommandContext,
 } from './types';
 
 // Registry

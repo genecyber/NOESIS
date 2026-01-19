@@ -15,9 +15,83 @@ import type {
   PanelDefinition,
   PlatformCapabilities,
   PluginCapability,
+  PluginCommand,
+  PluginCommandContext,
 } from './types';
 import { createPlatformCapabilities } from './capabilities';
 import type { EmotionContext, Stance, ModeConfig } from '@/lib/types';
+import {
+  registerPluginCommands,
+  unregisterPluginCommands,
+  type Command,
+  type CommandCategory,
+} from '@/lib/commands';
+
+// =============================================================================
+// Plugin Command Conversion
+// =============================================================================
+
+/**
+ * Convert a PluginCommand to the web Command format
+ * Creates a wrapper that executes the plugin command with proper context
+ */
+function convertPluginCommand(
+  pluginId: string,
+  pluginCommand: PluginCommand,
+  getContext: () => PluginCommandContext
+): Command {
+  return {
+    name: pluginCommand.name,
+    aliases: pluginCommand.aliases || [],
+    description: pluginCommand.description,
+    category: 'identity' as CommandCategory, // Plugin commands go in identity category
+    inlineOutput: true,
+    // Store execution context for command handler
+    args: pluginCommand.usage ? [{
+      name: 'args',
+      required: false,
+      description: pluginCommand.usage,
+    }] : undefined,
+    // Add plugin metadata for execution
+    _pluginId: pluginId,
+    _pluginCommand: pluginCommand,
+    _getContext: getContext,
+  } as Command & {
+    _pluginId: string;
+    _pluginCommand: PluginCommand;
+    _getContext: () => PluginCommandContext;
+  };
+}
+
+/**
+ * Execute a plugin command
+ * This is called by the command handler in the UI
+ */
+export async function executePluginCommand(
+  command: Command & { _pluginCommand?: PluginCommand; _getContext?: () => PluginCommandContext },
+  args: string[]
+): Promise<{ success: boolean; message?: string; data?: unknown }> {
+  if (!command._pluginCommand || !command._getContext) {
+    return { success: false, message: 'Not a plugin command' };
+  }
+
+  try {
+    const context = command._getContext();
+    const result = await command._pluginCommand.execute(args, context);
+    return result;
+  } catch (error) {
+    const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+    console.error(`[PluginRegistry] Error executing plugin command:`, error);
+    return { success: false, message: `Command failed: ${errorMessage}` };
+  }
+}
+
+/**
+ * Check if a command is a plugin command
+ */
+export function isPluginCommand(command: Command): command is Command & { _pluginId: string; _pluginCommand: PluginCommand } {
+  return '_pluginCommand' in command && '_pluginId' in command;
+}
 
 // =============================================================================
 // Plugin Registry Implementation
@@ -90,6 +164,17 @@ class PluginRegistryImpl implements PluginRegistry {
       await registration.plugin.onActivate(registration.capabilities);
     }
 
+    // Register plugin commands with the web command system
+    if (registration.plugin.commands && registration.plugin.commands.length > 0) {
+      const webCommands = registration.plugin.commands.map((cmd) =>
+        convertPluginCommand(pluginId, cmd, () => ({
+          sessionId: this.sessionId,
+          capabilities: registration.capabilities,
+        }))
+      );
+      registerPluginCommands(pluginId, webCommands);
+    }
+
     registration.enabled = true;
     console.log(`[PluginRegistry] Enabled plugin: ${pluginId}`);
   }
@@ -98,6 +183,11 @@ class PluginRegistryImpl implements PluginRegistry {
     const registration = this.plugins.get(pluginId);
     if (!registration || !registration.enabled) {
       return;
+    }
+
+    // Unregister plugin commands from the web command system
+    if (registration.plugin.commands && registration.plugin.commands.length > 0) {
+      unregisterPluginCommands(pluginId);
     }
 
     // Call deactivation hook

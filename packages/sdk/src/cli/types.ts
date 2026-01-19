@@ -8,6 +8,7 @@ import type {
   PluginManifest,
   Stance,
   ModeConfig,
+  PluginCommand,
 } from '../core/types.js';
 import type { BasePlugin, PluginContext } from '../core/plugin.js';
 
@@ -191,6 +192,8 @@ export interface CliPlugin extends BasePlugin<CliPluginContext> {
   hooks?: CliHook[];
   /** Plugin settings */
   settings?: CliPluginSetting[];
+  /** Optional slash commands registered by this plugin */
+  commands?: PluginCommand<CliPluginContext>[];
 }
 
 // =============================================================================

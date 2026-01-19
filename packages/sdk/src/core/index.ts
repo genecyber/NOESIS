@@ -20,6 +20,8 @@ export type {
   Stance,
   StanceValues,
   ModeConfig,
+  PluginCommand,
+  PluginCommandResult,
 } from './types.js';
 
 export { isBrowserCapability } from './types.js';

@@ -18,6 +18,8 @@ export type {
   Stance,
   StanceValues,
   ModeConfig,
+  PluginCommand,
+  PluginCommandResult,
 } from '../core/index.js';
 
 export { pluginEventBus, PluginEventBus } from '../core/index.js';

@@ -150,6 +150,39 @@ export interface StorageCapability {
 }
 
 // =============================================================================
+// Plugin Commands
+// =============================================================================
+
+/** Result of a plugin command execution */
+export interface PluginCommandResult {
+  success: boolean;
+  message?: string;
+  data?: unknown;
+}
+
+/** Command context passed to plugin command handlers */
+export interface PluginCommandContext {
+  sessionId?: string;
+  capabilities: PlatformCapabilities;
+}
+
+/** Plugin command definition */
+export interface PluginCommand {
+  /** Command name (without slash) */
+  name: string;
+  /** Alternative names */
+  aliases?: string[];
+  /** Human-readable description */
+  description: string;
+  /** Usage examples */
+  usage?: string;
+  /** Whether agents can invoke this command */
+  agentInvocable: boolean;
+  /** Execute the command */
+  execute: (args: string[], context: PluginCommandContext) => Promise<PluginCommandResult> | PluginCommandResult;
+}
+
+// =============================================================================
 // Panel Plugin
 // =============================================================================
 
@@ -197,6 +230,8 @@ export interface WebPlugin {
   manifest: WebPluginManifest;
   /** Panel definition (if plugin provides a panel) */
   panel?: PanelDefinition;
+  /** Commands provided by this plugin */
+  commands?: PluginCommand[];
   /** Lifecycle hooks */
   onActivate?: (capabilities: PlatformCapabilities) => Promise<void> | void;
   onDeactivate?: () => Promise<void> | void;

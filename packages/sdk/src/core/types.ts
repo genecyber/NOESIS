@@ -302,3 +302,38 @@ export interface ModeConfig {
   /** Additional configuration */
   [key: string]: unknown;
 }
+
+// =============================================================================
+// Plugin Commands
+// =============================================================================
+
+/**
+ * Result from executing a plugin command.
+ */
+export interface PluginCommandResult {
+  /** Whether the command executed successfully */
+  success: boolean;
+  /** Optional message to display to the user */
+  message?: string;
+  /** Optional data returned by the command */
+  data?: unknown;
+}
+
+/**
+ * Plugin command definition for slash commands.
+ * Commands can be invoked by users or by the agent as tools.
+ */
+export interface PluginCommand<TContext = unknown> {
+  /** Command name (e.g., "emotion" for /emotion) */
+  name: string;
+  /** Alternative names for the command */
+  aliases?: string[];
+  /** Brief description of what the command does */
+  description: string;
+  /** Usage example (e.g., "on|off") */
+  usage?: string;
+  /** Whether the agent can invoke this command as a tool */
+  agentInvocable: boolean;
+  /** Execute the command */
+  execute: (args: string[], context: TContext) => Promise<PluginCommandResult> | PluginCommandResult;
+}

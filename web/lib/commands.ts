@@ -42,7 +42,8 @@ export const COMMAND_CATEGORIES: Record<CommandCategory, { label: string; color:
   system: { label: 'System', color: '#6b7280' },
 };
 
-export const COMMANDS: Command[] = [
+// Core commands array - mutable to allow plugin command registration
+const coreCommands: Command[] = [
   // Chat & Control
   {
     name: 'stance',
@@ -781,6 +782,89 @@ export const COMMANDS: Command[] = [
     inlineOutput: false,
   },
 ];
+
+// =============================================================================
+// Dynamic Plugin Commands Registry
+// =============================================================================
+
+/** Plugin commands stored by plugin ID */
+const pluginCommands: Map<string, Command[]> = new Map();
+
+/**
+ * Get all commands (core + plugin commands)
+ */
+export function getAllCommands(): Command[] {
+  const allCommands = [...coreCommands];
+  pluginCommands.forEach((commands) => {
+    allCommands.push(...commands);
+  });
+  return allCommands;
+}
+
+/**
+ * Export COMMANDS as a getter that dynamically includes plugin commands
+ * This maintains backwards compatibility with existing code
+ */
+export const COMMANDS: Command[] = new Proxy(coreCommands, {
+  get(target, prop) {
+    // For array operations, return from combined array
+    if (prop === 'length') {
+      return getAllCommands().length;
+    }
+    if (prop === Symbol.iterator) {
+      return function* () {
+        yield* getAllCommands();
+      };
+    }
+    if (typeof prop === 'string' && !isNaN(Number(prop))) {
+      return getAllCommands()[Number(prop)];
+    }
+    if (prop === 'find' || prop === 'filter' || prop === 'map' || prop === 'forEach') {
+      return (...args: unknown[]) => {
+        const allCmds = getAllCommands();
+        return (allCmds as unknown as Record<string, (...args: unknown[]) => unknown>)[prop as string](...args);
+      };
+    }
+    // Fallback to target for other operations
+    return (target as unknown as Record<string | symbol, unknown>)[prop];
+  }
+});
+
+/**
+ * Register commands from a plugin
+ * @param pluginId - Unique plugin identifier
+ * @param commands - Array of Command objects to register
+ */
+export function registerPluginCommands(pluginId: string, commands: Command[]): void {
+  if (pluginCommands.has(pluginId)) {
+    console.warn(`[Commands] Plugin "${pluginId}" already has commands registered. Replacing.`);
+  }
+  pluginCommands.set(pluginId, commands);
+  console.log(`[Commands] Registered ${commands.length} commands from plugin: ${pluginId}`);
+}
+
+/**
+ * Unregister all commands from a plugin
+ * @param pluginId - Unique plugin identifier
+ */
+export function unregisterPluginCommands(pluginId: string): void {
+  const removed = pluginCommands.delete(pluginId);
+  if (removed) {
+    console.log(`[Commands] Unregistered commands from plugin: ${pluginId}`);
+  }
+}
+
+/**
+ * Get commands registered by a specific plugin
+ * @param pluginId - Unique plugin identifier
+ */
+export function getPluginCommands(pluginId: string): Command[] {
+  return pluginCommands.get(pluginId) || [];
+}
+
+// =============================================================================
+// Command Lookup Functions
+// =============================================================================
 
 /**
  * Find a command by name or alias

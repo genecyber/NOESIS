@@ -10,6 +10,7 @@ import type {
   EmotionContext,
   Stance,
   ModeConfig,
+  PluginCommand,
 } from '../core/types.js';
 import type { BasePlugin, PluginContext } from '../core/plugin.js';
 import type { WebPlatformCapabilities } from './capabilities.js';
@@ -81,6 +82,9 @@ export interface WebPlugin extends BasePlugin<WebPluginContext> {
 
   /** Optional sidebar panel */
   panel?: PanelDefinition;
+
+  /** Optional slash commands registered by this plugin */
+  commands?: PluginCommand<WebPluginContext>[];
 
   /**
    * Called when emotion is detected.
