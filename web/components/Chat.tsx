@@ -13,8 +13,32 @@ import { useInputHistory } from '@/lib/hooks/useLocalStorage';
 import { saveMessages, getMessages, saveLastSessionId } from '@/lib/storage';
 import { cn } from '@/lib/utils';
 import { Button } from '@/components/ui';
+import type { Components } from 'react-markdown';
 
 type ConnectionStatus = 'connected' | 'disconnected' | 'streaming';
+
+// Shared markdown components for consistent rendering during streaming and final display
+const markdownComponents: Components = {
+  p: ({ children }) => <p className="mb-3 last:mb-0">{children}</p>,
+  h1: ({ children }) => <h1 className="text-xl font-display font-bold text-emblem-secondary mt-4 mb-2 first:mt-0">{children}</h1>,
+  h2: ({ children }) => <h2 className="text-lg font-display font-semibold text-emblem-secondary mt-4 mb-2 first:mt-0">{children}</h2>,
+  h3: ({ children }) => <h3 className="text-base font-display font-semibold text-emblem-secondary mt-3 mb-2 first:mt-0">{children}</h3>,
+  code: ({ children, className }) => {
+    const isInline = !className;
+    return isInline ? (
+      <code className="bg-black/30 px-1.5 py-0.5 rounded font-mono text-[0.9em]">{children}</code>
+    ) : (
+      <code className={className}>{children}</code>
+    );
+  },
+  pre: ({ children }) => <pre className="bg-black/40 p-4 rounded-lg overflow-x-auto my-3 font-mono text-sm">{children}</pre>,
+  ul: ({ children }) => <ul className="my-2 pl-6 list-disc">{children}</ul>,
+  ol: ({ children }) => <ol className="my-2 pl-6 list-decimal">{children}</ol>,
+  li: ({ children }) => <li className="my-1">{children}</li>,
+  blockquote: ({ children }) => <blockquote className="border-l-3 border-emblem-primary my-3 pl-4 text-emblem-muted">{children}</blockquote>,
+  strong: ({ children }) => <strong className="text-emblem-secondary font-semibold">{children}</strong>,
+  a: ({ href, children }) => <a href={href} className="text-emblem-primary underline hover:text-emblem-secondary transition-colors">{children}</a>,
+};
 
 // Import EmotionContext from types
 import type { EmotionContext } from '@/lib/types';
@@ -621,29 +645,7 @@ export default function Chat({ sessionId, onSessionChange, onResponse, onStanceU
                   {msg.tools && msg.tools.length > 0 && (
                     <ToolUsage tools={msg.tools} />
                   )}
-                  <ReactMarkdown
-                    components={{
-                      p: ({ children }) => <p className="mb-3 last:mb-0">{children}</p>,
-                      h1: ({ children }) => <h1 className="text-xl font-display font-bold text-emblem-secondary mt-4 mb-2 first:mt-0">{children}</h1>,
-                      h2: ({ children }) => <h2 className="text-lg font-display font-semibold text-emblem-secondary mt-4 mb-2 first:mt-0">{children}</h2>,
-                      h3: ({ children }) => <h3 className="text-base font-display font-semibold text-emblem-secondary mt-3 mb-2 first:mt-0">{children}</h3>,
-                      code: ({ children, className }) => {
-                        const isInline = !className;
-                        return isInline ? (
-                          <code className="bg-black/30 px-1.5 py-0.5 rounded font-mono text-[0.9em]">{children}</code>
-                        ) : (
-                          <code className={className}>{children}</code>
-                        );
-                      },
-                      pre: ({ children }) => <pre className="bg-black/40 p-4 rounded-lg overflow-x-auto my-3 font-mono text-sm">{children}</pre>,
-                      ul: ({ children }) => <ul className="my-2 pl-6 list-disc">{children}</ul>,
-                      ol: ({ children }) => <ol className="my-2 pl-6 list-decimal">{children}</ol>,
-                      li: ({ children }) => <li className="my-1">{children}</li>,
-                      blockquote: ({ children }) => <blockquote className="border-l-3 border-emblem-primary my-3 pl-4 text-emblem-muted">{children}</blockquote>,
-                      strong: ({ children }) => <strong className="text-emblem-secondary font-semibold">{children}</strong>,
-                      a: ({ href, children }) => <a href={href} className="text-emblem-primary underline hover:text-emblem-secondary transition-colors">{children}</a>,
-                    }}
-                  >
+                  <ReactMarkdown components={markdownComponents}>
                     {msg.content}
                   </ReactMarkdown>
                 </>
@@ -684,7 +686,7 @@ export default function Chat({ sessionId, onSessionChange, onResponse, onStanceU
               className="self-start glass-card max-w-[80%] p-3 rounded-xl"
             >
               <div className="break-words prose-chat">
-                <ReactMarkdown>{streamingText}</ReactMarkdown>
+                <ReactMarkdown components={markdownComponents}>{streamingText}</ReactMarkdown>
               </div>
             </motion.div>
           )}
