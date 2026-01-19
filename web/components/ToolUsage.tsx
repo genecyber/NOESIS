@@ -128,7 +128,7 @@ function ToolChip({ tool }: ToolChipProps) {
       </Tooltip.Trigger>
       <Tooltip.Portal>
         <Tooltip.Content
-          className="bg-emblem-surface border-2 border-emblem-primary rounded-lg p-3 shadow-xl z-[9999] max-w-[400px]"
+          className="bg-emblem-surface border border-emblem-primary/50 rounded-lg p-3 shadow-xl z-[9999] max-w-[400px]"
           sideOffset={5}
         >
           <div className="text-[10px] font-semibold uppercase tracking-wider text-emblem-primary mb-1.5">
@@ -157,7 +157,7 @@ function ToolChip({ tool }: ToolChipProps) {
               </div>
             </>
           )}
-          <Tooltip.Arrow className="fill-emblem-primary" />
+          <Tooltip.Arrow className="fill-emblem-surface" />
         </Tooltip.Content>
       </Tooltip.Portal>
     </Tooltip.Root>
