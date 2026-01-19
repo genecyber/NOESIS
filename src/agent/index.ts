@@ -32,6 +32,8 @@ import { MemoryStore } from '../memory/index.js';
 import type { MemoryEntry } from '../types/index.js';
 import { commandRegistry, type CommandResult } from '../commands/index.js';
 import { setAgentProvider } from '../tools/commands.js';
+import { createMetamorphMcpServer } from '../tools/mcp-server.js';
+import type { McpSdkServerConfigWithInstance } from '@anthropic-ai/claude-agent-sdk';
 
 /**
  * Transformation history entry
@@ -176,6 +178,7 @@ export class MetamorphAgent {
   private memoryStore: MemoryStore | null = null;
   private coherenceWarnings: Array<{ timestamp: Date; score: number; floor: number }> = [];
   private disallowedTools: string[];
+  private mcpServer: McpSdkServerConfigWithInstance;
 
   constructor(options: MetamorphAgentOptions = {}) {
     this.config = { ...createDefaultConfig(), ...options.config };
@@ -188,6 +191,9 @@ export class MetamorphAgent {
     this.stanceController = new StanceController();
     const conversation = this.stanceController.createConversation(this.config);
     this.conversationId = conversation.id;
+
+    // Create the MCP server with introspection tools
+    this.mcpServer = createMetamorphMcpServer();
 
     // Enable transformation hooks by default
     // Ralph Iteration 3: Pass memory store for operator learning and memory extraction
@@ -305,7 +311,10 @@ export class MetamorphAgent {
           resume: this.sessionId,  // Continue session if we have one
           includePartialMessages: true,
           allowedTools: ALL_TOOLS,
-          disallowedTools: this.disallowedTools.length > 0 ? this.disallowedTools : undefined
+          disallowedTools: this.disallowedTools.length > 0 ? this.disallowedTools : undefined,
+          mcpServers: {
+            'metamorph-tools': this.mcpServer
+          }
         }
       });
 
@@ -511,7 +520,10 @@ export class MetamorphAgent {
           resume: this.sessionId,
           includePartialMessages: true,
           allowedTools: ALL_TOOLS,
-          disallowedTools: this.disallowedTools.length > 0 ? this.disallowedTools : undefined
+          disallowedTools: this.disallowedTools.length > 0 ? this.disallowedTools : undefined,
+          mcpServers: {
+            'metamorph-tools': this.mcpServer
+          }
         }
       });
 
@@ -806,7 +818,10 @@ export class MetamorphAgent {
           permissionMode: 'acceptEdits',
           includePartialMessages: true,
           allowedTools: ALL_TOOLS,
-          disallowedTools: this.disallowedTools.length > 0 ? this.disallowedTools : undefined
+          disallowedTools: this.disallowedTools.length > 0 ? this.disallowedTools : undefined,
+          mcpServers: {
+            'metamorph-tools': this.mcpServer
+          }
         }
       });
 
