@@ -18,30 +18,38 @@ interface ValueChange {
   timestamp: number;
 }
 
-// Radar chart component
-function RadarChart({ values, sentience }: { values: Stance['values']; sentience: Stance['sentience'] }) {
+// Radar chart component with interactivity and animations
+function RadarChart({
+  values,
+  sentience,
+  changedKeys = new Set<string>()
+}: {
+  values: Stance['values'];
+  sentience: Stance['sentience'];
+  changedKeys?: Set<string>;
+}) {
+  const [hoveredIndex, setHoveredIndex] = useState<number | null>(null);
   const size = 320;
   const center = size / 2;
-  const radius = size * 0.28; // Smaller radius to leave more room for labels
+  const radius = size * 0.28;
 
-  // All values + sentience metrics (10 total)
+  // All values + sentience metrics (10 total) with type info
   const dataPoints = [
-    { label: 'Curiosity', value: values.curiosity ?? 50 },
-    { label: 'Certainty', value: values.certainty ?? 50 },
-    { label: 'Risk', value: values.risk ?? 50 },
-    { label: 'Novelty', value: values.novelty ?? 50 },
-    { label: 'Empathy', value: values.empathy ?? 50 },
-    { label: 'Provocation', value: values.provocation ?? 50 },
-    { label: 'Synthesis', value: values.synthesis ?? 50 },
-    { label: 'Awareness', value: sentience.awarenessLevel },
-    { label: 'Autonomy', value: sentience.autonomyLevel },
-    { label: 'Identity', value: sentience.identityStrength },
+    { label: 'Curiosity', value: values.curiosity ?? 50, key: 'curiosity', type: 'value' as const },
+    { label: 'Certainty', value: values.certainty ?? 50, key: 'certainty', type: 'value' as const },
+    { label: 'Risk', value: values.risk ?? 50, key: 'risk', type: 'value' as const },
+    { label: 'Novelty', value: values.novelty ?? 50, key: 'novelty', type: 'value' as const },
+    { label: 'Empathy', value: values.empathy ?? 50, key: 'empathy', type: 'value' as const },
+    { label: 'Provocation', value: values.provocation ?? 50, key: 'provocation', type: 'value' as const },
+    { label: 'Synthesis', value: values.synthesis ?? 50, key: 'synthesis', type: 'value' as const },
+    { label: 'Awareness', value: sentience.awarenessLevel, key: 'awareness', type: 'sentience' as const },
+    { label: 'Autonomy', value: sentience.autonomyLevel, key: 'autonomy', type: 'sentience' as const },
+    { label: 'Identity', value: sentience.identityStrength, key: 'identity', type: 'sentience' as const },
   ];
 
   const numPoints = dataPoints.length;
   const angleStep = (Math.PI * 2) / numPoints;
 
-  // Calculate polygon points for data
   const getPoint = (value: number, index: number) => {
     const angle = angleStep * index - Math.PI / 2;
     const r = (value / 100) * radius;
@@ -51,20 +59,17 @@ function RadarChart({ values, sentience }: { values: Stance['values']; sentience
     };
   };
 
-  // Generate grid circles
   const gridCircles = [20, 40, 60, 80, 100];
 
-  // Generate axis lines and labels
   const axes = dataPoints.map((point, i) => {
     const angle = angleStep * i - Math.PI / 2;
     const endX = center + radius * Math.cos(angle);
     const endY = center + radius * Math.sin(angle);
     const labelX = center + (radius + 30) * Math.cos(angle);
     const labelY = center + (radius + 30) * Math.sin(angle);
-    return { point, endX, endY, labelX, labelY, angle };
+    return { point, endX, endY, labelX, labelY, angle, index: i };
   });
 
-  // Generate data polygon path
   const polygonPoints = dataPoints
     .map((_, i) => {
       const p = getPoint(dataPoints[i].value, i);
@@ -72,8 +77,43 @@ function RadarChart({ values, sentience }: { values: Stance['values']; sentience
     })
     .join(' ');
 
+  // Generate segment path for hover highlight
+  const getSegmentPath = (index: number) => {
+    const startAngle = angleStep * index - Math.PI / 2 - angleStep / 2;
+    const endAngle = startAngle + angleStep;
+    const x1 = center + radius * Math.cos(startAngle);
+    const y1 = center + radius * Math.sin(startAngle);
+    const x2 = center + radius * Math.cos(endAngle);
+    const y2 = center + radius * Math.sin(endAngle);
+    return `M ${center} ${center} L ${x1} ${y1} A ${radius} ${radius} 0 0 1 ${x2} ${y2} Z`;
+  };
+
   return (
     <svg viewBox={`0 0 ${size} ${size}`} className="w-full mx-auto">
+      {/* Marching ants pattern for hover */}
+      <defs>
+        <pattern id="marchingAnts" patternUnits="userSpaceOnUse" width="8" height="8">
+          <path d="M0,4 L8,4" stroke="hsl(190 100% 50%)" strokeWidth="1" strokeDasharray="4,4">
+            <animate attributeName="stroke-dashoffset" from="0" to="8" dur="0.5s" repeatCount="indefinite" />
+          </path>
+        </pattern>
+        <linearGradient id="radarGradient" x1="0%" y1="0%" x2="100%" y2="100%">
+          <stop offset="0%" stopColor="hsl(190 100% 50%)" stopOpacity="0.3" />
+          <stop offset="100%" stopColor="hsl(246 100% 68%)" stopOpacity="0.3" />
+        </linearGradient>
+        <linearGradient id="radarStroke" x1="0%" y1="0%" x2="100%" y2="100%">
+          <stop offset="0%" stopColor="hsl(190 100% 50%)" />
+          <stop offset="100%" stopColor="hsl(155 100% 55%)" />
+        </linearGradient>
+        <filter id="glow">
+          <feGaussianBlur stdDeviation="3" result="coloredBlur"/>
+          <feMerge>
+            <feMergeNode in="coloredBlur"/>
+            <feMergeNode in="SourceGraphic"/>
+          </feMerge>
+        </filter>
+      </defs>
+
       {/* Grid circles */}
       {gridCircles.map((pct) => (
         <circle
@@ -90,49 +130,90 @@ function RadarChart({ values, sentience }: { values: Stance['values']; sentience
       ))}
 
       {/* Axis lines */}
-      {axes.map(({ endX, endY }, i) => (
+      {axes.map(({ endX, endY, index }) => (
         <line
-          key={i}
+          key={index}
           x1={center}
           y1={center}
           x2={endX}
           y2={endY}
           stroke="currentColor"
-          strokeWidth="0.5"
-          className="text-white/10"
+          strokeWidth={hoveredIndex === index ? "1.5" : "0.5"}
+          className={hoveredIndex === index ? "text-emblem-secondary" : "text-white/10"}
         />
       ))}
 
-      {/* Data polygon */}
-      <polygon
+      {/* Hover segment highlight with marching ants */}
+      {hoveredIndex !== null && (
+        <path
+          d={getSegmentPath(hoveredIndex)}
+          fill="hsl(190 100% 50% / 0.1)"
+          stroke="url(#marchingAnts)"
+          strokeWidth="2"
+          className="pointer-events-none"
+        />
+      )}
+
+      {/* Animated data polygon */}
+      <motion.polygon
         points={polygonPoints}
         fill="url(#radarGradient)"
         stroke="url(#radarStroke)"
         strokeWidth="2"
+        initial={false}
+        animate={{
+          points: polygonPoints,
+          filter: changedKeys.size > 0 ? "url(#glow)" : "none"
+        }}
+        transition={{ type: "spring", stiffness: 300, damping: 30 }}
         className="opacity-80"
       />
 
-      {/* Data points */}
-      {dataPoints.map((_, i) => {
-        const p = getPoint(dataPoints[i].value, i);
+      {/* Interactive hit areas for each segment */}
+      {dataPoints.map((_, i) => (
+        <path
+          key={`hit-${i}`}
+          d={getSegmentPath(i)}
+          fill="transparent"
+          className="cursor-pointer"
+          onMouseEnter={() => setHoveredIndex(i)}
+          onMouseLeave={() => setHoveredIndex(null)}
+        />
+      ))}
+
+      {/* Animated data points */}
+      {dataPoints.map((point, i) => {
+        const p = getPoint(point.value, i);
+        const hasChanged = changedKeys.has(point.key);
+        const isHovered = hoveredIndex === i;
+
         return (
-          <circle
+          <motion.circle
             key={i}
-            cx={p.x}
-            cy={p.y}
-            r="4"
-            className="fill-emblem-secondary"
+            initial={false}
+            animate={{
+              cx: p.x,
+              cy: p.y,
+              r: isHovered ? 6 : hasChanged ? 5 : 4,
+              filter: hasChanged ? "url(#glow)" : "none"
+            }}
+            transition={{ type: "spring", stiffness: 300, damping: 30 }}
+            className={cn(
+              isHovered ? "fill-emblem-accent" :
+              point.type === 'sentience' ? "fill-emblem-primary" : "fill-emblem-secondary"
+            )}
           />
         );
       })}
 
-      {/* Labels */}
-      {axes.map(({ point, labelX, labelY, angle }, i) => {
-        // Determine text anchor based on position
+      {/* Labels with color coding */}
+      {axes.map(({ point, labelX, labelY, angle, index }) => {
         const isTop = angle < -Math.PI / 4 && angle > -3 * Math.PI / 4;
         const isBottom = angle > Math.PI / 4 && angle < 3 * Math.PI / 4;
         const isRight = angle > -Math.PI / 4 && angle < Math.PI / 4;
         const isLeft = angle < -3 * Math.PI / 4 || angle > 3 * Math.PI / 4;
+        const isHovered = hoveredIndex === index;
+        const hasChanged = changedKeys.has(point.key);
 
         let textAnchor: 'start' | 'middle' | 'end' = 'middle';
         if (isRight) textAnchor = 'start';
@@ -140,29 +221,61 @@ function RadarChart({ values, sentience }: { values: Stance['values']; sentience
 
         return (
           <text
-            key={i}
+            key={index}
             x={labelX}
             y={labelY}
             textAnchor={textAnchor}
             dominantBaseline={isTop ? 'auto' : isBottom ? 'hanging' : 'middle'}
-            className="fill-emblem-muted text-[8px] font-mono"
+            className={cn(
+              "text-[9px] font-mono transition-all cursor-pointer",
+              isHovered ? "font-bold" : "",
+              hasChanged ? "animate-pulse" : "",
+              point.type === 'sentience'
+                ? (isHovered ? "fill-emblem-primary" : "fill-emblem-primary/70")
+                : (isHovered ? "fill-emblem-secondary" : "fill-emblem-secondary/70")
+            )}
+            onMouseEnter={() => setHoveredIndex(index)}
+            onMouseLeave={() => setHoveredIndex(null)}
           >
             {point.label}
           </text>
         );
       })}
 
-      {/* Gradient definitions */}
-      <defs>
-        <linearGradient id="radarGradient" x1="0%" y1="0%" x2="100%" y2="100%">
-          <stop offset="0%" stopColor="hsl(190 100% 50%)" stopOpacity="0.3" />
-          <stop offset="100%" stopColor="hsl(246 100% 68%)" stopOpacity="0.3" />
-        </linearGradient>
-        <linearGradient id="radarStroke" x1="0%" y1="0%" x2="100%" y2="100%">
-          <stop offset="0%" stopColor="hsl(190 100% 50%)" />
-          <stop offset="100%" stopColor="hsl(155 100% 55%)" />
-        </linearGradient>
-      </defs>
+      {/* Hover tooltip */}
+      {hoveredIndex !== null && (
+        <g className="pointer-events-none">
+          <rect
+            x={center - 35}
+            y={center - 18}
+            width="70"
+            height="36"
+            rx="6"
+            className="fill-emblem-surface"
+            stroke="hsl(190 100% 50% / 0.5)"
+            strokeWidth="1"
+          />
+          <text
+            x={center}
+            y={center - 4}
+            textAnchor="middle"
+            className={cn(
+              "text-[10px] font-bold",
+              dataPoints[hoveredIndex].type === 'sentience' ? "fill-emblem-primary" : "fill-emblem-secondary"
+            )}
+          >
+            {dataPoints[hoveredIndex].label}
+          </text>
+          <text
+            x={center}
+            y={center + 10}
+            textAnchor="middle"
+            className="fill-emblem-text text-[12px] font-mono font-bold"
+          >
+            {dataPoints[hoveredIndex].value}%
+          </text>
+        </g>
+      )}
     </svg>
   );
 }
@@ -280,7 +393,11 @@ export default function StanceViz({ stance }: StanceVizProps) {
 
       {viewMode === 'radar' ? (
         <>
-          <RadarChart values={stance.values} sentience={stance.sentience} />
+          <RadarChart
+            values={stance.values}
+            sentience={stance.sentience}
+            changedKeys={new Set(valueChanges.map(c => c.key))}
+          />
           <div className="mt-4 space-y-1 text-xs">
             <div className="flex justify-between">
               <span className="text-emblem-muted">Frame</span>
