@@ -102,6 +102,8 @@ app.get('/api', (_req: Request, res: Response) => {
       'DELETE /api/session/:id': 'Delete a session',
       'POST /api/command': 'Execute a command',
       'GET /api/commands': 'List available commands',
+      'POST /api/sync': 'Sync data from browser to server (messages, memories, emotions)',
+      'GET /api/sync/emotions': 'Get aggregated emotion context for a session',
       'POST /api/emotion/detect': 'Detect emotions from webcam frame (base64 image)',
       'GET /api/emotion/status': 'Get emotion detector status',
       'POST /api/emotion/reset': 'Clear emotion history',
@@ -546,6 +548,121 @@ app.get('/api/commands', apiKeyAuth, (_req: Request, res: Response) => {
   res.json({ commands });
 });
 
+// Emotion sync state - per-session storage for aggregated emotion readings
+const sessionEmotionData = new Map<string, {
+  readings: Array<{
+    currentEmotion: string;
+    valence: number;
+    arousal: number;
+    confidence: number;
+    timestamp: number;
+  }>;
+  lastAggregate: {
+    avgValence: number;
+    avgArousal: number;
+    avgConfidence: number;
+    dominantEmotion: string;
+    stability: number;
+    trend: 'improving' | 'stable' | 'declining';
+    suggestedEmpathyBoost: number;
+    promptContext: string;
+  } | null;
+  lastSyncTime: number;
+}>();
+
+/**
+ * Get or create emotion data for a session
+ */
+function getSessionEmotionData(sessionId: string) {
+  let data = sessionEmotionData.get(sessionId);
+  if (!data) {
+    data = {
+      readings: [],
+      lastAggregate: null,
+      lastSyncTime: Date.now()
+    };
+    sessionEmotionData.set(sessionId, data);
+  }
+  return data;
+}
+
+/**
+ * Calculate emotion aggregate from readings
+ */
+function calculateEmotionAggregate(readings: Array<{
+  currentEmotion: string;
+  valence: number;
+  arousal: number;
+  confidence: number;
+  timestamp: number;
+}>) {
+  if (readings.length === 0) return null;
+
+  // Calculate averages
+  const avgValence = readings.reduce((sum, r) => sum + r.valence, 0) / readings.length;
+  const avgArousal = readings.reduce((sum, r) => sum + r.arousal, 0) / readings.length;
+  const avgConfidence = readings.reduce((sum, r) => sum + r.confidence, 0) / readings.length;
+
+  // Find dominant emotion (most frequent)
+  const emotionCounts: Record<string, number> = {};
+  for (const r of readings) {
+    emotionCounts[r.currentEmotion] = (emotionCounts[r.currentEmotion] || 0) + 1;
+  }
+  let dominantEmotion = 'neutral';
+  let maxCount = 0;
+  for (const [emotion, count] of Object.entries(emotionCounts)) {
+    if (count > maxCount) {
+      maxCount = count;
+      dominantEmotion = emotion;
+    }
+  }
+
+  // Calculate stability (inverse of variance in valence)
+  let stability = 1;
+  if (readings.length >= 2) {
+    const variance = readings.reduce((sum, r) => sum + Math.pow(r.valence - avgValence, 2), 0) / readings.length;
+    stability = Math.max(0, Math.min(1, 1 - Math.sqrt(variance)));
+  }
+
+  // Calculate trend (compare first half to second half)
+  let trend: 'improving' | 'stable' | 'declining' = 'stable';
+  if (readings.length >= 4) {
+    const midpoint = Math.floor(readings.length / 2);
+    const firstHalfAvg = readings.slice(0, midpoint).reduce((sum, r) => sum + r.valence, 0) / midpoint;
+    const secondHalfAvg = readings.slice(midpoint).reduce((sum, r) => sum + r.valence, 0) / (readings.length - midpoint);
+    const delta = secondHalfAvg - firstHalfAvg;
+    if (delta > 0.15) trend = 'improving';
+    else if (delta < -0.15) trend = 'declining';
+  }
+
+  // Calculate suggested empathy boost
+  let suggestedEmpathyBoost = 0;
+  if (avgValence < 0) {
+    const valenceBoost = Math.abs(avgValence) * 15;
+    const instabilityMultiplier = 1 + (1 - stability) * 0.5;
+    suggestedEmpathyBoost = Math.round(Math.min(20, valenceBoost * instabilityMultiplier));
+  }
+
+  // Generate prompt context
+  const valenceDesc = avgValence > 0.3 ? 'positive' : avgValence < -0.3 ? 'negative' : 'neutral';
+  const arousalDesc = avgArousal > 0.7 ? 'highly activated' : avgArousal < 0.3 ? 'calm' : 'moderately engaged';
+  let promptContext = `The user appears ${dominantEmotion} with a ${valenceDesc} emotional state. They seem ${arousalDesc}.`;
+  if (stability < 0.4) promptContext += ' Their emotional state has been fluctuating.';
+  if (trend === 'declining') promptContext += ' Their mood appears to be declining - consider responding with extra care.';
+  if (trend === 'improving') promptContext += ' Their mood appears to be improving.';
+
+  return {
+    avgValence,
+    avgArousal,
+    avgConfidence,
+    dominantEmotion,
+    stability,
+    trend,
+    suggestedEmpathyBoost,
+    promptContext
+  };
+}
+
 // Sync endpoint for PWA background sync (browser → server)
 app.post('/api/sync', apiKeyAuth, async (req: Request, res: Response) => {
   try {
@@ -612,6 +729,57 @@ app.post('/api/sync', apiKeyAuth, async (req: Request, res: Response) => {
         break;
       }
 
+      case 'emotions': {
+        // Sync emotion readings from browser to server
+        const emotionReadings = data as Array<{
+          currentEmotion: string;
+          valence: number;
+          arousal: number;
+          confidence: number;
+          timestamp: number;
+        }>;
+
+        if (!Array.isArray(emotionReadings)) {
+          res.status(400).json({ error: 'emotionReadings must be an array' });
+          return;
+        }
+
+        const emotionData = getSessionEmotionData(sessionId);
+
+        // Add new readings (keep last 100 readings max)
+        emotionData.readings.push(...emotionReadings);
+        if (emotionData.readings.length > 100) {
+          emotionData.readings = emotionData.readings.slice(-100);
+        }
+
+        // Calculate aggregate
+        const aggregate = calculateEmotionAggregate(emotionData.readings);
+        emotionData.lastAggregate = aggregate;
+        emotionData.lastSyncTime = Date.now();
+
+        console.log(`[Sync] Emotion data synced for session ${sessionId}: ${emotionReadings.length} readings, dominant: ${aggregate?.dominantEmotion || 'none'}`);
+
+        // Return current aggregate with empathy suggestions
+        res.json({
+          success: true,
+          synced: emotionReadings.length,
+          type: 'emotions',
+          emotionContext: aggregate ? {
+            avgValence: aggregate.avgValence,
+            avgArousal: aggregate.avgArousal,
+            avgConfidence: aggregate.avgConfidence,
+            dominantEmotion: aggregate.dominantEmotion,
+            stability: aggregate.stability,
+            trend: aggregate.trend,
+            suggestedEmpathyBoost: aggregate.suggestedEmpathyBoost,
+            promptContext: aggregate.promptContext,
+            readingCount: emotionData.readings.length,
+            lastSyncTime: emotionData.lastSyncTime
+          } : null
+        });
+        break;
+      }
+
       case 'preferences': {
         // Preferences stay local for now
         res.json({
@@ -624,13 +792,20 @@ app.post('/api/sync', apiKeyAuth, async (req: Request, res: Response) => {
 
       case 'full': {
         // Full sync - receive all browser data
-        const { messages, memories } = data as {
+        const { messages, memories, emotionReadings } = data as {
           messages?: Array<{ role: string; content: string; timestamp: number }>;
           memories?: Array<{
             id: string;
             type: 'episodic' | 'semantic' | 'identity';
             content: string;
             importance: number;
+            timestamp: number;
+          }>;
+          emotionReadings?: Array<{
+            currentEmotion: string;
+            valence: number;
+            arousal: number;
+            confidence: number;
             timestamp: number;
           }>;
         };
@@ -651,13 +826,31 @@ app.post('/api/sync', apiKeyAuth, async (req: Request, res: Response) => {
           }
         }
 
+        // Sync emotion readings if provided
+        let emotionsSynced = 0;
+        let emotionContext = null;
+        if (emotionReadings && Array.isArray(emotionReadings)) {
+          const emotionData = getSessionEmotionData(sessionId);
+          emotionData.readings.push(...emotionReadings);
+          if (emotionData.readings.length > 100) {
+            emotionData.readings = emotionData.readings.slice(-100);
+          }
+          const aggregate = calculateEmotionAggregate(emotionData.readings);
+          emotionData.lastAggregate = aggregate;
+          emotionData.lastSyncTime = Date.now();
+          emotionsSynced = emotionReadings.length;
+          emotionContext = aggregate;
+        }
+
         res.json({
           success: true,
           type: 'full',
           synced: {
             messages: messages?.length || 0,
-            memories: memoriesSynced
-          }
+            memories: memoriesSynced,
+            emotions: emotionsSynced
+          },
+          emotionContext
         });
         break;
       }
@@ -671,6 +864,43 @@ app.post('/api/sync', apiKeyAuth, async (req: Request, res: Response) => {
       error: error instanceof Error ? error.message : 'Sync failed'
     });
   }
+});
+
+// Get emotion context for a session
+app.get('/api/sync/emotions', apiKeyAuth, (req: Request, res: Response) => {
+  const sessionId = req.query.sessionId as string;
+
+  if (!sessionId) {
+    res.status(400).json({ error: 'sessionId is required' });
+    return;
+  }
+
+  const emotionData = sessionEmotionData.get(sessionId);
+
+  if (!emotionData || !emotionData.lastAggregate) {
+    res.json({
+      success: true,
+      emotionContext: null,
+      message: 'No emotion data available for this session'
+    });
+    return;
+  }
+
+  res.json({
+    success: true,
+    emotionContext: {
+      avgValence: emotionData.lastAggregate.avgValence,
+      avgArousal: emotionData.lastAggregate.avgArousal,
+      avgConfidence: emotionData.lastAggregate.avgConfidence,
+      dominantEmotion: emotionData.lastAggregate.dominantEmotion,
+      stability: emotionData.lastAggregate.stability,
+      trend: emotionData.lastAggregate.trend,
+      suggestedEmpathyBoost: emotionData.lastAggregate.suggestedEmpathyBoost,
+      promptContext: emotionData.lastAggregate.promptContext,
+      readingCount: emotionData.readings.length,
+      lastSyncTime: emotionData.lastSyncTime
+    }
+  });
 });
 
 // Emotion detection endpoint - processes webcam frames and returns emotion context

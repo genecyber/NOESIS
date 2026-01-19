@@ -9,6 +9,7 @@ export const STORAGE_KEYS = {
   LAST_SESSION_ID: 'metamorph:lastSessionId',
   MESSAGES_PREFIX: 'metamorph:messages:',
   MEMORIES_PREFIX: 'metamorph:memories:',
+  EMOTIONS_PREFIX: 'metamorph:emotions:',
   INPUT_HISTORY: 'metamorph:inputHistory',
   PREFERENCES: 'metamorph:preferences',
   ACTIVE_PANEL: 'metamorph:activePanel',
@@ -277,6 +278,102 @@ export function mergeMemories(
   const result = Array.from(merged.values());
   saveMemories(sessionId, result);
   return result;
+}
+
+// ============================================================================
+// Emotion reading storage
+// ============================================================================
+
+export interface StoredEmotionReading {
+  currentEmotion: string;
+  valence: number;      // -1 to 1
+  arousal: number;      // 0 to 1
+  confidence: number;   // 0 to 1
+  timestamp: number;    // Date.now()
+}
+
+export interface StoredEmotionData {
+  readings: StoredEmotionReading[];
+  lastSyncTime: number;
+  lastAggregate: {
+    avgValence: number;
+    avgArousal: number;
+    avgConfidence: number;
+    dominantEmotion: string;
+    stability: number;
+    trend: 'improving' | 'stable' | 'declining';
+    suggestedEmpathyBoost: number;
+  } | null;
+}
+
+const MAX_EMOTION_READINGS = 100;
+
+/**
+ * Save emotion readings for a session
+ */
+export function saveEmotionReadings(sessionId: string, data: StoredEmotionData): void {
+  const key = `${STORAGE_KEYS.EMOTIONS_PREFIX}${sessionId}`;
+  // Keep only the last MAX_EMOTION_READINGS
+  const trimmedData = {
+    ...data,
+    readings: data.readings.slice(-MAX_EMOTION_READINGS),
+  };
+  setStorageItem(key, trimmedData);
+}
+
+/**
+ * Get emotion readings for a session
+ */
+export function getEmotionReadings(sessionId: string): StoredEmotionData {
+  const key = `${STORAGE_KEYS.EMOTIONS_PREFIX}${sessionId}`;
+  return getStorageItem<StoredEmotionData>(key, {
+    readings: [],
+    lastSyncTime: 0,
+    lastAggregate: null,
+  });
+}
+
+/**
+ * Add emotion readings to storage
+ */
+export function addEmotionReadings(
+  sessionId: string,
+  readings: StoredEmotionReading[]
+): StoredEmotionData {
+  const data = getEmotionReadings(sessionId);
+  data.readings.push(...readings);
+  // Keep only the last MAX_EMOTION_READINGS
+  if (data.readings.length > MAX_EMOTION_READINGS) {
+    data.readings = data.readings.slice(-MAX_EMOTION_READINGS);
+  }
+  saveEmotionReadings(sessionId, data);
+  return data;
+}
+
+/**
+ * Update the last sync time for emotion data
+ */
+export function updateEmotionSyncTime(sessionId: string, syncTime: number): void {
+  const data = getEmotionReadings(sessionId);
+  data.lastSyncTime = syncTime;
+  saveEmotionReadings(sessionId, data);
+}
+
+/**
+ * Clear emotion readings for a session
+ */
+export function clearEmotionReadings(sessionId: string): void {
+  const key = `${STORAGE_KEYS.EMOTIONS_PREFIX}${sessionId}`;
+  removeStorageItem(key);
+}
+
+/**
+ * Get emotion readings that haven't been synced
+ * (readings with timestamp > lastSyncTime)
+ */
+export function getUnsyncedEmotionReadings(sessionId: string): StoredEmotionReading[] {
+  const data = getEmotionReadings(sessionId);
+  return data.readings.filter(r => r.timestamp > data.lastSyncTime);
 }
 
 // ============================================================================

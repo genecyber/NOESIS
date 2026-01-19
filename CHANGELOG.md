@@ -159,6 +159,59 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
   - `POST /api/chat/vision` - Claude Vision emotion analysis (rate-limited)
 - **Configuration**: `enableEmpathyMode` toggle in ModeConfig
 
+#### Emotion Persistence System
+- **SQLite Tables**: Full persistence for emotion data across server restarts
+  - `emotion_context` table stores webcam emotion readings per session
+    - Fields: current_emotion, valence, arousal, confidence, stability, prompt_context, suggested_empathy_boost, timestamp
+    - Index on (session_id, timestamp) for efficient queries
+  - `emotional_arcs` table persists emotional trajectory per conversation
+    - Fields: emotions (JSON array), insights, patterns, trend, updated_at
+    - Unique constraint on conversation_id
+- **MemoryStore Methods**: Full CRUD for emotion data
+  - `saveEmotionContext(sessionId, emotion)` - Save webcam emotion reading
+  - `getLatestEmotionContext(sessionId)` - Get most recent emotion
+  - `getEmotionHistory(sessionId, limit?)` - Get emotion history (default 50)
+  - `saveEmotionalArc(conversationId, arc)` - Persist emotional arc
+  - `getEmotionalArc(conversationId)` - Load emotional arc
+  - `deleteEmotionalArc(conversationId)` - Clear emotional arc
+- **EmotionalArcTracker Persistence**: Auto-saves to SQLite
+  - Accepts optional `MemoryStore` in constructor
+  - Loads from DB when arc not in memory (`getArc()`)
+  - Saves to DB after `recordTurn()` modifications
+  - Deletes from DB on `clearArc()` when store available
+- **Browser localStorage Persistence**: Client-side emotion storage
+  - `EmotionAggregator` now has `sessionId` property
+  - `persistToStorage()` with 5-second debounce
+  - `loadFromStorage(sessionId)` restores readings on session resume
+  - Auto-cleanup of entries older than 24 hours
+  - Storage key: `metamorph:emotions:{sessionId}`
+- **2-Way Browser-Server Sync**: Real-time emotion synchronization
+  - `useEmotionSync(sessionId)` React hook
+    - Auto-syncs every 30 seconds (configurable)
+    - Fetches latest context from server on mount
+    - Tracks sync status, errors, reading counts
+    - Manual `syncNow()`, `fetchContext()`, `clearLocalReadings()` methods
+  - `POST /api/sync` extended with `type: 'emotions'`
+    - Accepts emotion readings from browser
+    - Calculates aggregate context with empathy boost
+    - Returns server-side emotion context
+  - `GET /api/sync/emotions?sessionId=` endpoint
+    - Returns current aggregated emotion context
+    - Includes reading count, last sync time, all metrics
+  - Browser storage utilities in `web/lib/storage.ts`
+    - `saveEmotionReadings()`, `getEmotionReadings()`
+    - `getUnsyncedEmotionReadings()`, `updateEmotionSyncTime()`
+- **Data Flow**: Complete persistence pipeline
+  ```
+  Webcam → face-api → EmotionAggregator (localStorage)
+                            ↓ useEmotionSync
+                      /api/sync POST
+                            ↓
+              MemoryStore.saveEmotionContext()
+                            ↓
+                      SQLite (emotion_context)
+  ```
+
 #### New Session Management
 - **Web UI**: "+ New Chat" button in header with purple hover animation
 - **Chat Commands**: `/new` and `/clear` commands in web chat interface

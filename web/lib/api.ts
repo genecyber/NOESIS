@@ -506,3 +506,84 @@ export async function chatWithVision(
   console.warn('[API] chatWithVision is deprecated. Use analyzeVisionEmotion() instead.');
   return analyzeVisionEmotion(sessionId, imageDataUrl);
 }
+
+// ============================================================================
+// Emotion Sync API
+// ============================================================================
+
+/**
+ * Emotion reading from browser-side detection
+ */
+export interface EmotionReading {
+  currentEmotion: string;
+  valence: number;      // -1 to 1
+  arousal: number;      // 0 to 1
+  confidence: number;   // 0 to 1
+  timestamp: number;    // Date.now()
+}
+
+/**
+ * Server-side emotion context with sync metadata
+ */
+export interface SyncedEmotionContext {
+  avgValence: number;
+  avgArousal: number;
+  avgConfidence: number;
+  dominantEmotion: string;
+  stability: number;
+  trend: 'improving' | 'stable' | 'declining';
+  suggestedEmpathyBoost: number;
+  promptContext: string;
+  readingCount: number;
+  lastSyncTime: number;
+}
+
+/**
+ * Emotion sync response
+ */
+export interface EmotionSyncResponse {
+  success: boolean;
+  synced?: number;
+  type: 'emotions';
+  emotionContext?: SyncedEmotionContext | null;
+  error?: string;
+}
+
+/**
+ * Sync emotion readings from browser to server
+ * This sends aggregated emotion data for storage and returns the latest emotion context
+ *
+ * @param sessionId - The session ID
+ * @param readings - Array of emotion readings to sync
+ * @returns Sync result with updated emotion context
+ */
+export async function syncEmotions(
+  sessionId: string,
+  readings: EmotionReading[]
+): Promise<EmotionSyncResponse> {
+  return fetchJson<EmotionSyncResponse>(`${API_BASE}/sync`, {
+    method: 'POST',
+    body: JSON.stringify({
+      type: 'emotions',
+      sessionId,
+      data: readings,
+    }),
+  });
+}
+
+/**
+ * Get emotion context for a session
+ * Fetches the latest aggregated emotion context from the server
+ *
+ * @param sessionId - The session ID
+ * @returns The current emotion context or null if none exists
+ */
+export async function getEmotionContext(
+  sessionId: string
+): Promise<{
+  success: boolean;
+  emotionContext: SyncedEmotionContext | null;
+  message?: string;
+}> {
+  return fetchJson(`${API_BASE}/sync/emotions?sessionId=${encodeURIComponent(sessionId)}`);
+}

@@ -10,6 +10,33 @@
  *   const aggregate = aggregator.getAggregate();
  */
 
+import {
+  isStorageAvailable,
+  getStorageItem,
+  setStorageItem,
+  removeStorageItem,
+  getStorageKeys,
+} from './storage';
+
+// Storage key prefix for emotion readings
+const EMOTION_STORAGE_PREFIX = 'metamorph:emotions:';
+
+// Max age for persisted data (24 hours in ms)
+const MAX_PERSISTED_AGE_MS = 24 * 60 * 60 * 1000;
+
+// Debounce interval for persistence (5 seconds)
+const PERSIST_DEBOUNCE_MS = 5000;
+
+/**
+ * Structure for persisted emotion data
+ */
+export interface PersistedEmotionData {
+  sessionId: string;
+  readings: EmotionReading[];
+  lastAggregate: EmotionAggregate | null;
+  savedAt: string;
+}
+
 export interface EmotionReading {
   currentEmotion: string;
   valence: number;      // -1 to 1
@@ -51,10 +78,28 @@ export class EmotionAggregator {
   private readings: EmotionReading[] = [];
   private windowMs: number;
   private maxSamples: number;
+  private _sessionId: string | null = null;
+  private persistTimeout: ReturnType<typeof setTimeout> | null = null;
+  private lastPersistTime: number = 0;
+  private lastAggregateTime: number = 0;
 
   constructor(options?: AggregatorOptions) {
     this.windowMs = options?.windowMs ?? DEFAULT_WINDOW_MS;
     this.maxSamples = options?.maxSamples ?? DEFAULT_MAX_SAMPLES;
+  }
+
+  /**
+   * Get the current session ID
+   */
+  get sessionId(): string | null {
+    return this._sessionId;
+  }
+
+  /**
+   * Set the session ID for persistence
+   */
+  set sessionId(id: string | null) {
+    this._sessionId = id;
   }
 
   /**
@@ -70,6 +115,35 @@ export class EmotionAggregator {
 
     // Prune old readings
     this.pruneOldReadings();
+
+    // Schedule debounced persistence
+    this.schedulePersistence();
+  }
+
+  /**
+   * Schedule persistence with debouncing (max every 5 seconds)
+   */
+  private schedulePersistence(): void {
+    // Skip if no session ID
+    if (!this._sessionId) return;
+
+    const now = Date.now();
+    const timeSinceLastPersist = now - this.lastPersistTime;
+
+    // If we already have a pending timeout, let it run
+    if (this.persistTimeout) return;
+
+    // If enough time has passed, persist immediately
+    if (timeSinceLastPersist >= PERSIST_DEBOUNCE_MS) {
+      this.persistToStorage();
+    } else {
+      // Schedule persistence for when debounce interval elapses
+      const delay = PERSIST_DEBOUNCE_MS - timeSinceLastPersist;
+      this.persistTimeout = setTimeout(() => {
+        this.persistTimeout = null;
+        this.persistToStorage();
+      }, delay);
+    }
   }
 
   /**
@@ -155,6 +229,112 @@ export class EmotionAggregator {
    */
   clear(): void {
     this.readings = [];
+  }
+
+  // ============================================================================
+  // Persistence methods
+  // ============================================================================
+
+  /**
+   * Persist current readings to localStorage
+   * Called automatically (debounced) after addReading if sessionId is set
+   */
+  persistToStorage(): boolean {
+    if (!this._sessionId) return false;
+    if (!isStorageAvailable()) return false;
+
+    try {
+      const key = `${EMOTION_STORAGE_PREFIX}${this._sessionId}`;
+      const data: PersistedEmotionData = {
+        sessionId: this._sessionId,
+        readings: this.readings,
+        lastAggregate: this.getAggregate(),
+        savedAt: new Date().toISOString(),
+      };
+
+      const success = setStorageItem(key, data);
+      if (success) {
+        this.lastPersistTime = Date.now();
+      }
+      return success;
+    } catch {
+      return false;
+    }
+  }
+
+  /**
+   * Load readings from localStorage for a given session
+   * Cleans up entries older than 24 hours
+   */
+  loadFromStorage(sessionId: string): boolean {
+    if (!isStorageAvailable()) return false;
+
+    // Clean up old entries first
+    this.cleanupOldEntries();
+
+    try {
+      const key = `${EMOTION_STORAGE_PREFIX}${sessionId}`;
+      const data = getStorageItem<PersistedEmotionData | null>(key, null);
+
+      if (!data) return false;
+
+      // Check if data is too old (24 hours)
+      const savedTime = new Date(data.savedAt).getTime();
+      if (Date.now() - savedTime > MAX_PERSISTED_AGE_MS) {
+        removeStorageItem(key);
+        return false;
+      }
+
+      // Restore state
+      this._sessionId = sessionId;
+      this.readings = data.readings || [];
+
+      // Prune any readings that are now outside the window
+      this.pruneOldReadings();
+
+      return true;
+    } catch {
+      return false;
+    }
+  }
+
+  /**
+   * Clean up emotion entries older than 24 hours
+   */
+  private cleanupOldEntries(): void {
+    if (!isStorageAvailable()) return;
+
+    try {
+      const keys = getStorageKeys(EMOTION_STORAGE_PREFIX);
+      const now = Date.now();
+
+      for (const key of keys) {
+        const data = getStorageItem<PersistedEmotionData | null>(key, null);
+        if (data) {
+          const savedTime = new Date(data.savedAt).getTime();
+          if (now - savedTime > MAX_PERSISTED_AGE_MS) {
+            removeStorageItem(key);
+          }
+        }
+      }
+    } catch {
+      // Silently ignore cleanup errors
+    }
+  }
+
+  /**
+   * Clear persisted data for the current session
+   */
+  clearPersistedData(): boolean {
+    if (!this._sessionId) return false;
+    if (!isStorageAvailable()) return false;
+
+    try {
+      const key = `${EMOTION_STORAGE_PREFIX}${this._sessionId}`;
+      return removeStorageItem(key);
+    } catch {
+      return false;
+    }
   }
 
   /**

@@ -14,6 +14,7 @@ import {
   Stance,
   SelfModel
 } from '../types/index.js';
+import type { EmotionalArc, EmotionalPoint, EmotionalPattern } from '../core/emotional-arc.js';
 
 export interface MemoryStoreOptions {
   dbPath?: string;
@@ -192,6 +193,48 @@ export class MemoryStore {
     this.db.exec(`
       CREATE INDEX IF NOT EXISTS idx_subagent_results
       ON subagent_results(subagent_name, relevance DESC)
+    `);
+
+    // Emotional arcs table (Ralph Iteration 3 - Feature 6 persistence)
+    this.db.exec(`
+      CREATE TABLE IF NOT EXISTS emotional_arcs (
+        id TEXT PRIMARY KEY,
+        conversation_id TEXT NOT NULL UNIQUE,
+        emotions TEXT NOT NULL,
+        insights TEXT NOT NULL,
+        patterns TEXT NOT NULL,
+        trend TEXT,
+        updated_at TEXT NOT NULL
+      )
+    `);
+
+    // Index for emotional_arcs by conversation_id
+    this.db.exec(`
+      CREATE INDEX IF NOT EXISTS idx_emotional_arcs_conversation
+      ON emotional_arcs(conversation_id)
+    `);
+
+    // Emotion context table (for empathy mode persistence)
+    this.db.exec(`
+      CREATE TABLE IF NOT EXISTS emotion_context (
+        id TEXT PRIMARY KEY,
+        session_id TEXT NOT NULL,
+        current_emotion TEXT NOT NULL,
+        valence REAL NOT NULL,
+        arousal REAL NOT NULL,
+        confidence REAL NOT NULL,
+        stability REAL,
+        prompt_context TEXT,
+        suggested_empathy_boost REAL,
+        timestamp TEXT NOT NULL,
+        FOREIGN KEY(session_id) REFERENCES sessions(id)
+      )
+    `);
+
+    // Index for emotion context by session
+    this.db.exec(`
+      CREATE INDEX IF NOT EXISTS idx_emotion_context_session
+      ON emotion_context(session_id, timestamp DESC)
     `);
   }
 
@@ -1153,6 +1196,173 @@ export class MemoryStore {
   }
 
   // ============================================================================
+  // Emotional Arc Persistence (Ralph Iteration 3 - Feature 6)
+  // ============================================================================
+
+  /**
+   * Save an emotional arc for a conversation
+   */
+  saveEmotionalArc(conversationId: string, arc: EmotionalArc): void {
+    // Calculate trend from points
+    let trend: 'improving' | 'declining' | 'stable' | null = null;
+    if (arc.points.length >= 3) {
+      const recent = arc.points.slice(-3).map(p => p.valence);
+      const delta = recent[recent.length - 1] - recent[0];
+      if (delta > 15) trend = 'improving';
+      else if (delta < -15) trend = 'declining';
+      else trend = 'stable';
+    }
+
+    this.db.prepare(`
+      INSERT OR REPLACE INTO emotional_arcs
+      (id, conversation_id, emotions, insights, patterns, trend, updated_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?)
+    `).run(
+      conversationId, // Use conversationId as id for simplicity
+      conversationId,
+      JSON.stringify(arc.points),
+      JSON.stringify(arc.insights),
+      JSON.stringify(arc.patterns),
+      trend,
+      new Date().toISOString()
+    );
+  }
+
+  /**
+   * Get an emotional arc for a conversation
+   */
+  getEmotionalArc(conversationId: string): EmotionalArc | null {
+    const row = this.db.prepare(`
+      SELECT conversation_id, emotions, insights, patterns, trend, updated_at
+      FROM emotional_arcs
+      WHERE conversation_id = ?
+    `).get(conversationId) as {
+      conversation_id: string;
+      emotions: string;
+      insights: string;
+      patterns: string;
+      trend: string | null;
+      updated_at: string;
+    } | undefined;
+
+    if (!row) return null;
+
+    return {
+      conversationId: row.conversation_id,
+      points: JSON.parse(row.emotions) as EmotionalPoint[],
+      insights: JSON.parse(row.insights) as string[],
+      patterns: JSON.parse(row.patterns) as EmotionalPattern[]
+    };
+  }
+
+  /**
+   * Delete an emotional arc for a conversation
+   */
+  deleteEmotionalArc(conversationId: string): boolean {
+    const result = this.db.prepare('DELETE FROM emotional_arcs WHERE conversation_id = ?').run(conversationId);
+    return result.changes > 0;
+  }
+
+  // ============================================================================
+  // Emotion Context Persistence (for Empathy Mode)
+  // ============================================================================
+
+  /**
+   * Save an emotion context for a session
+   */
+  saveEmotionContext(sessionId: string, emotion: EmotionContext): Promise<void> {
+    const id = uuidv4();
+    const timestamp = emotion.timestamp || new Date().toISOString();
+
+    this.db.prepare(`
+      INSERT INTO emotion_context
+      (id, session_id, current_emotion, valence, arousal, confidence, stability, prompt_context, suggested_empathy_boost, timestamp)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `).run(
+      id,
+      sessionId,
+      emotion.currentEmotion,
+      emotion.valence,
+      emotion.arousal,
+      emotion.confidence,
+      emotion.stability ?? null,
+      emotion.promptContext ?? null,
+      emotion.suggestedEmpathyBoost ?? null,
+      timestamp
+    );
+
+    return Promise.resolve();
+  }
+
+  /**
+   * Get the latest emotion context for a session
+   */
+  getLatestEmotionContext(sessionId: string): Promise<EmotionContext | null> {
+    const row = this.db.prepare(`
+      SELECT current_emotion, valence, arousal, confidence, stability, prompt_context, suggested_empathy_boost, timestamp
+      FROM emotion_context
+      WHERE session_id = ?
+      ORDER BY timestamp DESC
+      LIMIT 1
+    `).get(sessionId) as {
+      current_emotion: string;
+      valence: number;
+      arousal: number;
+      confidence: number;
+      stability: number | null;
+      prompt_context: string | null;
+      suggested_empathy_boost: number | null;
+      timestamp: string;
+    } | undefined;
+
+    if (!row) return Promise.resolve(null);
+
+    return Promise.resolve({
+      currentEmotion: row.current_emotion,
+      valence: row.valence,
+      arousal: row.arousal,
+      confidence: row.confidence,
+      stability: row.stability ?? 0,
+      promptContext: row.prompt_context ?? undefined,
+      suggestedEmpathyBoost: row.suggested_empathy_boost ?? undefined,
+      timestamp: row.timestamp
+    });
+  }
+
+  /**
+   * Get emotion history for a session
+   */
+  getEmotionHistory(sessionId: string, limit: number = 50): Promise<EmotionContext[]> {
+    const rows = this.db.prepare(`
+      SELECT current_emotion, valence, arousal, confidence, stability, prompt_context, suggested_empathy_boost, timestamp
+      FROM emotion_context
+      WHERE session_id = ?
+      ORDER BY timestamp DESC
+      LIMIT ?
+    `).all(sessionId, limit) as Array<{
+      current_emotion: string;
+      valence: number;
+      arousal: number;
+      confidence: number;
+      stability: number | null;
+      prompt_context: string | null;
+      suggested_empathy_boost: number | null;
+      timestamp: string;
+    }>;
+
+    return Promise.resolve(rows.map(row => ({
+      currentEmotion: row.current_emotion,
+      valence: row.valence,
+      arousal: row.arousal,
+      confidence: row.confidence,
+      stability: row.stability ?? 0,
+      promptContext: row.prompt_context ?? undefined,
+      suggestedEmpathyBoost: row.suggested_empathy_boost ?? undefined,
+      timestamp: row.timestamp
+    })));
+  }
+
+  // ============================================================================
   // Utility
   // ============================================================================
 
@@ -1172,6 +1382,8 @@ export class MemoryStore {
     this.db.prepare('DELETE FROM sessions').run();
     this.db.prepare('DELETE FROM operator_performance').run();
     this.db.prepare('DELETE FROM subagent_results').run();
+    this.db.prepare('DELETE FROM emotional_arcs').run();
+    this.db.prepare('DELETE FROM emotion_context').run();
   }
 }
 
@@ -1209,4 +1421,16 @@ export interface SubagentResult {
   conversationId?: string;
   timestamp: Date;
   expiry?: Date;
+}
+
+// Emotion context type (for empathy mode persistence)
+export interface EmotionContext {
+  currentEmotion: string;
+  valence: number;           // -1 to 1
+  arousal: number;           // 0 to 1
+  confidence: number;        // 0 to 1
+  stability: number;         // 0 to 1
+  promptContext?: string;
+  suggestedEmpathyBoost?: number;  // 0 to 20+, based on negative valence + instability
+  timestamp?: string;
 }

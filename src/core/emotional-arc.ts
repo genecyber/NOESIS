@@ -5,6 +5,8 @@
  * that may warrant transformation interventions.
  */
 
+import type { MemoryStore } from '../memory/store.js';
+
 /**
  * Emotional state for a single turn
  */
@@ -138,15 +140,43 @@ export function analyzeEmotionalContent(text: string): {
 /**
  * Emotional arc tracker
  */
-class EmotionalArcTracker {
+export class EmotionalArcTracker {
   private arcs: Map<string, EmotionalArc> = new Map();
+  private memoryStore?: MemoryStore;
+
+  /**
+   * Create a new EmotionalArcTracker
+   * @param memoryStore Optional MemoryStore for persistence
+   */
+  constructor(memoryStore?: MemoryStore) {
+    this.memoryStore = memoryStore;
+  }
+
+  /**
+   * Set the memory store for persistence
+   */
+  setMemoryStore(memoryStore: MemoryStore): void {
+    this.memoryStore = memoryStore;
+  }
 
   /**
    * Get or create arc for conversation
+   * Loads from DB if not in memory
    */
   getArc(conversationId: string): EmotionalArc {
     let arc = this.arcs.get(conversationId);
     if (!arc) {
+      // Try to load from database if memoryStore is available
+      if (this.memoryStore) {
+        const dbArc = this.memoryStore.getEmotionalArc(conversationId);
+        if (dbArc) {
+          arc = dbArc;
+          this.arcs.set(conversationId, arc);
+          return arc;
+        }
+      }
+
+      // Create new arc if not found
       arc = {
         conversationId,
         points: [],
@@ -160,6 +190,7 @@ class EmotionalArcTracker {
 
   /**
    * Record emotional state for a turn
+   * Persists to DB after modification if memoryStore is available
    */
   recordTurn(conversationId: string, text: string, turnNumber: number): EmotionalPoint {
     const analysis = analyzeEmotionalContent(text);
@@ -176,7 +207,19 @@ class EmotionalArcTracker {
       this.detectPatterns(arc);
     }
 
+    // Persist to database
+    this.persistArc(conversationId, arc);
+
     return point;
+  }
+
+  /**
+   * Persist arc to database if memoryStore is available
+   */
+  private persistArc(conversationId: string, arc: EmotionalArc): void {
+    if (this.memoryStore) {
+      this.memoryStore.saveEmotionalArc(conversationId, arc);
+    }
   }
 
   /**
@@ -286,6 +329,7 @@ class EmotionalArcTracker {
 
   /**
    * Get current emotional state summary
+   * Loads from DB if not in memory
    */
   getCurrentState(conversationId: string): {
     current: EmotionalPoint | null;
@@ -293,8 +337,9 @@ class EmotionalArcTracker {
     recentInsights: string[];
     suggestedIntervention: string | null;
   } {
-    const arc = this.arcs.get(conversationId);
-    if (!arc || arc.points.length === 0) {
+    // Use getArc to ensure we load from DB if needed
+    const arc = this.getArc(conversationId);
+    if (arc.points.length === 0) {
       return { current: null, trend: 'unknown', recentInsights: [], suggestedIntervention: null };
     }
 
@@ -323,16 +368,23 @@ class EmotionalArcTracker {
 
   /**
    * Get full arc for visualization
+   * Loads from DB if not in memory
    */
   getFullArc(conversationId: string): EmotionalArc | null {
-    return this.arcs.get(conversationId) || null;
+    const arc = this.getArc(conversationId);
+    // Return null if arc has no data (was just created empty)
+    return arc.points.length > 0 ? arc : null;
   }
 
   /**
    * Clear arc for conversation
+   * Also deletes from DB if memoryStore is available
    */
   clearArc(conversationId: string): void {
     this.arcs.delete(conversationId);
+    if (this.memoryStore) {
+      this.memoryStore.deleteEmotionalArc(conversationId);
+    }
   }
 }
 
