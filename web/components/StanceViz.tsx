@@ -20,11 +20,11 @@ interface ValueChange {
 
 // Radar chart component
 function RadarChart({ values, sentience }: { values: Stance['values']; sentience: Stance['sentience'] }) {
-  const size = 240;
+  const size = 280;
   const center = size / 2;
-  const radius = size * 0.38;
+  const radius = size * 0.32;
 
-  // Combine values and sentience for radar
+  // All values + sentience metrics (10 total)
   const dataPoints = [
     { label: 'Curiosity', value: values.curiosity ?? 50 },
     { label: 'Certainty', value: values.certainty ?? 50 },
@@ -34,6 +34,8 @@ function RadarChart({ values, sentience }: { values: Stance['values']; sentience
     { label: 'Provocation', value: values.provocation ?? 50 },
     { label: 'Synthesis', value: values.synthesis ?? 50 },
     { label: 'Awareness', value: sentience.awarenessLevel },
+    { label: 'Autonomy', value: sentience.autonomyLevel },
+    { label: 'Identity', value: sentience.identityStrength },
   ];
 
   const numPoints = dataPoints.length;
@@ -57,8 +59,8 @@ function RadarChart({ values, sentience }: { values: Stance['values']; sentience
     const angle = angleStep * i - Math.PI / 2;
     const endX = center + radius * Math.cos(angle);
     const endY = center + radius * Math.sin(angle);
-    const labelX = center + (radius + 18) * Math.cos(angle);
-    const labelY = center + (radius + 18) * Math.sin(angle);
+    const labelX = center + (radius + 24) * Math.cos(angle);
+    const labelY = center + (radius + 24) * Math.sin(angle);
     return { point, endX, endY, labelX, labelY, angle };
   });
 
@@ -125,18 +127,30 @@ function RadarChart({ values, sentience }: { values: Stance['values']; sentience
       })}
 
       {/* Labels */}
-      {axes.map(({ point, labelX, labelY, angle }, i) => (
-        <text
-          key={i}
-          x={labelX}
-          y={labelY}
-          textAnchor={Math.abs(angle) < 0.1 ? 'middle' : angle > -Math.PI / 2 && angle < Math.PI / 2 ? 'start' : 'end'}
-          dominantBaseline="middle"
-          className="fill-emblem-muted text-[9px] font-mono"
-        >
-          {point.label}
-        </text>
-      ))}
+      {axes.map(({ point, labelX, labelY, angle }, i) => {
+        // Determine text anchor based on position
+        const isTop = angle < -Math.PI / 4 && angle > -3 * Math.PI / 4;
+        const isBottom = angle > Math.PI / 4 && angle < 3 * Math.PI / 4;
+        const isRight = angle > -Math.PI / 4 && angle < Math.PI / 4;
+        const isLeft = angle < -3 * Math.PI / 4 || angle > 3 * Math.PI / 4;
+
+        let textAnchor: 'start' | 'middle' | 'end' = 'middle';
+        if (isRight) textAnchor = 'start';
+        else if (isLeft) textAnchor = 'end';
+
+        return (
+          <text
+            key={i}
+            x={labelX}
+            y={labelY}
+            textAnchor={textAnchor}
+            dominantBaseline={isTop ? 'auto' : isBottom ? 'hanging' : 'middle'}
+            className="fill-emblem-muted text-[8px] font-mono"
+          >
+            {point.label}
+          </text>
+        );
+      })}
 
       {/* Gradient definitions */}
       <defs>
