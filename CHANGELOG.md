@@ -149,6 +149,180 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 - **Agent**: Integrated auto-evolution, identity persistence, and proactive memory into chat loop
 - **AGENT_ADAPTATION_AUDIT.md**: Updated to reflect 3 newly integrated mechanisms
 
+## [0.6.0] - 2026-01-18 - Ralph Iterations 4-17
+
+### Ralph Iteration 4 - Semantic Memory & Auto-Evolution
+
+#### 1. Semantic Memory Embeddings (TF-IDF)
+- Local TF-IDF based embeddings in `src/core/embeddings.ts`
+- `createSparseEmbedding()` for text vectorization with stop word filtering
+- `cosineSimilarity()` for comparing embedding vectors
+- `findMostSimilar()` to rank memories by relevance
+- CLI `/similar <text>` command finds semantically related memories
+- Hooks for future upgrade to Voyage AI or other providers
+
+#### 2. Autonomous Evolution Triggers
+- `AutoEvolutionManager` class in `src/core/auto-evolution.ts`
+- 6 trigger types detected: pattern_repetition, sentience_plateau, identity_drift, value_stagnation, coherence_degradation, growth_opportunity
+- `recordStance()` and `recordCoherence()` track history per conversation
+- `checkForTriggers()` analyzes patterns and returns suggested actions
+- `generateProposal()` creates evolution recommendations
+- CLI `/auto-evolve` command suite (check, propose, apply, history)
+- **Now integrated into chat loop** (as of this release)
+
+#### 3. D3.js Stance Visualization
+- `StanceGraph` class in `src/visualization/stance-graph.ts`
+- Force-directed graph generation with nodes for frame, values, operators
+- Edge weight calculation based on stance relationships
+- HTML export with embedded D3.js rendering
+- CLI `/viz` command generates interactive HTML visualization
+
+#### 4. Context Window Management
+- `ContextManager` class in `src/core/context-manager.ts`
+- Token counting and budget tracking per conversation
+- Message importance scoring (recency, role, content analysis)
+- Auto-summarization when approaching context limit
+- Message compaction preserving critical context
+- CLI `/context` command shows usage and summary status
+
+#### 5. ElizaOS Integration Research
+- Agent discovery interface in `src/integrations/eliza-os.ts`
+- Character generation from METAMORPH stance
+- Multi-agent coordination stubs
+- CLI `/eliza` command for import/export
+
+#### 6. MCP Tool Framework
+- Tool registry in `src/integrations/mcp-tools.ts`
+- Hustle-v5 compatible tool definitions
+- Research and web scraping tool stubs
+
+### Ralph Iteration 5 - Identity Persistence & Collaboration
+
+#### 1. Multi-Modal Memory
+- `MultiModalMemory` class in `src/memory/multi-modal.ts`
+- Image reference storage with embedding-based descriptions
+- Screenshot analysis hooks for Claude vision
+- Multi-modal memory search interface
+
+#### 2. Cross-Session Identity Persistence
+- `IdentityPersistenceManager` in `src/core/identity-persistence.ts`
+- `createCheckpoint()` saves full identity state with fingerprint
+- `diffCheckpoints()` calculates identity drift magnitude
+- `detectDrift()` identifies significant changes between sessions
+- `addCoreValue()` reinforces persistent values
+- Auto-checkpoint every 10 turns (configurable)
+- CLI `/identity save|restore|diff` commands
+- **Now integrated into chat loop** (as of this release)
+
+#### 3. Real-Time Collaboration
+- `CollaborativeSessionManager` in `src/collaboration/session-manager.ts`
+- WebSocket-based real-time message sync
+- Participant presence tracking
+- Turn-taking and free-form modes
+- CLI `/collab start|join` commands
+
+#### 4. Proactive Memory Injection
+- `ProactiveMemoryInjector` in `src/memory/proactive-injection.ts`
+- Semantic similarity scoring for relevance (embedding comparison)
+- Recency decay weighting (newer memories score higher)
+- Stance alignment checking (memories matching current frame)
+- Cooldown tracking to prevent over-injection
+- Injects up to 3 memories into system prompt with relevance scores
+- CLI `/inject` command for manual triggering
+- **Now integrated into chat loop** (as of this release)
+
+#### 5. Coherence Gates for Streaming
+- `CoherenceGateManager` in `src/streaming/coherence-gates.ts`
+- Token-by-token coherence scoring interface
+- Early termination triggers defined
+- Backtrack and regenerate patterns defined
+- **Status: Type definitions, not integrated**
+
+#### 6. Plugin Architecture
+- `PluginSystem` class in `src/plugins/plugin-system.ts`
+- Plugin manifest format and validation
+- Hot-reload mechanism
+- Sandboxed execution interface
+- CLI `/plugins list|install|remove` commands
+
+### Ralph Iteration 6 - Persistence & Multi-Agent
+
+#### 1. Persistent Memory Storage
+- `MemoryPersistence` in `src/memory/persistence.ts`
+- Export to JSON/Parquet formats
+- Automatic backup on drift thresholds
+- Memory deduplication and consolidation
+- CLI `/memory export|backup|consolidate|stats`
+
+#### 2. Natural Language Configuration
+- `NaturalLanguageConfig` in `src/core/natural-language-config.ts`
+- Intent parsing ("make me more provocative" → value adjustment)
+- Change preview before applying
+- Undo/redo configuration history
+- CLI `/configure <natural language>`
+
+#### 3. Conversation Branching
+- `ConversationBranching` in `src/conversation/branching.ts`
+- Branch at any conversation point
+- Time travel to previous states
+- Merge branches with conflict resolution
+- CLI `/branch create|switch|merge|list`
+
+#### 4. Dynamic Operator Discovery
+- `OperatorDiscovery` in `src/operators/discovery.ts`
+- Pattern gap analysis
+- Operator suggestion generation
+- A/B test variants
+- CLI `/operators suggest|create|test`
+
+#### 5. Multi-Agent Orchestration
+- `MultiAgentOrchestrator` in `src/orchestration/multi-agent.ts`
+- Agent federation protocol
+- Shared memory pools
+- Debate mode coordination
+- CLI `/agents spawn|connect|orchestrate`
+
+#### 6. Personality Marketplace
+- `PresetMarketplace` in `src/presets/marketplace.ts`
+- Preset export/import
+- Community sharing interface
+- Rating and review system
+- CLI `/presets export|import|search`
+
+### Ralph Iterations 7-17 - Type Definitions & Future Features
+
+The following iterations added extensive type definitions and interfaces for future implementation. Code exists but is not integrated into the chat loop:
+
+**Iteration 7:** Semantic memory compression, telemetry dashboard, knowledge graph integration, plugin SDK, stance replay
+
+**Iteration 8:** Voice/audio interface, IDE integration (VS Code, JetBrains), stance-aware code generation, federated learning, OAuth/SSO, cross-platform sync
+
+**Iteration 9:** VR/AR visualization, documentation generation, A/B testing framework, prompt rewriting, stance diffing, workflow integration (Slack, Discord, webhooks)
+
+**Iteration 10:** Training data export, multi-language support, community marketplace, performance benchmarking, emotional tone detection, autonomous goal pursuit
+
+**Iteration 11:** Cross-model stance transfer, memory prioritization, dynamic coherence thresholds, predictive operator suggestions, stance archetypes, multiplayer editing
+
+**Iteration 12:** Stance inheritance, therapy/debugging, time-based scheduling, domain templates, NL stance specification, impact simulation
+
+**Iteration 13:** 3D visualization export (GLTF/USD), identity continuity, AI-assisted optimization, semantic versioning, knowledge base integration, voice-to-stance
+
+**Iteration 14:** Biometric adjustments, environmental context sensing, template composition, stance testing framework, calendar integration, leaderboards
+
+**Iteration 15:** Access control, conversation-derived inference, Monte Carlo simulation, analytics dashboard, gradual morphing, stance fingerprinting
+
+**Iteration 16:** Encryption (AES-256), real-time collaborative editing (CRDT), conflict mediation, rollback with branching, documentation generation, AI coaching
+
+**Iteration 17:** Haptic VR feedback, inheritance visualization, community ratings, predictive decay modeling, emotional intelligence calibration, recommendation engine
+
+### Technical Notes
+
+- All iteration code compiles and passes type checking
+- CLI commands registered but may require feature flags
+- 120 unit tests passing
+- Type definitions provide foundation for future implementation
+- See `AGENT_ADAPTATION_AUDIT.md` for integration status of each mechanism
+
 ## [0.5.0] - 2026-01-18 - Web UI Enhancement Release
 
 ### Added
