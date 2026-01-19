@@ -9,7 +9,7 @@ import EvolutionTimeline from '@/components/EvolutionTimeline';
 import SessionBrowser from '@/components/SessionBrowser';
 import MemoryBrowser from '@/components/MemoryBrowser';
 import EmpathyPanel from '@/components/EmpathyPanel';
-import { createSession, updateConfig, getState, getTimeline, getEvolution, resumeSession, syncMemoriesToServer } from '@/lib/api';
+import { createSession, updateConfig, getState, getTimeline, getEvolution, resumeSession, syncMemoriesToServer, chatWithVision } from '@/lib/api';
 import { getLastSessionId, saveLastSessionId, getPreferences, savePreferences, getMemoriesFromStorage, getPendingSyncItems, removeSyncQueueItem, isOnline } from '@/lib/storage';
 import type { Stance, ModeConfig, ChatResponse, TimelineEntry, EvolutionSnapshot, EmotionContext } from '@/lib/types';
 import styles from './page.module.css';
@@ -172,6 +172,9 @@ export default function Home() {
       setConfig(session.config);
       setTimelineEntries([]);
       setEvolutionSnapshots([]);
+      // Save new session ID and clear emotion context
+      saveLastSessionId(session.sessionId);
+      setEmotionContext(null);
     } catch (err) {
       console.error('Failed to create session:', err);
     }
@@ -181,6 +184,63 @@ export default function Home() {
     await handleSessionChange(newSessionId);
     setActivePanel('stance');
   };
+
+  // Handle Claude Vision emotion analysis request from EmpathyPanel
+  const handleVisionRequest = useCallback(async (frame: string, prompt: string) => {
+    if (!sessionId) return;
+
+    try {
+      console.log('[Vision] Sending frame to Claude for emotion analysis...');
+      const response = await chatWithVision(sessionId, prompt, frame, prompt);
+
+      // Try to parse emotion from Claude's response
+      // Claude should respond with JSON like: {"emotion": "...", "intensity": "...", ...}
+      const text = response.response;
+      console.log('[Vision] Claude response:', text);
+
+      // Try to extract JSON from response
+      const jsonMatch = text.match(/\{[\s\S]*\}/);
+      if (jsonMatch) {
+        try {
+          const parsed = JSON.parse(jsonMatch[0]);
+          const emotion = parsed.emotion?.toLowerCase() || 'neutral';
+          const intensity = parsed.intensity?.toLowerCase() || 'medium';
+
+          // Map intensity to valence adjustment
+          const intensityMap: Record<string, number> = {
+            low: 0.3,
+            medium: 0.6,
+            high: 0.9,
+          };
+          const intensityValue = intensityMap[intensity] || 0.5;
+
+          // Create emotion context from Claude's analysis
+          const visionEmotionContext: EmotionContext = {
+            currentEmotion: emotion,
+            // Estimate valence: positive emotions -> positive valence
+            valence: ['happy', 'surprised'].includes(emotion) ? intensityValue
+              : ['sad', 'angry', 'fearful', 'disgusted'].includes(emotion) ? -intensityValue
+              : 0,
+            arousal: ['angry', 'fearful', 'surprised'].includes(emotion) ? intensityValue
+              : ['sad', 'neutral'].includes(emotion) ? 0.3 : 0.5,
+            confidence: parsed.confidence === 'high' ? 0.9
+              : parsed.confidence === 'medium' ? 0.7
+              : parsed.confidence === 'low' ? 0.4 : 0.6,
+            stability: 0.8, // Vision inference is typically stable
+            promptContext: `Claude Vision detected: ${emotion} (${intensity} intensity)`,
+            timestamp: new Date().toISOString(),
+          };
+
+          setEmotionContext(visionEmotionContext);
+          console.log('[Vision] Updated emotion context:', visionEmotionContext);
+        } catch (parseErr) {
+          console.error('[Vision] Failed to parse Claude response as JSON:', parseErr);
+        }
+      }
+    } catch (err) {
+      console.error('[Vision] Failed to analyze frame:', err);
+    }
+  }, [sessionId]);
 
   if (error) {
     return (
@@ -202,8 +262,13 @@ export default function Home() {
   return (
     <main className={styles.main}>
       <header className={styles.header}>
-        <h1>METAMORPH</h1>
-        <span className={styles.subtitle}>Transformation-Maximizing AI</span>
+        <div className={styles.headerLeft}>
+          <h1>METAMORPH</h1>
+          <span className={styles.subtitle}>Transformation-Maximizing AI</span>
+        </div>
+        <button className={styles.newSessionBtn} onClick={handleNewSession}>
+          + New Chat
+        </button>
       </header>
 
       <div className={styles.container}>
@@ -213,8 +278,10 @@ export default function Home() {
             onSessionChange={handleSessionChange}
             onResponse={handleResponse}
             onPanelChange={handlePanelChange}
+            onNewSession={handleNewSession}
             stance={stance}
             config={config}
+            emotionContext={emotionContext}
           />
         </div>
 
@@ -292,6 +359,8 @@ export default function Home() {
                 enabled={config?.enableEmpathyMode ?? false}
                 emotionContext={emotionContext}
                 onToggle={(enabled) => handleConfigUpdate({ enableEmpathyMode: enabled })}
+                onEmotionDetected={(context) => setEmotionContext(context)}
+                onVisionRequest={handleVisionRequest}
               />
             )}
           </div>

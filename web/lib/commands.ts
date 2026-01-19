@@ -141,6 +141,13 @@ export const COMMANDS: Command[] = [
     category: 'chat',
     inlineOutput: true,
   },
+  {
+    name: 'new',
+    aliases: ['clear'],
+    description: 'Start a new chat session',
+    category: 'chat',
+    inlineOutput: true,
+  },
 
   // Memory & Transformation
   {

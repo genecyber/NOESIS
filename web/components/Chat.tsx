@@ -8,9 +8,14 @@ import CommandPalette, { CommandHelp } from './CommandPalette';
 import CommandOutput from './CommandOutput';
 import ToolUsage, { ActiveToolsBar } from './ToolUsage';
 import { findCommand, parseCommand, COMMANDS, getCommandsByCategory } from '@/lib/commands';
+import { useInputHistory } from '@/lib/hooks/useLocalStorage';
+import { saveMessages, getMessages, saveLastSessionId } from '@/lib/storage';
 import styles from './Chat.module.css';
 
 type ConnectionStatus = 'connected' | 'disconnected' | 'streaming';
+
+// Import EmotionContext from types
+import type { EmotionContext } from '@/lib/types';
 
 interface ChatProps {
   sessionId: string | undefined;
@@ -18,8 +23,10 @@ interface ChatProps {
   onResponse?: (response: ChatResponse) => void;
   onStanceUpdate?: (stance: Stance) => void;
   onPanelChange?: (panel: 'stance' | 'config' | 'timeline' | 'evolution' | 'sessions' | 'memories') => void;
+  onNewSession?: () => void;
   stance?: Stance | null;
   config?: ModeConfig | null;
+  emotionContext?: EmotionContext | null;
 }
 
 // Extended message type to handle command outputs
@@ -33,7 +40,7 @@ interface ChatMessage extends Message {
   tools?: ToolUseEvent[];
 }
 
-export default function Chat({ sessionId, onSessionChange, onResponse, onStanceUpdate, onPanelChange, stance, config }: ChatProps) {
+export default function Chat({ sessionId, onSessionChange, onResponse, onStanceUpdate, onPanelChange, onNewSession, stance, config, emotionContext }: ChatProps) {
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [input, setInput] = useState('');
   const [isLoading, setIsLoading] = useState(false);
@@ -53,10 +60,40 @@ export default function Chat({ sessionId, onSessionChange, onResponse, onStanceU
   const [activeTools, setActiveTools] = useState<ToolUseEvent[]>([]);
   const toolsRef = useRef<Map<string, ToolUseEvent>>(new Map());
 
-  // Input history for up/down arrow navigation
-  const [inputHistory, setInputHistory] = useState<string[]>([]);
+  // Input history with localStorage persistence
+  const { history: inputHistory, addToHistory } = useInputHistory();
   const [historyIndex, setHistoryIndex] = useState(-1);
   const savedInputRef = useRef<string>('');
+
+  // Load messages from localStorage when session changes
+  useEffect(() => {
+    if (sessionId) {
+      const stored = getMessages(sessionId);
+      if (stored.length > 0) {
+        setMessages(stored as ChatMessage[]);
+      } else {
+        setMessages([]);
+      }
+      // Save last active session
+      saveLastSessionId(sessionId);
+    }
+  }, [sessionId]);
+
+  // Persist messages to localStorage when they change
+  useEffect(() => {
+    if (sessionId && messages.length > 0) {
+      // Strip out non-serializable data before saving
+      const toSave = messages.map(m => ({
+        role: m.role,
+        content: m.content,
+        timestamp: m.timestamp ?? Date.now(),
+        type: m.type,
+        commandData: m.commandData,
+        // Don't save tools - they can be complex objects
+      }));
+      saveMessages(sessionId, toSave);
+    }
+  }, [sessionId, messages]);
 
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
@@ -277,6 +314,17 @@ export default function Chat({ sessionId, onSessionChange, onResponse, onStanceU
           }
           break;
 
+        case 'new':
+        case 'clear':
+          if (onNewSession) {
+            onNewSession();
+            setMessages([]);
+            data = 'Started new session.';
+          } else {
+            data = 'New session creation not available.';
+          }
+          break;
+
         default:
           // For commands not yet implemented, show a placeholder
           data = `Command /${fullCommand} acknowledged. Full implementation coming soon.`;
@@ -307,7 +355,7 @@ export default function Chat({ sessionId, onSessionChange, onResponse, onStanceU
     } finally {
       setIsLoading(false);
     }
-  }, [sessionId, stance, config, onPanelChange]);
+  }, [sessionId, stance, config, onPanelChange, onNewSession]);
 
   // Handle command selection from palette
   const handleCommandSelect = useCallback((commandText: string) => {
@@ -386,9 +434,9 @@ export default function Chat({ sessionId, onSessionChange, onResponse, onStanceU
 
     const trimmedInput = input.trim();
 
-    // Add to input history (avoid duplicates of last entry)
-    if (trimmedInput && (inputHistory.length === 0 || inputHistory[inputHistory.length - 1] !== trimmedInput)) {
-      setInputHistory(prev => [...prev, trimmedInput]);
+    // Add to input history (persisted to localStorage)
+    if (trimmedInput) {
+      addToHistory(trimmedInput);
     }
     // Reset history navigation
     setHistoryIndex(-1);
@@ -429,7 +477,7 @@ export default function Chat({ sessionId, onSessionChange, onResponse, onStanceU
     toolsRef.current.clear();
     setActiveTools([]);
 
-    abortRef.current = chatStream(sessionId, userMessage.content, {
+    abortRef.current = chatStream(sessionId, userMessage.content, emotionContext, {
       onText: (text) => {
         accumulatedTextRef.current += text;
         setStreamingText(accumulatedTextRef.current);
@@ -489,7 +537,7 @@ export default function Chat({ sessionId, onSessionChange, onResponse, onStanceU
         setTimeout(() => setConnectionStatus('connected'), 3000);
       },
     });
-  }, [input, isLoading, sessionId, onResponse, onStanceUpdate, onSessionChange, executeCommand, inputHistory]);
+  }, [input, isLoading, sessionId, onResponse, onStanceUpdate, onSessionChange, executeCommand, addToHistory, emotionContext]);
 
   const handleStop = () => {
     if (abortRef.current) {

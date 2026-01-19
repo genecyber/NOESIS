@@ -360,6 +360,36 @@ const helpCommand: CommandHandler = {
 };
 
 // ============================================================================
+// New Session Command
+// ============================================================================
+
+const newCommand: CommandHandler = {
+  name: 'new',
+  aliases: ['clear', 'new-session'],
+  description: 'Start a new chat session',
+  category: 'core',
+  usage: '/new',
+  execute(ctx: CommandContext, _args: string[]): CommandResult {
+    // Create a new session via the runtime
+    const newSession = ctx.runtime.sessions.createSession({
+      name: `Session ${Date.now()}`
+    });
+
+    // Update the current context's session reference
+    // Note: The CLI will need to handle this specially since it holds
+    // its own reference to the session
+    return {
+      output: `New session created: ${newSession.id.slice(0, 8)}...\nPrevious session data cleared. Ready for a fresh conversation.`,
+      data: {
+        action: 'new-session',
+        newSessionId: newSession.id,
+        shouldSwitchSession: true
+      }
+    };
+  }
+};
+
+// ============================================================================
 // Quit/Exit Command
 // ============================================================================
 
@@ -389,5 +419,6 @@ export const coreCommands: CommandHandler[] = [
   exportCommand,
   statsCommand,
   helpCommand,
+  newCommand,
   quitCommand
 ];
