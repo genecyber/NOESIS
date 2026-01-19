@@ -5,26 +5,32 @@ This document describes the METAMORPH plugin architecture, SDK, and how to build
 ## Table of Contents
 
 1. [Overview](#overview)
-2. [Architecture](#architecture)
-3. [Quick Start](#quick-start)
-4. [Plugin Manifest](#plugin-manifest)
-5. [Platform Capabilities](#platform-capabilities)
-6. [Creating a Panel Plugin](#creating-a-panel-plugin)
-7. [Lifecycle Hooks](#lifecycle-hooks)
-8. [Event Handlers](#event-handlers)
-9. [Built-in Plugins](#built-in-plugins)
-10. [API Reference](#api-reference)
+2. [Installation](#installation)
+3. [Import Patterns](#import-patterns)
+4. [SDK Subpaths](#sdk-subpaths)
+5. [Architecture](#architecture)
+6. [Quick Start](#quick-start)
+7. [Plugin Manifest](#plugin-manifest)
+8. [Platform Capabilities](#platform-capabilities)
+9. [Creating a Web Panel Plugin](#creating-a-web-panel-plugin)
+10. [Creating a CLI Plugin](#creating-a-cli-plugin)
+11. [Lifecycle Hooks](#lifecycle-hooks)
+12. [Event Handlers](#event-handlers)
+13. [Built-in Plugins](#built-in-plugins)
+14. [API Reference](#api-reference)
 
 ---
 
 ## Overview
 
-METAMORPH's plugin system allows developers to extend the platform with custom functionality:
+METAMORPH's plugin system allows developers to extend the platform with custom functionality across both web and CLI environments:
 
-- **Panel Plugins**: Add new panels to the sidebar (like the Emotion Detection panel)
-- **Platform Capabilities**: Access webcam, TTS, STT, and AI vision
+- **Web Panel Plugins**: Add new panels to the sidebar (like the Emotion Detection panel)
+- **CLI Plugins**: Add operators for stance transformation and conversational enhancements
+- **Platform Capabilities**: Access webcam, TTS, STT, AI vision, and storage
 - **Event Integration**: React to emotions, stance changes, messages, and more
-- **Isolated Storage**: Each plugin gets its own localStorage namespace
+- **Isolated Storage**: Each plugin gets its own storage namespace
+- **Cross-Platform SDK**: Publish plugins as npm packages with `@metamorph/plugin-sdk`
 
 ### Key Principles
 
@@ -32,67 +38,216 @@ METAMORPH's plugin system allows developers to extend the platform with custom f
 2. **Permission Model**: Plugins request specific permissions for data access
 3. **Lifecycle Management**: Clean activation/deactivation with automatic cleanup
 4. **Type Safety**: Full TypeScript support with comprehensive types
+5. **Platform Abstraction**: Write once, run on web or CLI with platform-specific capabilities
+
+---
+
+## Installation
+
+Install the SDK as an npm package:
+
+```bash
+npm install @metamorph/plugin-sdk
+```
+
+```bash
+yarn add @metamorph/plugin-sdk
+```
+
+```bash
+pnpm add @metamorph/plugin-sdk
+```
+
+The SDK is published as a standalone package that can be used in any JavaScript/TypeScript project.
+
+---
+
+## Import Patterns
+
+### ESM (ES Modules)
+
+```typescript
+// Web plugins
+import { defineWebPlugin } from '@metamorph/plugin-sdk/web';
+
+// CLI plugins
+import { defineCliPlugin } from '@metamorph/plugin-sdk/cli';
+
+// React hooks
+import { useAutoPlugin, usePluginRegistry } from '@metamorph/plugin-sdk/react';
+
+// Core types (platform-agnostic)
+import { PluginManifest, PluginEventBus } from '@metamorph/plugin-sdk/core';
+```
+
+### CommonJS
+
+```javascript
+// CLI plugins with CommonJS
+const { defineCliPlugin, registerCliPlugin } = require('@metamorph/plugin-sdk/cli');
+
+// Core types
+const { PluginManifest } = require('@metamorph/plugin-sdk/core');
+```
+
+### CDN (UMD)
+
+```html
+<script src="https://unpkg.com/@metamorph/plugin-sdk/dist/umd/metamorph-sdk.min.js"></script>
+<script>
+  const { defineWebPlugin, webPluginRegistry } = MetamorphSDK;
+
+  const myPlugin = defineWebPlugin({
+    manifest: {
+      id: 'my-plugin',
+      name: 'My Plugin',
+      version: '1.0.0',
+      description: 'A browser plugin loaded from CDN',
+      capabilities: ['storage'],
+      permissions: ['stance:read'],
+    },
+  });
+
+  webPluginRegistry.register(myPlugin);
+</script>
+```
+
+---
+
+## SDK Subpaths
+
+The SDK provides organized exports through subpath imports:
+
+| Subpath | Description | Use Case |
+|---------|-------------|----------|
+| `@metamorph/plugin-sdk` | Core types and utilities (platform-agnostic) | Shared types, base interfaces |
+| `@metamorph/plugin-sdk/web` | Web/React plugin utilities | Browser-based plugins with panels |
+| `@metamorph/plugin-sdk/cli` | CLI/Node.js plugin utilities | Command-line plugins with operators |
+| `@metamorph/plugin-sdk/react` | React hooks | `usePluginRegistry`, `useAutoPlugin`, `usePluginCapabilities` |
+| `@metamorph/plugin-sdk/core` | Core event bus and base types | Advanced plugin development |
+
+**Example:**
+
+```typescript
+// Import web utilities
+import { defineWebPlugin, webPluginRegistry } from '@metamorph/plugin-sdk/web';
+
+// Import CLI utilities
+import { defineCliPlugin, cliPluginRegistry } from '@metamorph/plugin-sdk/cli';
+
+// Import React hooks
+import { useAutoPlugin, usePluginRegistry } from '@metamorph/plugin-sdk/react';
+
+// Import core types
+import type { PluginManifest, PluginCapability } from '@metamorph/plugin-sdk/core';
+```
 
 ---
 
 ## Architecture
 
 ```
-┌─────────────────────────────────────────────────────────────┐
-│                    METAMORPH Platform                        │
-├─────────────────────────────────────────────────────────────┤
-│                                                              │
-│  ┌─────────────────────────────────────────────────────────┐│
-│  │                   Plugin Registry                        ││
-│  │  ┌─────────┐ ┌─────────┐ ┌─────────┐ ┌─────────┐       ││
-│  │  │ Plugin  │ │ Plugin  │ │ Plugin  │ │ Plugin  │       ││
-│  │  │    A    │ │    B    │ │    C    │ │   ...   │       ││
-│  │  └────┬────┘ └────┬────┘ └────┬────┘ └────┬────┘       ││
-│  └───────┼──────────┼──────────┼──────────┼───────────────┘│
-│          │          │          │          │                 │
-│  ┌───────┴──────────┴──────────┴──────────┴───────────────┐│
-│  │              Platform Capabilities                       ││
-│  │  ┌────────┐ ┌────────┐ ┌────────┐ ┌────────┐ ┌────────┐││
-│  │  │ Webcam │ │  TTS   │ │  STT   │ │ Vision │ │Storage ││
-│  │  │ Stream │ │ Speak  │ │ Listen │ │  API   │ │  KV    │││
-│  │  └────────┘ └────────┘ └────────┘ └────────┘ └────────┘││
-│  └─────────────────────────────────────────────────────────┘│
-│                                                              │
-│  ┌─────────────────────────────────────────────────────────┐│
-│  │                    Event Bus                             ││
-│  │  emotion:detected │ stance:changed │ message:sent        ││
-│  └─────────────────────────────────────────────────────────┘│
-│                                                              │
-└─────────────────────────────────────────────────────────────┘
+┌─────────────────────────────────────────────────────────────────────┐
+│                        METAMORPH Platform                            │
+│                     (Web UI + CLI + SDK)                             │
+├─────────────────────────────────────────────────────────────────────┤
+│                                                                      │
+│  ┌─────────────────────────────────────────────────────────────────┐│
+│  │                     Plugin Registry                              ││
+│  │  ┌──────────┐ ┌──────────┐ ┌──────────┐ ┌──────────┐           ││
+│  │  │   Web    │ │   CLI    │ │  Web     │ │   CLI    │           ││
+│  │  │ Plugin A │ │ Plugin B │ │ Plugin C │ │ Plugin D │           ││
+│  │  └────┬─────┘ └────┬─────┘ └────┬─────┘ └────┬─────┘           ││
+│  └───────┼────────────┼────────────┼────────────┼─────────────────┘│
+│          │            │            │            │                   │
+│  ┌───────┴────────────┴────────────┴────────────┴─────────────────┐│
+│  │              Platform Capabilities (Abstracted)                  ││
+│  │                                                                   ││
+│  │  WEB:     ┌────────┐ ┌────────┐ ┌────────┐ ┌────────┐          ││
+│  │           │ Webcam │ │  TTS   │ │  STT   │ │ Vision │          ││
+│  │           │ Stream │ │ Speak  │ │ Listen │ │  API   │          ││
+│  │           └────────┘ └────────┘ └────────┘ └────────┘          ││
+│  │                                                                   ││
+│  │  CLI:     ┌────────────┐ ┌────────────┐ ┌────────────┐         ││
+│  │           │ Operators  │ │   Hooks    │ │  Storage   │         ││
+│  │           │ (Stance)   │ │ (Events)   │ │   (File)   │         ││
+│  │           └────────────┘ └────────────┘ └────────────┘         ││
+│  │                                                                   ││
+│  │  SHARED:  ┌────────┐                                             ││
+│  │           │Storage │                                             ││
+│  │           │  KV    │                                             ││
+│  │           └────────┘                                             ││
+│  └─────────────────────────────────────────────────────────────────┘│
+│                                                                      │
+│  ┌─────────────────────────────────────────────────────────────────┐│
+│  │                        Event Bus                                 ││
+│  │  emotion:detected │ stance:changed │ message:sent │              ││
+│  │  operator:executed │ hook:triggered                              ││
+│  └─────────────────────────────────────────────────────────────────┘│
+│                                                                      │
+└─────────────────────────────────────────────────────────────────────┘
 ```
 
 ### Components
 
 | Component | Location | Purpose |
 |-----------|----------|---------|
-| Plugin SDK | `web/lib/plugins/` | Core SDK types and utilities |
-| Registry | `web/lib/plugins/registry.ts` | Plugin registration and lifecycle |
-| Capabilities | `web/lib/plugins/capabilities.ts` | Platform capability implementations |
-| Hooks | `web/lib/plugins/hooks.ts` | React hooks for plugin integration |
+| SDK Package | `@metamorph/plugin-sdk` | Published npm package with all SDK features |
+| Web Plugin SDK | `@metamorph/plugin-sdk/web` | Browser-specific plugins with panels |
+| CLI Plugin SDK | `@metamorph/plugin-sdk/cli` | Node.js plugins with operators and hooks |
+| React Hooks | `@metamorph/plugin-sdk/react` | React integration utilities |
+| Core Types | `@metamorph/plugin-sdk/core` | Platform-agnostic base types |
+| Web Registry | `web/lib/plugins/registry.ts` | Web plugin registration and lifecycle |
+| CLI Registry | `cli/lib/plugins/registry.ts` | CLI plugin registration and lifecycle |
+| Web Capabilities | `web/lib/plugins/capabilities.ts` | Browser API implementations |
+| CLI Capabilities | `cli/lib/plugins/capabilities.ts` | Node.js capability implementations |
 
 ---
 
 ## Quick Start
 
-### 1. Create a Plugin
+### Web Plugin Quick Start
+
+**1. Install the SDK**
+
+```bash
+npm install @metamorph/plugin-sdk
+```
+
+**2. Create a Web Plugin**
 
 ```tsx
-// plugins/my-plugin/index.ts
-import { definePlugin } from '@/lib/plugins';
+// my-web-plugin.tsx
+import { defineWebPlugin } from '@metamorph/plugin-sdk/web';
 import { Sparkles } from 'lucide-react';
-import MyPanel from './MyPanel';
+import type { PanelProps } from '@metamorph/plugin-sdk/web';
 
-export const myPlugin = definePlugin({
+// Define the panel component
+function MyPanel({ sessionId, stance, capabilities }: PanelProps) {
+  const lastActivated = capabilities.storage.get<number>('lastActivated');
+
+  return (
+    <div className="flex flex-col gap-4">
+      <h3 className="font-display font-bold gradient-text">My Panel</h3>
+      <p className="text-sm">
+        Current frame: {stance?.frame || 'unknown'}
+      </p>
+      {lastActivated && (
+        <p className="text-xs">
+          Last activated: {new Date(lastActivated).toLocaleString()}
+        </p>
+      )}
+    </div>
+  );
+}
+
+// Define the plugin
+export const myWebPlugin = defineWebPlugin({
   manifest: {
-    id: 'my-plugin',
-    name: 'My Awesome Plugin',
+    id: 'my-web-plugin',
+    name: 'My Awesome Web Plugin',
     version: '1.0.0',
-    description: 'Does awesome things',
+    description: 'Adds a custom panel to the sidebar',
     capabilities: ['storage'],
     permissions: ['stance:read'],
   },
@@ -105,57 +260,120 @@ export const myPlugin = definePlugin({
     order: 10,
   },
 
-  onActivate: async (capabilities) => {
-    console.log('Plugin activated!');
-    capabilities.storage.set('lastActivated', Date.now());
+  onActivate: async (ctx) => {
+    ctx.logger.info('Plugin activated!');
+    ctx.capabilities.storage.set('lastActivated', Date.now());
   },
 
   onDeactivate: () => {
     console.log('Plugin deactivated');
   },
 });
-
-export default myPlugin;
 ```
 
-### 2. Create the Panel Component
+**3. Register in Your App**
 
 ```tsx
-// plugins/my-plugin/MyPanel.tsx
-import type { PanelProps } from '@/lib/plugins/types';
+// app/page.tsx
+import { useAutoPlugin } from '@metamorph/plugin-sdk/react';
+import { myWebPlugin } from './my-web-plugin';
 
-export default function MyPanel({
-  sessionId,
-  stance,
-  capabilities
-}: PanelProps) {
-  const lastActivated = capabilities.storage.get<number>('lastActivated');
+export default function App() {
+  // Auto-register and enable the plugin
+  useAutoPlugin(myWebPlugin);
 
-  return (
-    <div className="flex flex-col gap-4">
-      <h3 className="font-display font-bold gradient-text">My Panel</h3>
-      <p className="text-emblem-muted text-sm">
-        Current frame: {stance?.frame || 'unknown'}
-      </p>
-      {lastActivated && (
-        <p className="text-xs text-emblem-muted">
-          Last activated: {new Date(lastActivated).toLocaleString()}
-        </p>
-      )}
-    </div>
-  );
+  return <YourApp />;
 }
 ```
 
-### 3. Register the Plugin
+### CLI Plugin Quick Start
 
-```tsx
-// app/page.tsx or a dedicated plugins initializer
-import { registerPlugin } from '@/lib/plugins';
-import { myPlugin } from '@/plugins/my-plugin';
+**1. Install the SDK**
 
-// Register on app initialization
-registerPlugin(myPlugin);
+```bash
+npm install @metamorph/plugin-sdk
+```
+
+**2. Create a CLI Plugin**
+
+```typescript
+// my-cli-plugin.ts
+import { defineCliPlugin, registerCliPlugin } from '@metamorph/plugin-sdk/cli';
+
+const poetryPlugin = defineCliPlugin({
+  manifest: {
+    id: 'poetry-mode',
+    name: 'Poetry Mode',
+    version: '1.0.0',
+    description: 'Enables poetic responses with heightened creativity',
+    capabilities: ['storage'],
+    permissions: ['stance:read', 'stance:write'],
+  },
+
+  // Define operators that transform the stance
+  operators: [
+    {
+      name: 'poeticize',
+      description: 'Transform response into poetic form',
+      category: 'meta',
+      triggers: ['creative_request', 'artistic_mode'],
+      intensity: { min: 30, max: 100, default: 60 },
+      execute: (stance, context) => {
+        // Calculate intensity-based novelty boost
+        const intensityFactor = context.intensity / 100;
+        const noveltyBoost = Math.floor(20 * intensityFactor);
+
+        return {
+          stanceModifications: {
+            frame: 'poetic',
+            values: {
+              ...stance.values,
+              novelty: Math.min(100, stance.values.novelty + noveltyBoost),
+              exploration: Math.min(100, stance.values.exploration + 15),
+            },
+          },
+          systemPromptAddition: 'Respond with heightened poetic sensibility and metaphorical language.',
+          reasoning: `Applied poetic transformation (intensity: ${context.intensity})`,
+        };
+      },
+    },
+  ],
+
+  // Lifecycle hooks
+  onActivate: async (ctx) => {
+    ctx.logger.info('Poetry mode activated');
+    ctx.capabilities.storage.set('activatedAt', Date.now());
+  },
+
+  onDeactivate: () => {
+    console.log('Poetry mode deactivated');
+  },
+
+  // Event hooks
+  hooks: {
+    beforeResponse: async (context) => {
+      // Optional: modify context before response generation
+      console.log('Preparing poetic response...');
+    },
+    afterResponse: async (context) => {
+      // Optional: process response after generation
+      console.log('Poetic response generated');
+    },
+  },
+});
+
+// Register the plugin
+registerCliPlugin(poetryPlugin);
+
+export default poetryPlugin;
+```
+
+**3. Use in CLI**
+
+```bash
+# The plugin is automatically loaded when registered
+# Operators are triggered based on their trigger conditions
+metamorph chat --mode empathy
 ```
 
 ---
@@ -184,39 +402,63 @@ interface WebPluginManifest {
 
 ### Capabilities
 
-Capabilities are platform features your plugin needs:
+Capabilities are platform features your plugin needs. The available capabilities differ between web and CLI environments.
 
-| Capability | Description | Browser API Used |
-|------------|-------------|------------------|
+#### Web Capabilities
+
+| Capability | Description | Implementation |
+|------------|-------------|----------------|
 | `webcam` | Camera access for video/image capture | `MediaDevices.getUserMedia()` |
 | `microphone` | Audio input for speech recognition | `MediaDevices.getUserMedia()` |
-| `speaker` | Audio output for text-to-speech | `SpeechSynthesis` |
+| `speaker` | Audio output for text-to-speech | `SpeechSynthesis` API |
 | `vision` | AI image analysis via Claude Vision | Backend API |
 | `storage` | Plugin-scoped localStorage | `localStorage` |
 | `notifications` | Browser notifications | `Notification` API |
 | `fullscreen` | Fullscreen mode | `Fullscreen` API |
 
+#### CLI Capabilities
+
+| Capability | Description | Implementation |
+|------------|-------------|----------------|
+| `storage` | Plugin-scoped file storage | File system (`.metamorph/plugins/{id}/`) |
+| `filesystem:read` | Read files from disk | Node.js `fs` module |
+| `filesystem:write` | Write files to disk | Node.js `fs` module |
+| `network:fetch` | Make HTTP requests | `fetch` API |
+
+#### Shared Capabilities
+
+Both web and CLI plugins have access to:
+- `storage` - Platform-specific key-value storage (localStorage on web, file-based in CLI)
+
 ### Permissions
 
-Permissions control data access:
+Permissions control data access across both platforms:
 
-| Permission | Description |
-|------------|-------------|
-| `stance:read` | Read current stance |
-| `stance:write` | Modify stance values |
-| `config:read` | Read mode configuration |
-| `config:write` | Modify configuration |
-| `session:read` | Access session data |
-| `memory:read` | Search memories |
-| `memory:write` | Create memories |
-| `emotion:read` | Access emotion context |
-| `emotion:write` | Update emotion context |
+| Permission | Description | Platform |
+|------------|-------------|----------|
+| `stance:read` | Read current stance | Both |
+| `stance:write` | Modify stance values | Both |
+| `config:read` | Read mode configuration | Both |
+| `config:write` | Modify configuration | Both |
+| `session:read` | Access session data | Both |
+| `memory:read` | Search memories | Both |
+| `memory:write` | Create memories | Both |
+| `emotion:read` | Access emotion context | Both |
+| `emotion:write` | Update emotion context | Both |
+| `conversation:read` | Read message history | Both |
+| `filesystem:read` | Read files (requires capability) | CLI only |
+| `filesystem:write` | Write files (requires capability) | CLI only |
+| `network:fetch` | Make HTTP requests (requires capability) | CLI only |
 
 ---
 
 ## Platform Capabilities
 
-### Webcam Capability
+This section details the capabilities available to plugins. Web plugins have access to browser APIs, while CLI plugins have access to Node.js capabilities.
+
+### Web Capabilities
+
+#### Webcam Capability
 
 ```typescript
 interface WebcamCapability {
@@ -254,7 +496,7 @@ async function startCamera(capabilities: PlatformCapabilities) {
 }
 ```
 
-### TTS Capability (Text-to-Speech)
+#### TTS Capability (Text-to-Speech)
 
 ```typescript
 interface TTSCapability {
@@ -297,7 +539,7 @@ async function speakGreeting(capabilities: PlatformCapabilities) {
 }
 ```
 
-### STT Capability (Speech-to-Text)
+#### STT Capability (Speech-to-Text)
 
 ```typescript
 interface STTCapability {
@@ -344,7 +586,7 @@ function setupVoiceInput(capabilities: PlatformCapabilities) {
 }
 ```
 
-### Vision Capability (AI Image Analysis)
+#### Vision Capability (AI Image Analysis)
 
 ```typescript
 interface VisionCapability {
@@ -384,7 +626,7 @@ async function analyzeUserEmotion(capabilities: PlatformCapabilities) {
 - Check `canAnalyze` before calling
 - Use browser-side detection (face-api.js) for real-time needs
 
-### Storage Capability
+#### Storage Capability (Web)
 
 ```typescript
 interface StorageCapability {
@@ -412,11 +654,110 @@ function saveSettings(capabilities: PlatformCapabilities) {
 
 Storage is namespaced per plugin: `metamorph:plugin:{pluginId}:{key}`
 
+### CLI Capabilities
+
+CLI plugins have access to Node.js-specific capabilities for file operations and network requests.
+
+#### Storage Capability (CLI)
+
+```typescript
+interface StorageCapability {
+  get<T>(key: string): Promise<T | null>;
+  set<T>(key: string, value: T): Promise<void>;
+  remove(key: string): Promise<void>;
+  keys(): Promise<string[]>;
+  clear(): Promise<void>;
+}
+```
+
+**Usage Example:**
+
+```typescript
+async function savePluginData(ctx: PluginContext) {
+  // Storage is file-based in CLI
+  await ctx.capabilities.storage.set('settings', {
+    autoActivate: true,
+    verbosity: 'standard',
+  });
+
+  // Later...
+  const settings = await ctx.capabilities.storage.get<Settings>('settings');
+}
+```
+
+Storage location: `.metamorph/plugins/{pluginId}/storage.json`
+
+#### Filesystem Capability (CLI)
+
+```typescript
+interface FilesystemCapability {
+  // Read file contents
+  readFile(path: string, encoding?: string): Promise<string | Buffer>;
+
+  // Write file contents
+  writeFile(path: string, content: string | Buffer): Promise<void>;
+
+  // Check if file exists
+  exists(path: string): Promise<boolean>;
+
+  // List directory contents
+  readDir(path: string): Promise<string[]>;
+
+  // Create directory
+  mkdir(path: string, recursive?: boolean): Promise<void>;
+}
+```
+
+**Usage Example:**
+
+```typescript
+async function processMarkdownFiles(ctx: PluginContext) {
+  const files = await ctx.capabilities.filesystem.readDir('./docs');
+  const mdFiles = files.filter(f => f.endsWith('.md'));
+
+  for (const file of mdFiles) {
+    const content = await ctx.capabilities.filesystem.readFile(`./docs/${file}`, 'utf-8');
+    // Process content...
+  }
+}
+```
+
+**Note:** Requires `filesystem:read` and/or `filesystem:write` permissions.
+
+#### Network Capability (CLI)
+
+```typescript
+interface NetworkCapability {
+  // Make HTTP request
+  fetch(url: string, options?: RequestInit): Promise<Response>;
+}
+```
+
+**Usage Example:**
+
+```typescript
+async function fetchExternalData(ctx: PluginContext) {
+  const response = await ctx.capabilities.network.fetch(
+    'https://api.example.com/data',
+    {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ query: 'test' }),
+    }
+  );
+
+  const data = await response.json();
+  return data;
+}
+```
+
+**Note:** Requires `network:fetch` permission.
+
 ---
 
-## Creating a Panel Plugin
+## Creating a Web Panel Plugin
 
-Panel plugins add a new tab to the METAMORPH sidebar.
+Web panel plugins add a new tab to the METAMORPH web UI sidebar. They provide a React component that renders in the sidebar and has access to platform capabilities.
 
 ### Panel Definition
 
@@ -507,6 +848,234 @@ export default function TimerPanel({ capabilities }: PanelProps) {
       </div>
     </div>
   );
+}
+```
+
+---
+
+## Creating a CLI Plugin
+
+CLI plugins extend the command-line interface with operators, hooks, and custom settings. Operators transform the conversational stance based on context, while hooks allow you to intercept and modify the request/response flow.
+
+### CLI Plugin Structure
+
+```typescript
+interface CliPlugin {
+  manifest: PluginManifest;          // Plugin metadata
+  operators?: Operator[];            // Stance transformation operators
+  hooks?: CliPluginHooks;            // Lifecycle event hooks
+  settings?: PluginSetting[];        // User-configurable settings
+  onActivate?: (ctx: PluginContext) => Promise<void> | void;
+  onDeactivate?: () => Promise<void> | void;
+}
+```
+
+### Operators
+
+Operators are the core of CLI plugins. They analyze the current stance and context to apply transformations that affect how METAMORPH responds.
+
+```typescript
+interface Operator {
+  name: string;                      // Unique operator name
+  description: string;               // What this operator does
+  category: OperatorCategory;        // 'stance' | 'meta' | 'tone'
+  triggers: string[];                // When to activate (keywords/conditions)
+  intensity: IntensityConfig;        // Min/max/default intensity levels
+  execute: (stance: Stance, context: OperatorContext) => OperatorResult;
+}
+
+interface OperatorResult {
+  stanceModifications?: Partial<Stance>;     // Changes to stance values
+  systemPromptAddition?: string;             // Additional system instructions
+  userPromptTransformation?: string;         // Modified user input
+  metadata?: Record<string, unknown>;        // Extra data for hooks
+  reasoning?: string;                        // Why this transformation was applied
+}
+```
+
+### Complete CLI Plugin Example
+
+```typescript
+import { defineCliPlugin, registerCliPlugin } from '@metamorph/plugin-sdk/cli';
+
+const debugModePlugin = defineCliPlugin({
+  manifest: {
+    id: 'debug-mode',
+    name: 'Debug Mode',
+    version: '1.0.0',
+    description: 'Adds detailed reasoning and self-reflection to responses',
+    capabilities: ['storage'],
+    permissions: ['stance:read', 'stance:write', 'config:read'],
+    author: 'METAMORPH Team',
+  },
+
+  operators: [
+    {
+      name: 'introspect',
+      description: 'Add metacognitive commentary to responses',
+      category: 'meta',
+      triggers: ['debug', 'explain_reasoning', 'show_work'],
+      intensity: { min: 10, max: 100, default: 50 },
+      execute: (stance, context) => {
+        const { intensity, trigger, sessionContext } = context;
+
+        // Adjust reflection based on intensity
+        const reflectionDepth = Math.floor(intensity / 25); // 0-4 levels
+
+        return {
+          stanceModifications: {
+            values: {
+              ...stance.values,
+              reflection: Math.min(100, stance.values.reflection + 30),
+              precision: Math.min(100, stance.values.precision + 20),
+            },
+          },
+          systemPromptAddition: `
+METACOGNITIVE MODE: Level ${reflectionDepth}
+
+After your response, add a "Reasoning" section that explains:
+${reflectionDepth >= 1 ? '- Your thought process and key considerations' : ''}
+${reflectionDepth >= 2 ? '- Alternative approaches you considered' : ''}
+${reflectionDepth >= 3 ? '- Assumptions you made and their implications' : ''}
+${reflectionDepth >= 4 ? '- Metacognitive reflection on the reasoning process itself' : ''}
+
+Be explicit about uncertainties and confidence levels.
+          `.trim(),
+          reasoning: `Activated introspection at level ${reflectionDepth} (trigger: ${trigger})`,
+        };
+      },
+    },
+  ],
+
+  hooks: {
+    beforeRequest: async (context) => {
+      // Log request for debugging
+      context.logger.debug('Debug mode: processing request', {
+        messageLength: context.userMessage.length,
+        stanceFrame: context.stance.frame,
+      });
+    },
+
+    afterResponse: async (context) => {
+      // Store response metadata
+      const metadata = {
+        responseLength: context.assistantMessage.length,
+        operatorsApplied: context.appliedOperators,
+        timestamp: Date.now(),
+      };
+
+      context.capabilities.storage.set(
+        `response_${context.messageId}`,
+        metadata
+      );
+    },
+  },
+
+  settings: [
+    {
+      key: 'autoActivate',
+      name: 'Auto-activate Debug Mode',
+      description: 'Automatically enable debug mode for all conversations',
+      type: 'boolean',
+      default: false,
+    },
+    {
+      key: 'verbosity',
+      name: 'Verbosity Level',
+      description: 'How detailed should debug output be',
+      type: 'select',
+      options: [
+        { label: 'Minimal', value: 'minimal' },
+        { label: 'Standard', value: 'standard' },
+        { label: 'Verbose', value: 'verbose' },
+      ],
+      default: 'standard',
+    },
+  ],
+
+  onActivate: async (ctx) => {
+    ctx.logger.info('Debug mode activated');
+
+    const settings = await ctx.getSettings();
+    if (settings.autoActivate) {
+      ctx.logger.info('Auto-activation enabled');
+    }
+  },
+
+  onDeactivate: () => {
+    console.log('Debug mode deactivated');
+  },
+});
+
+registerCliPlugin(debugModePlugin);
+```
+
+### Operator Categories
+
+| Category | Purpose | Example Use Cases |
+|----------|---------|-------------------|
+| `stance` | Modify stance values directly | Increase empathy, boost creativity, enhance precision |
+| `meta` | Add metacognitive elements | Show reasoning, explain process, self-critique |
+| `tone` | Adjust response tone/style | Make more formal, add humor, simplify language |
+
+### CLI Hooks
+
+```typescript
+interface CliPluginHooks {
+  // Called before request is sent to AI
+  beforeRequest?: (context: RequestContext) => Promise<void> | void;
+
+  // Called after AI response is received
+  afterResponse?: (context: ResponseContext) => Promise<void> | void;
+
+  // Called when stance changes
+  onStanceChange?: (oldStance: Stance, newStance: Stance) => void;
+
+  // Called when session starts
+  onSessionStart?: (sessionId: string) => void;
+
+  // Called when session ends
+  onSessionEnd?: (sessionId: string) => void;
+}
+```
+
+### Plugin Settings
+
+Settings allow users to configure plugin behavior:
+
+```typescript
+interface PluginSetting {
+  key: string;                       // Setting identifier
+  name: string;                      // Display name
+  description: string;               // What this setting does
+  type: 'boolean' | 'number' | 'string' | 'select';
+  default: unknown;                  // Default value
+  options?: Array<{                  // For 'select' type
+    label: string;
+    value: unknown;
+  }>;
+  validation?: {                     // For 'number' type
+    min?: number;
+    max?: number;
+  };
+}
+```
+
+### Operator Context
+
+When an operator executes, it receives context about the current request:
+
+```typescript
+interface OperatorContext {
+  intensity: number;                 // 0-100, how strongly to apply
+  trigger: string;                   // What triggered this operator
+  sessionContext: {
+    sessionId: string;
+    messageCount: number;
+    emotionContext?: EmotionContext;
+  };
+  userMessage: string;               // The current user input
+  conversationHistory: Message[];    // Previous messages
 }
 ```
 
@@ -651,23 +1220,87 @@ await pluginRegistry.enable('emotion-detection');
 
 ## API Reference
 
-### Registry Functions
+### SDK Exports
+
+The `@metamorph/plugin-sdk` package provides platform-specific exports through subpaths.
+
+#### Core Exports (`@metamorph/plugin-sdk/core`)
 
 ```typescript
-// Register a plugin
-registerPlugin(plugin: WebPlugin): void
-
-// Create a plugin definition (type helper)
-definePlugin(config: WebPlugin): WebPlugin
-
-// Get all enabled panels
-getPluginPanels(): PanelDefinition[]
+// Base types (platform-agnostic)
+export type {
+  PluginManifest,
+  PluginCapability,
+  PluginPermission,
+  PluginEventBus,
+};
 ```
 
-### Plugin Registry
+#### Web Exports (`@metamorph/plugin-sdk/web`)
 
 ```typescript
-interface PluginRegistry {
+// Plugin definition
+export function defineWebPlugin(config: WebPlugin): WebPlugin;
+export function registerWebPlugin(plugin: WebPlugin): void;
+
+// Plugin registry (singleton)
+export const webPluginRegistry: WebPluginRegistry;
+
+// Get all enabled panels
+export function getPluginPanels(): PanelDefinition[];
+
+// Types
+export type {
+  WebPlugin,
+  WebPluginManifest,
+  PanelDefinition,
+  PanelProps,
+  PlatformCapabilities,
+};
+```
+
+#### CLI Exports (`@metamorph/plugin-sdk/cli`)
+
+```typescript
+// Plugin definition
+export function defineCliPlugin(config: CliPlugin): CliPlugin;
+export function registerCliPlugin(plugin: CliPlugin): void;
+
+// Plugin registry (singleton)
+export const cliPluginRegistry: CliPluginRegistry;
+
+// Types
+export type {
+  CliPlugin,
+  Operator,
+  OperatorContext,
+  OperatorResult,
+  CliPluginHooks,
+  PluginSetting,
+};
+```
+
+#### React Exports (`@metamorph/plugin-sdk/react`)
+
+```typescript
+// Hooks
+export function usePluginRegistry(): PluginRegistryHook;
+export function usePluginCapabilities(pluginId: string): PlatformCapabilities | null;
+export function usePluginSession(sessionId: string | undefined): void;
+export function usePluginPanels(): PanelDefinition[];
+export function useAutoPlugin(plugin: WebPlugin, enabled?: boolean): AutoPluginResult;
+
+// Types
+export type {
+  PluginRegistryHook,
+  AutoPluginResult,
+};
+```
+
+### Web Plugin Registry
+
+```typescript
+interface WebPluginRegistry {
   // Registration
   register(plugin: WebPlugin): void;
   unregister(pluginId: string): void;
@@ -689,6 +1322,37 @@ interface PluginRegistry {
   emitStanceChange(stance: Stance): void;
   emitConfigChange(config: ModeConfig): void;
   emitMessage(message: string, role: 'user' | 'assistant'): void;
+}
+```
+
+### CLI Plugin Registry
+
+```typescript
+interface CliPluginRegistry {
+  // Registration
+  register(plugin: CliPlugin): void;
+  unregister(pluginId: string): void;
+
+  // Enable/disable
+  enable(pluginId: string): Promise<void>;
+  disable(pluginId: string): Promise<void>;
+
+  // Query
+  getPlugin(pluginId: string): CliPluginRegistration | undefined;
+  getAllPlugins(): CliPluginRegistration[];
+  getOperators(): Operator[];
+
+  // Operator execution
+  executeOperators(
+    stance: Stance,
+    context: OperatorContext
+  ): Promise<OperatorResult[]>;
+
+  // Hook execution
+  executeHook(
+    hookName: keyof CliPluginHooks,
+    ...args: unknown[]
+  ): Promise<void>;
 }
 ```
 
@@ -725,19 +1389,40 @@ useAutoPlugin(plugin: WebPlugin, enabled?: boolean): {
 
 ## Best Practices
 
+### General
+
 1. **Declare All Capabilities**: List every capability your plugin needs in the manifest
 2. **Handle Errors Gracefully**: Wrap capability calls in try/catch
-3. **Clean Up Resources**: Always stop webcam/audio in `onDeactivate`
-4. **Use Storage for State**: Persist important state to survive page reloads
-5. **Respect Rate Limits**: Check `canAnalyze` before vision API calls
-6. **Keep Panels Lightweight**: Avoid heavy computations in render
-7. **Use Type Safety**: Leverage TypeScript for all plugin code
+3. **Use Storage for State**: Persist important state to survive restarts
+4. **Use Type Safety**: Leverage TypeScript for all plugin code
+5. **Version Your Plugins**: Use semantic versioning for your plugin releases
+6. **Document Your Plugin**: Provide clear README with usage examples
+
+### Web Plugins
+
+1. **Clean Up Resources**: Always stop webcam/audio in `onDeactivate`
+2. **Respect Rate Limits**: Check `canAnalyze` before vision API calls
+3. **Keep Panels Lightweight**: Avoid heavy computations in render
+4. **Use React Hooks**: Leverage `useAutoPlugin` for automatic registration
+5. **Handle Permissions**: Request browser permissions gracefully
+
+### CLI Plugins
+
+1. **Make Operators Composable**: Design operators to work well together
+2. **Use Intensity Wisely**: Implement intensity scaling for smooth control
+3. **Provide Clear Triggers**: Use descriptive trigger keywords
+4. **Log Reasoning**: Always include reasoning in operator results
+5. **Test Operator Combinations**: Verify behavior when multiple operators fire
+6. **Document Settings**: Explain what each setting does and its impact
+7. **Handle Async Operations**: Use hooks for async processing (network, file I/O)
 
 ---
 
 ## Troubleshooting
 
-### Webcam Not Starting
+### Web Plugin Issues
+
+#### Webcam Not Starting
 
 ```typescript
 try {
@@ -751,7 +1436,7 @@ try {
 }
 ```
 
-### TTS Not Working
+#### TTS Not Working
 
 Some browsers require user interaction before TTS works:
 
@@ -762,13 +1447,73 @@ Some browsers require user interaction before TTS works:
 </button>
 ```
 
-### Vision API Rate Limited
+#### Vision API Rate Limited
 
 ```typescript
 if (!capabilities.vision.canAnalyze) {
   console.log(`Wait ${capabilities.vision.cooldownRemaining}s`);
   // Fall back to browser detection
   const result = await detectEmotions(videoElement);
+}
+```
+
+#### Plugin Not Loading
+
+```typescript
+import { useAutoPlugin } from '@metamorph/plugin-sdk/react';
+
+// Check for errors
+const { isReady, error } = useAutoPlugin(myPlugin);
+
+if (error) {
+  console.error('Plugin failed to load:', error);
+}
+```
+
+### CLI Plugin Issues
+
+#### Operator Not Triggering
+
+Check that:
+1. Plugin is registered and enabled
+2. Trigger keywords match user input
+3. Required permissions are granted
+
+```typescript
+// Debug operator execution
+const results = await cliPluginRegistry.executeOperators(stance, context);
+console.log('Operators fired:', results.map(r => r.reasoning));
+```
+
+#### Storage Not Persisting
+
+Ensure storage directory exists:
+
+```bash
+# Storage location
+ls -la ~/.metamorph/plugins/your-plugin-id/
+```
+
+#### File Permission Errors
+
+Check that filesystem permissions are declared:
+
+```typescript
+manifest: {
+  capabilities: ['filesystem:read', 'filesystem:write'],
+  permissions: ['filesystem:read', 'filesystem:write'],
+}
+```
+
+#### Hook Not Executing
+
+Verify hook is properly defined:
+
+```typescript
+hooks: {
+  beforeRequest: async (context) => {
+    console.log('Hook executing');
+  },
 }
 ```
 
@@ -784,15 +1529,126 @@ if (!capabilities.vision.canAnalyze) {
 
 ---
 
-## Contributing
+## Publishing Your Plugin
 
-To contribute a plugin:
+### As an npm Package
 
-1. Create your plugin in `web/plugins/your-plugin/`
-2. Follow the SDK patterns shown above
-3. Add documentation for your plugin
-4. Submit a PR with your plugin
+You can publish your plugin as a standalone npm package:
+
+1. **Create a new package:**
+
+```bash
+mkdir my-metamorph-plugin
+cd my-metamorph-plugin
+npm init -y
+npm install @metamorph/plugin-sdk
+```
+
+2. **Create your plugin:**
+
+```typescript
+// index.ts
+import { defineCliPlugin } from '@metamorph/plugin-sdk/cli';
+
+export default defineCliPlugin({
+  manifest: {
+    id: 'my-plugin',
+    name: 'My Plugin',
+    version: '1.0.0',
+    description: 'A cool plugin',
+    capabilities: [],
+    permissions: [],
+  },
+  // ... plugin implementation
+});
+```
+
+3. **Publish to npm:**
+
+```bash
+npm publish
+```
+
+4. **Users install and use:**
+
+```bash
+npm install my-metamorph-plugin
+```
+
+```typescript
+import myPlugin from 'my-metamorph-plugin';
+import { registerCliPlugin } from '@metamorph/plugin-sdk/cli';
+
+registerCliPlugin(myPlugin);
+```
+
+### Contributing to METAMORPH
+
+To contribute a built-in plugin:
+
+1. **Web plugins:** Create in `web/plugins/your-plugin/`
+2. **CLI plugins:** Create in `cli/plugins/your-plugin/`
+3. Follow the SDK patterns shown in this documentation
+4. Add comprehensive documentation and examples
+5. Write tests for your plugin
+6. Submit a PR to the METAMORPH repository
+
+### Plugin Guidelines
+
+- Use semantic versioning
+- Provide clear documentation
+- Include usage examples
+- Test on both web and CLI (if applicable)
+- Follow TypeScript best practices
+- Respect user privacy and permissions
 
 ---
 
-*METAMORPH Plugin System v1.0.0*
+## SDK Package Benefits
+
+The `@metamorph/plugin-sdk` package provides several key benefits:
+
+### For Plugin Developers
+
+1. **Type Safety**: Full TypeScript definitions for all APIs
+2. **Platform Abstraction**: Write plugins that work on web or CLI
+3. **Easy Distribution**: Publish plugins as npm packages
+4. **Versioned API**: Stable API with semantic versioning
+5. **Documentation**: Comprehensive docs and examples
+6. **Auto-completion**: IDE support with IntelliSense
+
+### For METAMORPH Users
+
+1. **Plugin Discovery**: Find plugins on npm
+2. **Easy Installation**: `npm install @scope/plugin-name`
+3. **Version Control**: Lock plugin versions in package.json
+4. **Security**: Review plugin code before installation
+5. **Community Ecosystem**: Share and discover community plugins
+
+### Package Structure
+
+```
+@metamorph/plugin-sdk/
+├── core/          # Platform-agnostic types
+├── web/           # Web plugin SDK
+├── cli/           # CLI plugin SDK
+├── react/         # React hooks
+└── dist/
+    ├── esm/       # ES modules
+    ├── cjs/       # CommonJS
+    └── umd/       # UMD for browsers
+```
+
+---
+
+## Examples Repository
+
+For more complete examples, see:
+
+- **Web Plugin Examples**: `web/plugins/emotion/` - Emotion detection with webcam
+- **CLI Plugin Examples**: `cli/plugins/` - Stance operators and hooks
+- **SDK Examples**: `packages/sdk/examples/` - Standalone plugin examples
+
+---
+
+*METAMORPH Plugin System v2.0.0 - Powered by @metamorph/plugin-sdk*
