@@ -636,11 +636,10 @@ export default function Chat({ sessionId, onSessionChange, onResponse, onStanceU
               exit={{ opacity: 0, y: -10, scale: 0.95 }}
               transition={{ type: "spring", stiffness: 500, damping: 30 }}
               className={cn(
-                'max-w-[min(80%,36rem)] p-3 rounded-xl leading-relaxed min-w-0 flex-shrink-0',
-                msg.role === 'user' && !msg.type && 'self-end bg-gradient-to-r from-emblem-secondary to-emblem-primary text-white',
+                'max-w-[min(85%,48rem)] p-3 rounded-xl leading-relaxed min-w-0 flex-shrink-0',
+                msg.role === 'user' && msg.type !== 'command' && 'ml-auto !bg-blue-600 !text-white',
                 msg.role === 'assistant' && 'self-start glass-card',
-                msg.type === 'command' && 'max-w-full',
-                msg.type === 'command' && msg.role === 'user' && 'bg-transparent text-emblem-text'
+                msg.type === 'command' && 'max-w-full bg-transparent'
               )}
             >
             <div className="break-words prose-chat w-full overflow-hidden">
@@ -678,7 +677,7 @@ export default function Chat({ sessionId, onSessionChange, onResponse, onStanceU
               animate={{ opacity: 1, y: 0 }}
               exit={{ opacity: 0, y: -10 }}
               transition={{ type: "spring", stiffness: 400, damping: 25 }}
-              className="self-start glass-card max-w-[min(80%,36rem)] p-3 rounded-xl leading-relaxed min-w-0 flex-shrink-0"
+              className="self-start glass-card max-w-[min(85%,48rem)] p-3 rounded-xl leading-relaxed min-w-0 flex-shrink-0"
             >
               <div className="break-words w-full overflow-hidden">
                 <ActiveToolsBar tools={activeTools} />
@@ -693,7 +692,7 @@ export default function Chat({ sessionId, onSessionChange, onResponse, onStanceU
               animate={{ opacity: 1, y: 0 }}
               exit={{ opacity: 0 }}
               transition={{ type: "spring", stiffness: 400, damping: 25 }}
-              className="self-start glass-card max-w-[min(80%,36rem)] p-3 rounded-xl leading-relaxed min-w-0 flex-shrink-0"
+              className="self-start glass-card max-w-[min(85%,48rem)] p-3 rounded-xl leading-relaxed min-w-0 flex-shrink-0"
             >
               <div className="break-words prose-chat w-full overflow-hidden">
                 <ReactMarkdown components={markdownComponents}>{streamingText}</ReactMarkdown>
