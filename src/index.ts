@@ -66,3 +66,4 @@ export { createMetamorphMcpServer, logMcpToolsInfo } from './tools/mcp-server.js
 export { setStanceProvider as setToolStanceProvider } from './tools/introspection.js';
 export { setMemoryProvider as setToolMemoryProvider } from './tools/memory.js';
 export { setStanceProvider as setAnalysisStanceProvider } from './tools/analysis.js';
+export { setAgentProvider as setToolAgentProvider } from './tools/commands.js';

@@ -31,6 +31,7 @@ import {
 import { MemoryStore } from '../memory/index.js';
 import type { MemoryEntry } from '../types/index.js';
 import { commandRegistry, type CommandResult } from '../commands/index.js';
+import { setAgentProvider } from '../tools/commands.js';
 
 /**
  * Transformation history entry
@@ -195,6 +196,11 @@ export class MetamorphAgent {
       this.ensureMemoryStore();
       this.hooks = createTransformationHooks(this.memoryStore ?? undefined);
     }
+
+    // Wire tool providers for agent command invocation
+    // eslint-disable-next-line @typescript-eslint/no-this-alias
+    const self = this;
+    setAgentProvider(() => self);
 
     if (this.verbose) {
       console.log(`[METAMORPH] Initialized with conversation ${this.conversationId}`);
