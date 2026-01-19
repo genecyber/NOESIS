@@ -20,9 +20,9 @@ interface ValueChange {
 
 // Radar chart component
 function RadarChart({ values, sentience }: { values: Stance['values']; sentience: Stance['sentience'] }) {
-  const size = 280;
+  const size = 320;
   const center = size / 2;
-  const radius = size * 0.32;
+  const radius = size * 0.28; // Smaller radius to leave more room for labels
 
   // All values + sentience metrics (10 total)
   const dataPoints = [
@@ -59,8 +59,8 @@ function RadarChart({ values, sentience }: { values: Stance['values']; sentience
     const angle = angleStep * i - Math.PI / 2;
     const endX = center + radius * Math.cos(angle);
     const endY = center + radius * Math.sin(angle);
-    const labelX = center + (radius + 24) * Math.cos(angle);
-    const labelY = center + (radius + 24) * Math.sin(angle);
+    const labelX = center + (radius + 30) * Math.cos(angle);
+    const labelY = center + (radius + 30) * Math.sin(angle);
     return { point, endX, endY, labelX, labelY, angle };
   });
 
@@ -73,7 +73,7 @@ function RadarChart({ values, sentience }: { values: Stance['values']; sentience
     .join(' ');
 
   return (
-    <svg viewBox={`0 0 ${size} ${size}`} className="w-full max-w-[280px] mx-auto">
+    <svg viewBox={`0 0 ${size} ${size}`} className="w-full mx-auto">
       {/* Grid circles */}
       {gridCircles.map((pct) => (
         <circle
