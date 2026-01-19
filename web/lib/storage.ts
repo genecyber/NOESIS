@@ -416,7 +416,7 @@ export function addToInputHistory(input: string): string[] {
 // ============================================================================
 
 export interface UserPreferences {
-  activePanel: 'stance' | 'config' | 'timeline' | 'evolution' | 'sessions' | 'memories' | 'empathy';
+  activePanel: string; // Dynamic - supports plugin panels
   theme?: 'dark' | 'light';
   fontSize?: number;
   enableLocalStorage?: boolean;

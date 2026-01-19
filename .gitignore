@@ -7,3 +7,4 @@ dist/
 
 # Local data storage (sessions, memories, database)
 data/
+.playwright-mcp

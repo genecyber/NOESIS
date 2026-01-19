@@ -1,8 +1,8 @@
 'use client';
 
-import { useState, useEffect, useCallback, useRef } from 'react';
+import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Layers, Settings, Heart, Clock, Brain, FolderOpen, MessageSquare, Menu, X, GripVertical, ChevronDown, Plus } from 'lucide-react';
+import { Layers, Settings, Clock, Brain, FolderOpen, MessageSquare, Menu, X, GripVertical, ChevronDown, Plus } from 'lucide-react';
 import Chat from '@/components/Chat';
 import StanceViz from '@/components/StanceViz';
 import Config from '@/components/Config';
@@ -10,19 +10,21 @@ import OperatorTimeline from '@/components/OperatorTimeline';
 import EvolutionTimeline from '@/components/EvolutionTimeline';
 import SessionBrowser from '@/components/SessionBrowser';
 import MemoryBrowser from '@/components/MemoryBrowser';
-import EmpathyPanel from '@/components/EmpathyPanel';
 import { Button, Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui';
 import { createSession, updateConfig, getState, getTimeline, getEvolution, resumeSession, syncMemoriesToServer } from '@/lib/api';
 import { getLastSessionId, saveLastSessionId, getPreferences, savePreferences, getMemoriesFromStorage, getPendingSyncItems, removeSyncQueueItem, isOnline } from '@/lib/storage';
 import type { Stance, ModeConfig, ChatResponse, TimelineEntry, EvolutionSnapshot, EmotionContext } from '@/lib/types';
 import { cn } from '@/lib/utils';
+// Plugin system
+import { pluginRegistry } from '@/lib/plugins/registry';
+import { usePluginSession } from '@/lib/plugins/hooks';
+import { plugins } from '@/plugins';
+import type { PanelDefinition, PanelProps } from '@/lib/plugins/types';
 
-type PanelType = 'stance' | 'config' | 'timeline' | 'evolution' | 'sessions' | 'memories' | 'empathy';
-
-const TABS: { id: PanelType; label: string; icon: React.ElementType }[] = [
+// Core tabs (non-plugin panels)
+const CORE_TABS: { id: string; label: string; icon: React.ElementType }[] = [
   { id: 'stance', label: 'Stance', icon: Layers },
   { id: 'config', label: 'Config', icon: Settings },
-  { id: 'empathy', label: 'Empathy', icon: Heart },
   { id: 'timeline', label: 'Timeline', icon: Clock },
   { id: 'evolution', label: 'Evolution', icon: Brain },
   { id: 'sessions', label: 'Sessions', icon: FolderOpen },
@@ -52,8 +54,67 @@ export default function Home() {
   const [evolutionSnapshots, setEvolutionSnapshots] = useState<EvolutionSnapshot[]>([]);
 
   // Load active panel preference from localStorage
-  const [activePanel, setActivePanel] = useState<PanelType>('stance');
+  const [activePanel, setActivePanel] = useState<string>('stance');
   const [emotionContext, setEmotionContext] = useState<EmotionContext | null>(null);
+
+  // Plugin system state
+  const [pluginPanels, setPluginPanels] = useState<PanelDefinition[]>([]);
+  const [pluginsReady, setPluginsReady] = useState(false);
+
+  // Keep plugin registry in sync with session ID
+  usePluginSession(sessionId);
+
+  // Initialize plugins on mount - auto-discovers from plugins/index.ts
+  useEffect(() => {
+    const initPlugins = async () => {
+      try {
+        // Register and enable all plugins from the plugins folder
+        for (const plugin of plugins) {
+          const existing = pluginRegistry.getPlugin(plugin.manifest.id);
+          if (!existing) {
+            pluginRegistry.register(plugin);
+          }
+          await pluginRegistry.enable(plugin.manifest.id);
+          console.log(`[Plugins] Initialized: ${plugin.manifest.name}`);
+        }
+        // Get panels from registry
+        setPluginPanels(pluginRegistry.getPanels());
+        setPluginsReady(true);
+      } catch (err) {
+        console.error('[Plugins] Failed to initialize:', err);
+        setPluginsReady(true); // Continue without plugins
+      }
+    };
+    initPlugins();
+
+    return () => {
+      // Cleanup all plugins on unmount
+      for (const plugin of plugins) {
+        pluginRegistry.disable(plugin.manifest.id).catch(console.error);
+      }
+    };
+  }, []);
+
+  // Build combined tabs (core + plugin panels)
+  const TABS = useMemo(() => {
+    const coreTabs = CORE_TABS.map(tab => ({
+      id: tab.id,
+      label: tab.label,
+      icon: tab.icon,
+      isPlugin: false as const,
+    }));
+
+    const pluginTabs = pluginPanels.map(panel => ({
+      id: panel.id,
+      label: panel.label,
+      icon: panel.icon,
+      isPlugin: true as const,
+      panel,
+    }));
+
+    // Insert plugin panels after config (index 1) to maintain order
+    return [...coreTabs.slice(0, 2), ...pluginTabs, ...coreTabs.slice(2)];
+  }, [pluginPanels]);
 
   // Sidebar state (desktop)
   const [sidebarOpen, setSidebarOpen] = useState(true);
@@ -121,7 +182,7 @@ export default function Home() {
   }, [sidebarOpen]);
 
   // Save active panel preference when it changes
-  const handlePanelChange = useCallback((panel: PanelType) => {
+  const handlePanelChange = useCallback((panel: string) => {
     setActivePanel(panel);
     savePreferences({ activePanel: panel });
     if (isMobile) {
@@ -278,50 +339,63 @@ export default function Home() {
     }
   };
 
-  const handleVisionRequest = useCallback(async (frame: string, _prompt: string) => {
-    if (!sessionId) return;
-    try {
-      console.log('[Vision] Legacy callback - frame already sent by EmpathyPanel');
-    } catch (err) {
-      console.error('[Vision] Failed to analyze frame:', err);
-    }
-  }, [sessionId]);
+  // Get plugin capabilities for rendering plugin panels
+  const getPluginCapabilities = useCallback((pluginId: string) => {
+    const registration = pluginRegistry.getPlugin(pluginId);
+    return registration?.capabilities ?? null;
+  }, []);
 
   // Render panel content
-  const renderPanelContent = () => (
-    <>
-      {activePanel === 'stance' && <StanceViz stance={stance} />}
-      {activePanel === 'config' && <Config config={config} onUpdate={handleConfigUpdate} />}
-      {activePanel === 'timeline' && <OperatorTimeline entries={timelineEntries} />}
-      {activePanel === 'evolution' && <EvolutionTimeline snapshots={evolutionSnapshots} currentStance={stance || undefined} />}
-      {activePanel === 'sessions' && (
-        <SessionBrowser
-          currentSessionId={sessionId}
-          onSelectSession={handleSelectSession}
-          onNewSession={handleNewSession}
-        />
-      )}
-      {activePanel === 'memories' && <MemoryBrowser sessionId={sessionId} />}
-      {activePanel === 'empathy' && (
-        <EmpathyPanel
-          enabled={config?.enableEmpathyMode ?? false}
-          emotionContext={emotionContext}
-          onToggle={(enabled) => handleConfigUpdate({ enableEmpathyMode: enabled })}
-          onEmotionDetected={(context) => setEmotionContext(context)}
-          onVisionRequest={handleVisionRequest}
-          sessionId={sessionId}
-          detectionInterval={config?.empathyCameraInterval ?? 1000}
-          config={{
-            empathyCameraInterval: config?.empathyCameraInterval,
-            empathyMinConfidence: config?.empathyMinConfidence,
-            empathyAutoAdjust: config?.empathyAutoAdjust,
-            empathyBoostMax: config?.empathyBoostMax,
-          }}
-          onConfigUpdate={handleConfigUpdate}
-        />
-      )}
-    </>
-  );
+  const renderPanelContent = () => {
+    // Check if active panel is a plugin panel
+    const pluginPanel = pluginPanels.find(p => p.id === activePanel);
+
+    if (pluginPanel) {
+      // Render plugin panel with PanelProps
+      const PanelComponent = pluginPanel.component;
+      const registration = pluginRegistry.getPlugin(
+        pluginRegistry.getAllPlugins().find(p => p.plugin.panel?.id === pluginPanel.id)?.plugin.manifest.id ?? ''
+      );
+
+      if (!registration?.capabilities) {
+        return <div className="text-emblem-muted p-4">Plugin not ready</div>;
+      }
+
+      const panelProps: PanelProps = {
+        sessionId,
+        stance,
+        config,
+        emotionContext,
+        capabilities: registration.capabilities,
+        onStanceUpdate: (newStance) => setStance(newStance),
+        onConfigUpdate: handleConfigUpdate,
+        onEmotionUpdate: (emotion) => {
+          setEmotionContext(emotion);
+          pluginRegistry.emitEmotionDetected(emotion);
+        },
+      };
+
+      return <PanelComponent {...panelProps} />;
+    }
+
+    // Render core panels
+    return (
+      <>
+        {activePanel === 'stance' && <StanceViz stance={stance} />}
+        {activePanel === 'config' && <Config config={config} onUpdate={handleConfigUpdate} />}
+        {activePanel === 'timeline' && <OperatorTimeline entries={timelineEntries} />}
+        {activePanel === 'evolution' && <EvolutionTimeline snapshots={evolutionSnapshots} currentStance={stance || undefined} />}
+        {activePanel === 'sessions' && (
+          <SessionBrowser
+            currentSessionId={sessionId}
+            onSelectSession={handleSelectSession}
+            onNewSession={handleNewSession}
+          />
+        )}
+        {activePanel === 'memories' && <MemoryBrowser sessionId={sessionId} />}
+      </>
+    );
+  };
 
   if (error) {
     return (
