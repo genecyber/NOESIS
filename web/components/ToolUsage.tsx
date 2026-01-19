@@ -2,7 +2,7 @@
 
 import type { ToolUseEvent } from '@/lib/types';
 import { cn } from '@/lib/utils';
-import { Zap, Loader2 } from 'lucide-react';
+import { Zap } from 'lucide-react';
 import * as Tooltip from '@radix-ui/react-tooltip';
 
 interface ToolUsageProps {
@@ -70,7 +70,7 @@ function ToolChip({ tool }: ToolChipProps) {
       bg: 'bg-emblem-warning/15',
       border: 'border-emblem-warning/40',
       text: 'text-emblem-warning',
-      icon: null, // Will use Loader2
+      icon: '🔧',
     },
     completed: {
       bg: 'bg-emblem-accent/10',
@@ -98,9 +98,9 @@ function ToolChip({ tool }: ToolChipProps) {
         config.border
       )}
     >
-      {/* Status indicator - text icons only, no spinner */}
-      <span className={cn('text-xs font-bold leading-none', config.text)}>
-        {tool.status === 'started' ? '⏳' : config.icon}
+      {/* Status indicator - emoji icons only, NO SVG spinner */}
+      <span className={cn('text-xs leading-none', config.text)}>
+        {config.icon}
       </span>
 
       {/* Tool name */}
@@ -128,7 +128,7 @@ function ToolChip({ tool }: ToolChipProps) {
       </Tooltip.Trigger>
       <Tooltip.Portal>
         <Tooltip.Content
-          className="bg-emblem-surface border border-emblem-primary/30 rounded-lg p-3 shadow-xl z-[9999] max-w-[400px]"
+          className="bg-emblem-surface border-2 border-emblem-primary rounded-lg p-3 shadow-xl z-[9999] max-w-[400px]"
           sideOffset={5}
         >
           <div className="text-[10px] font-semibold uppercase tracking-wider text-emblem-primary mb-1.5">
@@ -157,7 +157,7 @@ function ToolChip({ tool }: ToolChipProps) {
               </div>
             </>
           )}
-          <Tooltip.Arrow className="fill-emblem-primary/30" />
+          <Tooltip.Arrow className="fill-emblem-primary" />
         </Tooltip.Content>
       </Tooltip.Portal>
     </Tooltip.Root>
@@ -169,7 +169,7 @@ function ToolChip({ tool }: ToolChipProps) {
  */
 export function ToolIndicator({ tool }: { tool: ToolUseEvent }) {
   const statusConfig = {
-    started: { color: 'bg-emblem-warning/20 text-emblem-warning', icon: '⏳' },
+    started: { color: 'bg-emblem-warning/20 text-emblem-warning', icon: '🔧' },
     completed: { color: 'bg-emblem-accent/20 text-emblem-accent', icon: '✓' },
     error: { color: 'bg-emblem-danger/20 text-emblem-danger', icon: '✗' },
   };
@@ -185,7 +185,7 @@ export function ToolIndicator({ tool }: { tool: ToolUseEvent }) {
 }
 
 /**
- * Active tools bar - shows tools currently in progress
+ * Active tools bar - shows tools currently in progress (NO SVG SPINNERS)
  */
 export function ActiveToolsBar({ tools }: { tools: ToolUseEvent[] }) {
   const activeTools = tools.filter(t => t.status === 'started');
@@ -197,7 +197,7 @@ export function ActiveToolsBar({ tools }: { tools: ToolUseEvent[] }) {
       <span className="text-[11px] text-emblem-warning font-medium">Working with:</span>
       {activeTools.map(tool => (
         <span key={tool.id} className="inline-flex items-center gap-1 px-2 py-0.5 bg-emblem-warning/20 rounded-xl font-mono text-[11px] text-emblem-warning">
-          <Loader2 className="w-3 h-3 animate-spin" />
+          <span>🔧</span>
           {tool.name}
         </span>
       ))}
