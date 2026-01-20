@@ -52,6 +52,19 @@ const Memory3DScene = dynamic(
   }
 );
 
+// Dynamic import for MiniMemoryPreview (Three.js requires window)
+const MiniMemoryPreview = dynamic(
+  () => import('./MiniMemoryPreview').then(mod => mod.default),
+  {
+    ssr: false,
+    loading: () => (
+      <div className="w-full h-[200px] flex items-center justify-center bg-emblem-surface-2 rounded-lg border border-white/5">
+        <Loader2 className="w-5 h-5 text-emblem-muted animate-spin" />
+      </div>
+    )
+  }
+);
+
 /**
  * Memory Explorer Panel Component
  */
@@ -455,6 +468,25 @@ export default function MemoryExplorerPanel({
         )}
       </Button>
 
+      {/* Mini 3D Preview */}
+      {memoryStats.total > 0 && (
+        <div className="space-y-2">
+          <span className="text-xs text-emblem-muted">Preview</span>
+          <MiniMemoryPreview
+            nodes={memoryNodes}
+            connections={connections}
+            showConnections={settings.showConnections}
+            onClick={launchViewer}
+            height={220}
+          />
+          {memoryNodes.length === 0 && memories.length > 0 && (
+            <p className="text-xs text-emblem-muted text-center">
+              Click &quot;Launch Explorer&quot; to compute visualization
+            </p>
+          )}
+        </div>
+      )}
+
       {/* Settings panel */}
       <AnimatePresence>
         {showSettings && (
@@ -615,10 +647,10 @@ export default function MemoryExplorerPanel({
           exit={{ opacity: 0 }}
           className="fixed inset-0 z-[9999] bg-emblem-bg"
         >
-          {/* Close button */}
+          {/* Close button - positioned to the left of the Explored Memories panel (w-72 = 18rem + right-4 gap) */}
           <button
             onClick={closeViewer}
-            className="absolute top-4 right-4 z-10 p-2 rounded-lg bg-emblem-surface/80 backdrop-blur-sm text-emblem-text hover:text-emblem-primary hover:bg-emblem-surface transition-colors"
+            className="absolute top-4 right-80 z-10 p-2 rounded-lg bg-emblem-surface/80 backdrop-blur-sm text-emblem-text hover:text-emblem-primary hover:bg-emblem-surface transition-colors"
             aria-label="Close viewer"
           >
             <X className="w-6 h-6" />
@@ -648,15 +680,15 @@ export default function MemoryExplorerPanel({
             />
           </div>
 
-          {/* Selected Memory Detail Sidebar */}
+          {/* Selected Memory Detail Sidebar - positioned on LEFT to avoid overlap with Explored Memories panel */}
           <AnimatePresence>
             {selectedMemory && (
               <motion.div
-                initial={{ x: '100%', opacity: 0 }}
+                initial={{ x: '-100%', opacity: 0 }}
                 animate={{ x: 0, opacity: 1 }}
-                exit={{ x: '100%', opacity: 0 }}
+                exit={{ x: '-100%', opacity: 0 }}
                 transition={{ type: 'spring', damping: 25, stiffness: 300 }}
-                className="absolute top-0 right-0 h-full w-80 bg-emblem-bg/95 backdrop-blur-md border-l border-white/10 p-6 pt-16 overflow-y-auto"
+                className="absolute top-0 left-0 h-full w-80 bg-emblem-bg/95 backdrop-blur-md border-r border-white/10 p-6 pt-16 overflow-y-auto"
               >
                 <div className="space-y-4">
                   {/* Memory type badge */}

@@ -186,7 +186,14 @@ export const ModeConfigSchema = z.object({
   empathyCameraInterval: z.number().min(100).max(5000).default(1000),  // Milliseconds between frame captures (100-5000ms)
   empathyMinConfidence: z.number().min(0).max(1).default(0.5),  // Minimum confidence threshold to act on detected emotions (0-1)
   empathyAutoAdjust: z.boolean().default(true),  // Whether to automatically adjust empathy stance value based on detected emotions
-  empathyBoostMax: z.number().min(0).max(50).default(20)  // Maximum empathy boost percentage to apply (0-50)
+  empathyBoostMax: z.number().min(0).max(50).default(20),  // Maximum empathy boost percentage to apply (0-50)
+
+  // Decay Modeling - Predictive stance decay analysis
+  enableDecayModeling: z.boolean().default(false),  // Enable predictive decay modeling for stance values
+
+  // Auto-Subagent Routing - Semantic intent-based subagent invocation
+  enableAutoSubagents: z.boolean().default(true),  // Master toggle for automatic subagent routing
+  autoSubagentThreshold: z.number().min(0).max(1).default(0.6)  // Cosine similarity threshold for subagent intent detection
 });
 
 export type ModeConfig = z.infer<typeof ModeConfigSchema>;
@@ -340,6 +347,12 @@ export interface PreTurnResult {
       reason: string;
     }>;
     tokensUsed: number;
+  };
+  /** Detected subagent to invoke based on semantic intent matching */
+  detectedSubagent?: {
+    subagent: string;
+    confidence: number;
+    matchedIntent: string;
   };
 }
 

@@ -134,9 +134,9 @@ export function SessionBrowser({
                 <div className="flex gap-3 text-[11px]">
                   <span
                     className="font-medium"
-                    style={{ color: getFrameColor(session.stance.frame) }}
+                    style={{ color: getFrameColor(session.stance?.frame || 'pragmatic') }}
                   >
-                    {session.stance.frame}
+                    {session.stance?.frame || 'pragmatic'}
                   </span>
                   <span className="text-emblem-muted">
                     {session.messageCount} msgs

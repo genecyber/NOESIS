@@ -31,6 +31,7 @@ import {
 import type { MemoryStore } from '../memory/store.js';
 import { memoryInjector } from '../memory/proactive-injection.js';
 import { pluginSDK } from '../plugins/sdk.js';
+import { getSubagentRouter } from './subagent-router.js';
 
 // Type for emotional arc tracker (plugin-provided)
 interface EmotionalArcTracker {
@@ -229,11 +230,38 @@ ${injection.attribution.length > 0 ? `Consider: ${injection.attribution.join(', 
         }
       }
 
+      // 6. Auto-Subagent Routing Detection (optional)
+      let detectedSubagent: {
+        subagent: string;
+        confidence: number;
+        matchedIntent: string;
+      } | undefined;
+
+      if (config.enableAutoSubagents) {
+        try {
+          const router = getSubagentRouter();
+          const routeResult = await router.detectSubagentIntent(message, config);
+
+          if (routeResult) {
+            detectedSubagent = {
+              subagent: routeResult.subagent,
+              confidence: routeResult.confidence,
+              matchedIntent: routeResult.matchedIntent
+            };
+            console.log(`[METAMORPH] Auto-subagent detected: ${routeResult.subagent} (confidence: ${Math.round(routeResult.confidence * 100)}%)`);
+          }
+        } catch (error) {
+          // Subagent routing is optional - don't fail the turn if it errors
+          console.warn('[METAMORPH] Subagent routing error:', error);
+        }
+      }
+
       return {
         systemPrompt,
         operators,
         stanceAfterPlan,
-        injectedMemories
+        injectedMemories,
+        detectedSubagent
       };
     },
 

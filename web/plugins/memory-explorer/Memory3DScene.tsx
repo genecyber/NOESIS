@@ -7,7 +7,7 @@
 
 'use client';
 
-import { useRef, useState, useMemo, useCallback, useEffect } from 'react';
+import { useRef, useState, useMemo, useCallback, useEffect, MutableRefObject } from 'react';
 import { Canvas, useFrame, useThree, ThreeEvent } from '@react-three/fiber';
 import { OrbitControls, Stars, Line, Html, Billboard, Text } from '@react-three/drei';
 import * as THREE from 'three';
@@ -23,6 +23,7 @@ interface MemoryNodeData {
   importance: number;
   position: { x: number; y: number; z: number };
   embedding?: number[];
+  timestamp?: number; // Unix timestamp for time-based proximity calculations
 }
 
 interface ConnectionData {
@@ -44,6 +45,7 @@ interface ActivePulse {
   speed: number; // units per second
   color: string;
   startTime: number;
+  isJump?: boolean; // true if this is a cross-space jump (not along an edge)
 }
 
 interface PulseState {
@@ -52,6 +54,7 @@ interface PulseState {
   visitedNodes: Set<string>;
   activePulses: ActivePulse[];
   flashingNodes: Map<string, number>; // nodeId -> flash start time
+  lastDeadEndNodeId?: string; // Track the last node that hit a dead end (for jump origin)
 }
 
 interface Memory3DSceneProps {
@@ -62,6 +65,15 @@ interface Memory3DSceneProps {
   onNodeHover?: (nodeId: string | null) => void;
   showConnections?: boolean;
   autoRotate?: boolean;
+}
+
+// =============================================================================
+// Flashed Memory Card Types
+// =============================================================================
+
+interface FlashedMemory {
+  node: MemoryNodeData;
+  flashedAt: number; // timestamp when the node was flashed
 }
 
 // =============================================================================
@@ -77,9 +89,25 @@ const COLORS = {
   selected: '#ffffff',
   connection: '#4a5568',
   connectionActive: '#7c5cff',
+  // Jump pulse color (distinct from normal pulses)
+  jumpPulse: '#00ffff',   // Bright cyan for cross-space jumps
   // Background
   background: '#050608',  // hsl(228 33% 3%) - emblem-bg
 };
+
+// =============================================================================
+// Pulse Animation Constants
+// =============================================================================
+
+const PULSE_CONSTANTS = {
+  maxTotalDuration: 30, // Maximum seconds for the entire animation
+  maxVisitedNodes: 500, // Safety limit on nodes to visit
+  jumpSpeed: 12, // Units per second for jump pulses (slightly slower to be visible)
+  jumpBrightness: 0.9, // Brightness for jump pulses
+};
+
+// Maximum number of memory cards to display in the side panel
+const MAX_VISIBLE_CARDS = 12;
 
 // =============================================================================
 // Memory Node Component
@@ -354,43 +382,67 @@ interface PulseOrbProps {
   color: string;
   brightness: number;
   size?: number;
+  isJump?: boolean; // Different visual for jump pulses
 }
 
-function PulseOrb({ position, color, brightness, size = 0.15 }: PulseOrbProps) {
+function PulseOrb({ position, color, brightness, size = 0.15, isJump = false }: PulseOrbProps) {
   const meshRef = useRef<THREE.Mesh>(null);
+  const ringRef = useRef<THREE.Mesh>(null);
 
   useFrame((state) => {
     if (meshRef.current) {
-      // Subtle pulsing effect
-      const pulse = Math.sin(state.clock.elapsedTime * 10) * 0.1 + 1;
+      // Subtle pulsing effect - faster for jumps
+      const pulseSpeed = isJump ? 15 : 10;
+      const pulse = Math.sin(state.clock.elapsedTime * pulseSpeed) * 0.15 + 1;
       meshRef.current.scale.setScalar(size * pulse);
+    }
+    // Animate ring rotation for jump pulses
+    if (ringRef.current && isJump) {
+      ringRef.current.rotation.z += 0.1;
+      ringRef.current.rotation.x = Math.sin(state.clock.elapsedTime * 3) * 0.3;
     }
   });
 
+  // Jump pulses are slightly larger and have additional visual elements
+  const effectiveSize = isJump ? size * 1.3 : size;
+
   return (
     <group position={position}>
-      {/* Outer glow */}
-      <mesh scale={size * 3}>
+      {/* Outer glow - larger and more vibrant for jumps */}
+      <mesh scale={effectiveSize * (isJump ? 4 : 3)}>
         <sphereGeometry args={[1, 8, 8]} />
         <meshBasicMaterial
           color={color}
           transparent
-          opacity={0.2 * brightness}
+          opacity={(isJump ? 0.3 : 0.2) * brightness}
           depthWrite={false}
         />
       </mesh>
       {/* Inner glow */}
-      <mesh scale={size * 1.5}>
+      <mesh scale={effectiveSize * 1.5}>
         <sphereGeometry args={[1, 8, 8]} />
         <meshBasicMaterial
           color={color}
           transparent
-          opacity={0.4 * brightness}
+          opacity={(isJump ? 0.5 : 0.4) * brightness}
           depthWrite={false}
         />
       </mesh>
+      {/* Spinning ring for jump pulses - makes them visually distinct */}
+      {isJump && (
+        <mesh ref={ringRef} scale={effectiveSize * 2.5}>
+          <ringGeometry args={[0.8, 1, 16]} />
+          <meshBasicMaterial
+            color={color}
+            transparent
+            opacity={0.6 * brightness}
+            side={THREE.DoubleSide}
+            depthWrite={false}
+          />
+        </mesh>
+      )}
       {/* Core */}
-      <mesh ref={meshRef} scale={size}>
+      <mesh ref={meshRef} scale={effectiveSize}>
         <sphereGeometry args={[1, 16, 16]} />
         <meshBasicMaterial
           color={'#ffffff'}
@@ -413,6 +465,94 @@ interface PulseEffectProps {
   onPulseUpdate: (newState: PulseState | null) => void;
   onEdgeGlow: (edgeKey: string, intensity: number) => void;
   onNodeFlash: (nodeId: string, intensity: number) => void;
+}
+
+/**
+ * Calculate combined proximity score for finding the nearest unvisited node.
+ * Combines spatial proximity (3D distance) and temporal proximity (timestamp difference).
+ * Lower score = closer/more similar.
+ */
+function calculateProximityScore(
+  fromNode: MemoryNodeData,
+  toNode: MemoryNodeData,
+  fromPos: THREE.Vector3,
+  toPos: THREE.Vector3,
+  maxSpatialDistance: number,
+  maxTimeDelta: number
+): number {
+  // Spatial proximity (normalized 0-1, where 0 is closest)
+  const spatialDistance = fromPos.distanceTo(toPos);
+  const normalizedSpatial = maxSpatialDistance > 0 ? spatialDistance / maxSpatialDistance : 0;
+
+  // Temporal proximity (normalized 0-1, where 0 is closest in time)
+  let normalizedTemporal = 0.5; // Default if no timestamps
+  if (fromNode.timestamp !== undefined && toNode.timestamp !== undefined) {
+    const timeDelta = Math.abs(fromNode.timestamp - toNode.timestamp);
+    normalizedTemporal = maxTimeDelta > 0 ? timeDelta / maxTimeDelta : 0;
+  }
+
+  // Combined score: 50% spatial, 50% temporal
+  return normalizedSpatial * 0.5 + normalizedTemporal * 0.5;
+}
+
+/**
+ * Find the nearest unvisited node from a given position.
+ * Uses a combination of spatial distance and temporal proximity.
+ */
+function findNearestUnvisitedNode(
+  fromNodeId: string,
+  nodes: MemoryNodeData[],
+  nodePositions: Map<string, THREE.Vector3>,
+  visitedNodes: Set<string>
+): MemoryNodeData | null {
+  const fromNode = nodes.find(n => n.id === fromNodeId);
+  const fromPos = nodePositions.get(fromNodeId);
+  if (!fromNode || !fromPos) return null;
+
+  // Get all unvisited nodes
+  const unvisitedNodes = nodes.filter(n => !visitedNodes.has(n.id));
+  if (unvisitedNodes.length === 0) return null;
+
+  // Calculate max values for normalization
+  let maxSpatialDistance = 0;
+  let maxTimeDelta = 0;
+
+  unvisitedNodes.forEach(node => {
+    const pos = nodePositions.get(node.id);
+    if (pos) {
+      const dist = fromPos.distanceTo(pos);
+      if (dist > maxSpatialDistance) maxSpatialDistance = dist;
+    }
+    if (fromNode.timestamp !== undefined && node.timestamp !== undefined) {
+      const timeDelta = Math.abs(fromNode.timestamp - node.timestamp);
+      if (timeDelta > maxTimeDelta) maxTimeDelta = timeDelta;
+    }
+  });
+
+  // Find the node with the lowest proximity score
+  let bestNode: MemoryNodeData | null = null;
+  let bestScore = Infinity;
+
+  unvisitedNodes.forEach(node => {
+    const pos = nodePositions.get(node.id);
+    if (!pos) return;
+
+    const score = calculateProximityScore(
+      fromNode,
+      node,
+      fromPos,
+      pos,
+      maxSpatialDistance,
+      maxTimeDelta
+    );
+
+    if (score < bestScore) {
+      bestScore = score;
+      bestNode = node;
+    }
+  });
+
+  return bestNode;
 }
 
 function PulseEffect({
@@ -461,13 +601,93 @@ function PulseEffect({
 
   // Animation loop
   useFrame(() => {
-    if (!pulseState || pulseState.activePulses.length === 0) return;
+    if (!pulseState) return;
 
     const currentTime = clock.elapsedTime;
+    const animationDuration = currentTime - pulseState.startTime;
+
+    // Safety check: stop if animation has been running too long
+    if (animationDuration > PULSE_CONSTANTS.maxTotalDuration) {
+      onPulseUpdate(null);
+      return;
+    }
+
+    // Safety check: stop if we've visited too many nodes
+    if (pulseState.visitedNodes.size >= PULSE_CONSTANTS.maxVisitedNodes) {
+      onPulseUpdate(null);
+      return;
+    }
+
+    // Handle case where there are no active pulses but we're still flashing
+    if (pulseState.activePulses.length === 0) {
+      // Check if there are unvisited nodes - if so, we need to create a jump pulse
+      const unvisitedCount = nodes.length - pulseState.visitedNodes.size;
+
+      if (unvisitedCount > 0 && pulseState.lastDeadEndNodeId) {
+        // Find the nearest unvisited node to create a jump
+        const nearestUnvisited = findNearestUnvisitedNode(
+          pulseState.lastDeadEndNodeId,
+          nodes,
+          nodePositions,
+          pulseState.visitedNodes
+        );
+
+        if (nearestUnvisited) {
+          // Create a jump pulse
+          const edgeKey = `jump-${pulseState.lastDeadEndNodeId}-${nearestUnvisited.id}-${currentTime}`;
+          const jumpPulse: ActivePulse = {
+            edgeKey,
+            fromId: pulseState.lastDeadEndNodeId,
+            toId: nearestUnvisited.id,
+            progress: 0,
+            brightness: PULSE_CONSTANTS.jumpBrightness,
+            speed: PULSE_CONSTANTS.jumpSpeed,
+            color: COLORS.jumpPulse,
+            startTime: currentTime,
+            isJump: true,
+          };
+
+          onPulseUpdate({
+            ...pulseState,
+            activePulses: [jumpPulse],
+            lastDeadEndNodeId: undefined,
+          });
+          return;
+        }
+      }
+
+      // No jump needed or possible - continue processing flashing nodes
+      const newFlashingNodes = new Map(pulseState.flashingNodes);
+      const flashDuration = 0.5;
+
+      newFlashingNodes.forEach((startTime, nodeId) => {
+        const flashElapsed = currentTime - startTime;
+        if (flashElapsed >= flashDuration) {
+          newFlashingNodes.delete(nodeId);
+          onNodeFlash(nodeId, 0);
+        } else {
+          const flashIntensity = 1 - flashElapsed / flashDuration;
+          onNodeFlash(nodeId, flashIntensity);
+        }
+      });
+
+      if (newFlashingNodes.size === 0) {
+        // Animation complete - all nodes visited or no more reachable
+        onPulseUpdate(null);
+      } else {
+        onPulseUpdate({
+          ...pulseState,
+          flashingNodes: newFlashingNodes,
+        });
+      }
+      return;
+    }
+
     const newPulses: ActivePulse[] = [];
     const completedPulses: ActivePulse[] = [];
     const newVisitedNodes = new Set(pulseState.visitedNodes);
     const newFlashingNodes = new Map(pulseState.flashingNodes);
+    let lastDeadEndNodeId = pulseState.lastDeadEndNodeId;
 
     // Process each active pulse
     pulseState.activePulses.forEach((pulse) => {
@@ -482,9 +702,11 @@ function PulseEffect({
       const elapsed = currentTime - pulse.startTime;
       const progress = Math.min(elapsed / travelTime, 1);
 
-      // Update edge glow based on pulse position
-      const glowIntensity = Math.max(0, 1 - Math.abs(progress - 0.5) * 2) * pulse.brightness;
-      onEdgeGlow(pulse.edgeKey, glowIntensity);
+      // Update edge glow based on pulse position (only for non-jump pulses)
+      if (!pulse.isJump) {
+        const glowIntensity = Math.max(0, 1 - Math.abs(progress - 0.5) * 2) * pulse.brightness;
+        onEdgeGlow(pulse.edgeKey, glowIntensity);
+      }
 
       if (progress >= 1) {
         // Pulse reached destination
@@ -500,10 +722,13 @@ function PulseEffect({
           newVisitedNodes.add(targetId);
 
           const neighborConnections = connectionMap.get(targetId) || [];
+          let hasUnvisitedNeighbor = false;
+
           neighborConnections.forEach((conn) => {
             const neighborId = conn.from === targetId ? conn.to : conn.from;
 
             if (!newVisitedNodes.has(neighborId)) {
+              hasUnvisitedNeighbor = true;
               // Create new pulse to this neighbor
               const edgeKey = `${targetId}-${neighborId}`;
               const baseSpeed = 8; // base speed in units per second
@@ -519,19 +744,20 @@ function PulseEffect({
                 speed,
                 color: nodeColors.get(targetId) || '#ffffff',
                 startTime: currentTime,
+                isJump: false,
               });
             }
           });
+
+          // If no unvisited neighbors, this is a dead end - mark for potential jump
+          if (!hasUnvisitedNeighbor) {
+            lastDeadEndNodeId = targetId;
+          }
         }
       } else {
         // Keep the pulse active with updated progress
         newPulses.push({ ...pulse, progress });
       }
-    });
-
-    // Fade out edge glows for completed pulses
-    completedPulses.forEach((pulse) => {
-      // Schedule glow fadeout (handled by the glow map cleanup)
     });
 
     // Fade out node flashes (0.5 second duration)
@@ -547,9 +773,43 @@ function PulseEffect({
       }
     });
 
+    // Check if we need to create a jump pulse
+    const unvisitedCount = nodes.length - newVisitedNodes.size;
+    const noPulsesRemaining = newPulses.length === 0;
+    const hasUnvisitedNodes = unvisitedCount > 0;
+
+    if (noPulsesRemaining && hasUnvisitedNodes && lastDeadEndNodeId) {
+      // Find the nearest unvisited node
+      const nearestUnvisited = findNearestUnvisitedNode(
+        lastDeadEndNodeId,
+        nodes,
+        nodePositions,
+        newVisitedNodes
+      );
+
+      if (nearestUnvisited) {
+        // Create a jump pulse to the nearest unvisited cluster
+        const edgeKey = `jump-${lastDeadEndNodeId}-${nearestUnvisited.id}-${currentTime}`;
+        const jumpPulse: ActivePulse = {
+          edgeKey,
+          fromId: lastDeadEndNodeId,
+          toId: nearestUnvisited.id,
+          progress: 0,
+          brightness: PULSE_CONSTANTS.jumpBrightness,
+          speed: PULSE_CONSTANTS.jumpSpeed,
+          color: COLORS.jumpPulse,
+          startTime: currentTime,
+          isJump: true,
+        };
+
+        newPulses.push(jumpPulse);
+        lastDeadEndNodeId = undefined; // Clear dead end since we're jumping
+      }
+    }
+
     // Update state
     if (newPulses.length === 0 && newFlashingNodes.size === 0) {
-      // Animation complete
+      // Animation complete - either all nodes visited or no more reachable
       onPulseUpdate(null);
     } else {
       onPulseUpdate({
@@ -557,6 +817,7 @@ function PulseEffect({
         visitedNodes: newVisitedNodes,
         activePulses: newPulses,
         flashingNodes: newFlashingNodes,
+        lastDeadEndNodeId,
       });
     }
   });
@@ -580,15 +841,195 @@ function PulseEffect({
         ];
 
         return (
-          <PulseOrb
-            key={pulse.edgeKey}
-            position={position}
-            color={pulse.color}
-            brightness={pulse.brightness}
-          />
+          <group key={pulse.edgeKey}>
+            {/* Render a dashed trail line for jump pulses */}
+            {pulse.isJump && (
+              <Line
+                points={[
+                  [fromPos.x, fromPos.y, fromPos.z],
+                  position,
+                ]}
+                color={pulse.color}
+                lineWidth={2}
+                transparent
+                opacity={0.5 * pulse.brightness * (1 - pulse.progress * 0.5)}
+                dashed
+                dashScale={8}
+                dashSize={0.8}
+                gapSize={0.4}
+              />
+            )}
+            <PulseOrb
+              position={position}
+              color={pulse.color}
+              brightness={pulse.brightness}
+              isJump={pulse.isJump}
+            />
+          </group>
         );
       })}
     </group>
+  );
+}
+
+// =============================================================================
+// Memory Cards Panel Component
+// =============================================================================
+
+interface MemoryCardsPanelProps {
+  flashedMemories: FlashedMemory[];
+  onCardClick?: (nodeId: string) => void;
+}
+
+function MemoryCardsPanel({ flashedMemories, onCardClick }: MemoryCardsPanelProps) {
+  // Inject animation CSS on mount
+  useEffect(() => {
+    const styleId = 'memory-cards-panel-animations';
+    if (!document.getElementById(styleId)) {
+      const style = document.createElement('style');
+      style.id = styleId;
+      style.textContent = `
+        @keyframes memoryCardSlideIn {
+          from {
+            opacity: 0;
+            transform: translateX(20px);
+          }
+          to {
+            opacity: 1;
+            transform: translateX(0);
+          }
+        }
+      `;
+      document.head.appendChild(style);
+    }
+  }, []);
+
+  // Format timestamp to a readable date
+  const formatTimestamp = (timestamp?: number): string => {
+    if (!timestamp) return '';
+    const date = new Date(timestamp);
+    return date.toLocaleDateString('en-US', {
+      month: 'short',
+      day: 'numeric',
+      hour: '2-digit',
+      minute: '2-digit',
+    });
+  };
+
+  // Get color based on memory type
+  const getTypeColor = (type: 'episodic' | 'semantic' | 'identity'): string => {
+    return COLORS[type];
+  };
+
+  // Get type label with icon
+  const getTypeLabel = (type: 'episodic' | 'semantic' | 'identity'): string => {
+    switch (type) {
+      case 'episodic':
+        return 'Episodic';
+      case 'semantic':
+        return 'Semantic';
+      case 'identity':
+        return 'Identity';
+      default:
+        return type;
+    }
+  };
+
+  if (flashedMemories.length === 0) {
+    return null;
+  }
+
+  return (
+    <div
+      className="absolute top-4 right-4 bottom-4 w-72 flex flex-col pointer-events-auto"
+      style={{
+        maxHeight: 'calc(100% - 32px)',
+      }}
+    >
+      {/* Header */}
+      <div
+        className="px-4 py-3 rounded-t-lg border-b"
+        style={{
+          backgroundColor: 'rgba(5, 6, 8, 0.85)',
+          borderColor: 'rgba(124, 92, 255, 0.3)',
+        }}
+      >
+        <h3 className="text-sm font-medium text-gray-200">
+          Explored Memories
+          <span className="ml-2 text-xs text-gray-500">
+            ({flashedMemories.length})
+          </span>
+        </h3>
+      </div>
+
+      {/* Scrollable cards container */}
+      <div
+        className="flex-1 overflow-y-auto rounded-b-lg"
+        style={{
+          backgroundColor: 'rgba(5, 6, 8, 0.75)',
+          backdropFilter: 'blur(8px)',
+        }}
+      >
+        <div className="p-2 space-y-2">
+          {flashedMemories.map((memory, index) => {
+            const color = getTypeColor(memory.node.type);
+            const isNew = index === 0;
+
+            return (
+              <div
+                key={`${memory.node.id}-${memory.flashedAt}`}
+                className="p-3 rounded-lg cursor-pointer transition-all duration-300 hover:scale-[1.02] hover:shadow-lg"
+                style={{
+                  backgroundColor: 'rgba(15, 17, 21, 0.9)',
+                  border: `1px solid ${color}40`,
+                  boxShadow: isNew ? `0 0 12px ${color}30` : 'none',
+                  animation: isNew ? 'memoryCardSlideIn 0.3s ease-out' : undefined,
+                }}
+                onClick={() => onCardClick?.(memory.node.id)}
+              >
+                {/* Type badge */}
+                <div className="flex items-center justify-between mb-2">
+                  <span
+                    className="text-xs font-medium px-2 py-0.5 rounded-full"
+                    style={{
+                      backgroundColor: `${color}20`,
+                      color: color,
+                    }}
+                  >
+                    {getTypeLabel(memory.node.type)}
+                  </span>
+                  {memory.node.importance > 0 && (
+                    <span
+                      className="text-xs text-gray-500"
+                      title="Importance"
+                    >
+                      {Math.round(
+                        memory.node.importance > 1
+                          ? memory.node.importance
+                          : memory.node.importance * 100
+                      )}%
+                    </span>
+                  )}
+                </div>
+
+                {/* Content */}
+                <p className="text-sm text-gray-300 leading-relaxed line-clamp-3">
+                  {memory.node.content}
+                </p>
+
+                {/* Timestamp */}
+                {memory.node.timestamp && (
+                  <p className="mt-2 text-xs text-gray-500">
+                    {formatTimestamp(memory.node.timestamp)}
+                  </p>
+                )}
+              </div>
+            );
+          })}
+        </div>
+      </div>
+
+    </div>
   );
 }
 
@@ -604,6 +1045,7 @@ interface SceneContentProps {
   onNodeHover: (nodeId: string | null) => void;
   showConnections: boolean;
   autoRotate: boolean;
+  onNodeFlashed?: (nodeId: string) => void; // Callback when a node is flashed by pulse
 }
 
 function SceneContent({
@@ -614,6 +1056,7 @@ function SceneContent({
   onNodeHover,
   showConnections,
   autoRotate,
+  onNodeFlashed,
 }: SceneContentProps) {
   const { clock } = useThree();
   const [hoveredNodeId, setHoveredNodeId] = useState<string | null>(null);
@@ -622,6 +1065,9 @@ function SceneContent({
   const [pulseState, setPulseState] = useState<PulseState | null>(null);
   const [glowingEdges, setGlowingEdges] = useState<Map<string, number>>(new Map());
   const [flashingNodes, setFlashingNodes] = useState<Map<string, number>>(new Map());
+
+  // Track which nodes have been reported as flashed (to avoid duplicates)
+  const reportedFlashes = useRef<Set<string>>(new Set());
 
   // Handle hover state
   const handleHover = useCallback(
@@ -638,16 +1084,37 @@ function SceneContent({
       // Call the parent's onNodeClick
       onNodeClick(nodeId);
 
+      // Reset the reported flashes for this new pulse cycle
+      reportedFlashes.current = new Set();
+
+      // Get the node's color for the initial pulses
+      const sourceNode = nodes.find((n) => n.id === nodeId);
+      const sourceColor = sourceNode ? COLORS[sourceNode.type] : '#ffffff';
+
       // Start pulse effect from this node
       const connectedEdges = connections.filter(
         (c) => c.from === nodeId || c.to === nodeId
       );
 
-      if (connectedEdges.length === 0) return;
+      // Flash the source node
+      setFlashingNodes(new Map([[nodeId, 1]]));
 
-      // Get the node's color for the initial pulses
-      const sourceNode = nodes.find((n) => n.id === nodeId);
-      const sourceColor = sourceNode ? COLORS[sourceNode.type] : '#ffffff';
+      // If node has no connections, still start animation but mark as dead end
+      // This allows the jump logic to find and visit other disconnected clusters
+      if (connectedEdges.length === 0) {
+        // Only start if there are other nodes to visit
+        if (nodes.length <= 1) return;
+
+        setPulseState({
+          sourceNodeId: nodeId,
+          startTime: clock.elapsedTime,
+          visitedNodes: new Set([nodeId]),
+          activePulses: [], // No initial pulses since no connections
+          flashingNodes: new Map([[nodeId, clock.elapsedTime]]),
+          lastDeadEndNodeId: nodeId, // Mark as dead end so jump logic kicks in
+        });
+        return;
+      }
 
       // Create initial pulses to all connected nodes
       const initialPulses: ActivePulse[] = connectedEdges.map((conn) => {
@@ -667,11 +1134,9 @@ function SceneContent({
           speed,
           color: sourceColor,
           startTime: clock.elapsedTime,
+          isJump: false,
         };
       });
-
-      // Flash the source node
-      setFlashingNodes(new Map([[nodeId, 1]]));
 
       setPulseState({
         sourceNodeId: nodeId,
@@ -715,10 +1180,15 @@ function SceneContent({
         next.delete(nodeId);
       } else {
         next.set(nodeId, intensity);
+        // Report node flash to parent (only once per pulse cycle)
+        if (!reportedFlashes.current.has(nodeId) && onNodeFlashed) {
+          reportedFlashes.current.add(nodeId);
+          onNodeFlashed(nodeId);
+        }
       }
       return next;
     });
-  }, []);
+  }, [onNodeFlashed]);
 
   return (
     <>
@@ -805,6 +1275,55 @@ export default function Memory3DScene({
   showConnections = true,
   autoRotate = false,
 }: Memory3DSceneProps) {
+  // State for tracking flashed memories for the side panel
+  const [flashedMemories, setFlashedMemories] = useState<FlashedMemory[]>([]);
+
+  // Create a node lookup map for quick access
+  const nodeMap = useMemo(() => {
+    const map = new Map<string, MemoryNodeData>();
+    nodes.forEach((node) => map.set(node.id, node));
+    return map;
+  }, [nodes]);
+
+  // Handle when a node is flashed by the pulse animation
+  const handleNodeFlashed = useCallback(
+    (nodeId: string) => {
+      const node = nodeMap.get(nodeId);
+      if (!node) return;
+
+      setFlashedMemories((prev) => {
+        // Check if this node is already in the list
+        const existingIndex = prev.findIndex((m) => m.node.id === nodeId);
+        if (existingIndex !== -1) {
+          // Move to top if already exists
+          const existing = prev[existingIndex];
+          const newList = [
+            { ...existing, flashedAt: Date.now() },
+            ...prev.slice(0, existingIndex),
+            ...prev.slice(existingIndex + 1),
+          ];
+          return newList.slice(0, MAX_VISIBLE_CARDS);
+        }
+
+        // Add new flashed memory at the top
+        const newMemory: FlashedMemory = {
+          node,
+          flashedAt: Date.now(),
+        };
+        return [newMemory, ...prev].slice(0, MAX_VISIBLE_CARDS);
+      });
+    },
+    [nodeMap]
+  );
+
+  // Handle card click - triggers onNodeClick for the selected memory
+  const handleCardClick = useCallback(
+    (nodeId: string) => {
+      onNodeClick(nodeId);
+    },
+    [onNodeClick]
+  );
+
   // Handle empty state
   if (nodes.length === 0) {
     return (
@@ -821,7 +1340,7 @@ export default function Memory3DScene({
   }
 
   return (
-    <div className="w-full h-full" style={{ backgroundColor: COLORS.background }}>
+    <div className="w-full h-full relative" style={{ backgroundColor: COLORS.background }}>
       <Canvas
         camera={{
           position: [0, 20, 60],
@@ -847,8 +1366,15 @@ export default function Memory3DScene({
           onNodeHover={onNodeHover}
           showConnections={showConnections}
           autoRotate={autoRotate}
+          onNodeFlashed={handleNodeFlashed}
         />
       </Canvas>
+
+      {/* Memory cards panel overlay */}
+      <MemoryCardsPanel
+        flashedMemories={flashedMemories}
+        onCardClick={handleCardClick}
+      />
     </div>
   );
 }
@@ -857,4 +1383,4 @@ export default function Memory3DScene({
 // Type Exports
 // =============================================================================
 
-export type { Memory3DSceneProps, MemoryNodeData, ConnectionData };
+export type { Memory3DSceneProps, MemoryNodeData, ConnectionData, FlashedMemory };

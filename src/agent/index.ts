@@ -44,6 +44,7 @@ import { autoEvolutionManager } from '../core/auto-evolution.js';
 import { identityPersistence } from '../core/identity-persistence.js';
 import { memoryInjector } from '../memory/proactive-injection.js';
 import { pluginEventBus } from '../plugins/event-bus.js';
+import { DecayModelingEngine, type DecayModel, type DecayAnalysis } from '../decay/modeling.js';
 
 /**
  * Transformation history entry
@@ -251,6 +252,8 @@ export class MetamorphAgent {
   private storageInMemory: boolean;
   private _lastVisionRequest: number | null = null;
   private _currentEmotionContext: EmotionContext | null = null;
+  private decayEngine: DecayModelingEngine | null = null;
+  private decayModelId: string | null = null;
 
   constructor(options: MetamorphAgentOptions = {}) {
     this.config = { ...createDefaultConfig(), ...options.config };
@@ -347,9 +350,17 @@ export class MetamorphAgent {
       }
     });
 
+    // Initialize decay modeling engine if enabled
+    if (this.config.enableDecayModeling) {
+      this.initializeDecayModeling();
+    }
+
     if (this.verbose) {
       console.log(`[METAMORPH] Initialized with conversation ${this.conversationId}`);
       console.log(`[METAMORPH] Transformation: ${this.hooks ? 'enabled' : 'disabled'}`);
+      if (this.config.enableDecayModeling) {
+        console.log(`[METAMORPH] Decay Modeling: enabled`);
+      }
     }
   }
 
@@ -413,6 +424,7 @@ export class MetamorphAgent {
     let systemPrompt: string;
     let operators: PlannedOperation[] = [];
     let injectedMemories: AgentResponse['injectedMemories'];
+    let detectedSubagent: { subagent: string; confidence: number; matchedIntent: string } | undefined;
 
     // Get emotion context: use explicit option, or fall back to stored vision analysis
     const emotionContext = options?.emotionContext ?? this._currentEmotionContext ?? undefined;
@@ -431,6 +443,7 @@ export class MetamorphAgent {
       systemPrompt = preTurnResult.systemPrompt;
       operators = preTurnResult.operators;
       injectedMemories = preTurnResult.injectedMemories;
+      detectedSubagent = preTurnResult.detectedSubagent;
     } else {
       // No hooks - use basic prompt
       systemPrompt = buildSystemPrompt({
@@ -522,6 +535,37 @@ export class MetamorphAgent {
       throw error;
     }
 
+    // 2.5. AUTO-SUBAGENT INVOCATION: If subagent was detected, invoke it and incorporate response
+    if (detectedSubagent && this.config.enableAutoSubagents) {
+      try {
+        if (this.verbose) {
+          console.log(`[METAMORPH] Invoking subagent: ${detectedSubagent.subagent} (confidence: ${Math.round(detectedSubagent.confidence * 100)}%)`);
+        }
+
+        // Invoke the detected subagent with the original message
+        const subagentResponse = await this.invokeSubagent(detectedSubagent.subagent, message);
+
+        // Append subagent response to the main response
+        const subagentSection = `\n\n---\n\n**[${detectedSubagent.subagent.charAt(0).toUpperCase() + detectedSubagent.subagent.slice(1)} Analysis]**\n\n${subagentResponse.response}`;
+        responseText += subagentSection;
+
+        // Track the invoked subagent
+        subagentsInvoked.push(detectedSubagent.subagent);
+
+        // Merge any tools used by the subagent
+        for (const tool of subagentResponse.toolsUsed) {
+          if (!toolsUsed.includes(tool)) {
+            toolsUsed.push(tool);
+          }
+        }
+      } catch (error) {
+        if (this.verbose) {
+          console.error(`[METAMORPH] Subagent invocation error:`, error);
+        }
+        // Continue without the subagent response - don't fail the main chat
+      }
+    }
+
     // 3. POST-TURN: Update stance, score response
     let stanceAfter = stanceBefore;
     let scores: TurnScores = {
@@ -576,6 +620,11 @@ export class MetamorphAgent {
           before: stanceBefore,
           after: stanceAfter
         });
+
+        // Update decay model with new stance
+        if (this.config.enableDecayModeling) {
+          this.updateDecayModel(stanceAfter);
+        }
       }
     } else {
       // No hooks - minimal stance update (increment turn counter)
@@ -694,6 +743,7 @@ export class MetamorphAgent {
     let systemPrompt: string;
     let operators: PlannedOperation[] = [];
     let injectedMemories: AgentResponse['injectedMemories'];
+    let detectedSubagent: { subagent: string; confidence: number; matchedIntent: string } | undefined;
 
     // Get emotion context: use explicit option, or fall back to stored vision analysis
     const emotionContext = options?.emotionContext ?? this._currentEmotionContext ?? undefined;
@@ -712,6 +762,7 @@ export class MetamorphAgent {
       systemPrompt = preTurnResult.systemPrompt;
       operators = preTurnResult.operators;
       injectedMemories = preTurnResult.injectedMemories;
+      detectedSubagent = preTurnResult.detectedSubagent;
     } else {
       systemPrompt = buildSystemPrompt({
         stance: stanceBefore,
@@ -883,6 +934,44 @@ export class MetamorphAgent {
         }
       }
 
+      // Auto-subagent invocation for streaming (if detected)
+      if (detectedSubagent && this.config.enableAutoSubagents) {
+        try {
+          if (this.verbose) {
+            console.log(`[METAMORPH] Invoking subagent: ${detectedSubagent.subagent} (confidence: ${Math.round(detectedSubagent.confidence * 100)}%)`);
+          }
+
+          // Notify about subagent start
+          callbacks.onSubagent?.(detectedSubagent.subagent, 'start');
+
+          // Invoke the detected subagent with the original message
+          const subagentResponse = await this.invokeSubagent(detectedSubagent.subagent, message);
+
+          // Append subagent response to the main response
+          const subagentSection = `\n\n---\n\n**[${detectedSubagent.subagent.charAt(0).toUpperCase() + detectedSubagent.subagent.slice(1)} Analysis]**\n\n${subagentResponse.response}`;
+          responseText += subagentSection;
+          callbacks.onText?.(subagentSection);
+
+          // Track the invoked subagent
+          subagentsInvoked.push(detectedSubagent.subagent);
+
+          // Merge any tools used by the subagent
+          for (const tool of subagentResponse.toolsUsed) {
+            if (!toolsUsed.includes(tool)) {
+              toolsUsed.push(tool);
+            }
+          }
+
+          // Notify about subagent end
+          callbacks.onSubagent?.(detectedSubagent.subagent, 'end');
+        } catch (error) {
+          if (this.verbose) {
+            console.error(`[METAMORPH] Subagent invocation error:`, error);
+          }
+          // Continue without the subagent response - don't fail the main chat
+        }
+      }
+
       // Post-turn processing
       let stanceAfter = stanceBefore;
       let scores: TurnScores = {
@@ -933,6 +1022,11 @@ export class MetamorphAgent {
             before: stanceBefore,
             after: stanceAfter
           });
+
+          // Update decay model with new stance
+          if (this.config.enableDecayModeling) {
+            this.updateDecayModel(stanceAfter);
+          }
         }
       }
 
@@ -1534,6 +1628,86 @@ export class MetamorphAgent {
       description: cmd.description,
       aliases: cmd.aliases
     }));
+  }
+
+  // ============================================================================
+  // Decay Modeling Integration
+  // ============================================================================
+
+  /**
+   * Initialize the decay modeling engine and create a model for the current session
+   */
+  private initializeDecayModeling(): void {
+    this.decayEngine = new DecayModelingEngine();
+    const stance = this.getCurrentStance();
+    const model = this.decayEngine.createModel(this.conversationId, stance);
+    this.decayModelId = model.id;
+
+    if (this.verbose) {
+      const analysis = this.decayEngine.analyzeDecay(model.id);
+      console.log(`[METAMORPH] Decay model created: ${model.id}`);
+      console.log(`[METAMORPH] Initial decay analysis - Health: ${analysis.overallHealth}, Days until action: ${analysis.daysUntilAction}`);
+    }
+  }
+
+  /**
+   * Update decay model with new stance (called after stance changes)
+   */
+  private updateDecayModel(stance: Stance): void {
+    if (!this.decayEngine || !this.decayModelId) return;
+
+    this.decayEngine.updateStance(this.decayModelId, stance);
+
+    if (this.verbose) {
+      const analysis = this.decayEngine.analyzeDecay(this.decayModelId);
+      const model = this.decayEngine.getModel(this.decayModelId);
+
+      if (analysis.criticalFields.length > 0) {
+        console.log(`[METAMORPH] Decay WARNING: Critical fields: ${analysis.criticalFields.join(', ')}`);
+      }
+
+      // Surface recommendations in verbose mode
+      if (model && model.recommendations.length > 0) {
+        const urgentRecs = model.recommendations.filter(r => r.priority === 'urgent' || r.priority === 'high');
+        if (urgentRecs.length > 0) {
+          console.log(`[METAMORPH] Decay recommendations (${urgentRecs.length} high-priority):`);
+          for (const rec of urgentRecs.slice(0, 3)) {
+            console.log(`  - [${rec.priority}] ${rec.action}`);
+          }
+        }
+      }
+    }
+  }
+
+  /**
+   * Get the current decay model
+   */
+  getDecayModel(): DecayModel | undefined {
+    if (!this.decayEngine || !this.decayModelId) return undefined;
+    return this.decayEngine.getModel(this.decayModelId);
+  }
+
+  /**
+   * Get decay analysis for the current session
+   */
+  getDecayAnalysis(): DecayAnalysis | null {
+    if (!this.decayEngine || !this.decayModelId) return null;
+    return this.decayEngine.analyzeDecay(this.decayModelId);
+  }
+
+  /**
+   * Get decay recommendations for the current session
+   */
+  getDecayRecommendations(): DecayModel['recommendations'] {
+    const model = this.getDecayModel();
+    return model?.recommendations ?? [];
+  }
+
+  /**
+   * Check if decay modeling is currently enabled
+   */
+  isDecayModelingEnabled(): boolean {
+    return this.decayEngine !== null && this.decayModelId !== null;
   }
 
   // ============================================================================

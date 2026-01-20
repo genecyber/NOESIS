@@ -10,6 +10,7 @@ import CommandOutput from './CommandOutput';
 import ToolUsage, { ActiveToolsBar } from './ToolUsage';
 import InjectedMemories from './InjectedMemories';
 import QuestionPrompt from './QuestionPrompt';
+import { dispatchInjectedMemoriesEvent } from '@/plugins/memory-explorer/MiniMemoryPreview';
 import { findCommand, parseCommand, COMMANDS, getCommandsByCategory } from '@/lib/commands';
 import { isPluginCommand, executePluginCommand } from '@/lib/plugins/registry';
 import { useInputHistory } from '@/lib/hooks/useLocalStorage';
@@ -555,6 +556,11 @@ export default function Chat({ sessionId, onSessionChange, onResponse, onStanceU
         toolsRef.current.clear();
         onResponse?.(data);
 
+        // Dispatch event for injected memories to trigger mini preview pulse
+        if (data.injectedMemories && data.injectedMemories.count > 0) {
+          dispatchInjectedMemoriesEvent(data.injectedMemories.memories);
+        }
+
         // Notify of stance update
         if (data.stanceAfter && onStanceUpdate) {
           onStanceUpdate(data.stanceAfter);
@@ -680,6 +686,11 @@ export default function Chat({ sessionId, onSessionChange, onResponse, onStanceU
         setActiveTools([]);
         toolsRef.current.clear();
         onResponse?.(data);
+
+        // Dispatch event for injected memories to trigger mini preview pulse
+        if (data.injectedMemories && data.injectedMemories.count > 0) {
+          dispatchInjectedMemoriesEvent(data.injectedMemories.memories);
+        }
 
         if (data.stanceAfter && onStanceUpdate) {
           onStanceUpdate(data.stanceAfter);

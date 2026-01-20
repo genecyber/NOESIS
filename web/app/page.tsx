@@ -15,6 +15,9 @@ import { createSession, updateConfig, getState, getTimeline, getEvolution, resum
 import { getLastSessionId, saveLastSessionId, getPreferences, savePreferences } from '@/lib/storage';
 import type { Stance, ModeConfig, ChatResponse, TimelineEntry, EvolutionSnapshot, EmotionContext } from '@/lib/types';
 import { cn } from '@/lib/utils';
+// Sync hooks
+import { useEmotionSync } from '@/lib/hooks/useEmotionSync';
+import { useMemorySync } from '@/lib/hooks/useMemorySync';
 // Plugin system
 import { pluginRegistry } from '@/lib/plugins/registry';
 import { usePluginSession } from '@/lib/plugins/hooks';
@@ -57,6 +60,12 @@ export default function Home() {
   const [activePanel, setActivePanel] = useState<string>('stance');
   const [emotionContext, setEmotionContext] = useState<EmotionContext | null>(null);
 
+  // Emotion sync - syncs browser emotion readings to server every 30 seconds
+  const { emotionContext: serverEmotionContext, status: emotionSyncStatus } = useEmotionSync(sessionId);
+
+  // Memory sync - bidirectional sync between browser localStorage and server every 60 seconds
+  const { status: memorySyncStatus } = useMemorySync(sessionId);
+
   // Plugin system state
   const [pluginPanels, setPluginPanels] = useState<PanelDefinition[]>([]);
   const [pluginsReady, setPluginsReady] = useState(false);
@@ -94,6 +103,23 @@ export default function Home() {
       }
     };
   }, []);
+
+  // Update local emotion context when server context changes
+  useEffect(() => {
+    if (serverEmotionContext) {
+      // Convert server emotion context to local EmotionContext format
+      setEmotionContext({
+        currentEmotion: serverEmotionContext.dominantEmotion,
+        valence: serverEmotionContext.avgValence,
+        arousal: serverEmotionContext.avgArousal,
+        confidence: serverEmotionContext.avgConfidence,
+        stability: serverEmotionContext.stability,
+        promptContext: serverEmotionContext.promptContext,
+        suggestedEmpathyBoost: serverEmotionContext.suggestedEmpathyBoost,
+        timestamp: new Date(serverEmotionContext.lastSyncTime).toISOString(),
+      });
+    }
+  }, [serverEmotionContext]);
 
   // Build combined tabs (core + plugin panels)
   const TABS = useMemo(() => {
@@ -196,12 +222,13 @@ export default function Home() {
     setMobilePanelOpen(false);
   }, []);
 
-  // Sync pending items on load - DISABLED to prevent duplicate memories
-  // The server is the source of truth; browser should only pull, not push
+  // Memory sync is now handled by useMemorySync hook above with proper deduplication
+  // Log sync status for debugging (only on change)
   useEffect(() => {
-    // Memory sync disabled - was causing duplicate entries
-    // TODO: Re-enable with proper deduplication on server side
-  }, []);
+    if (memorySyncStatus.lastSyncTime) {
+      console.log(`[MemorySync] Sync completed: ${memorySyncStatus.memoriesPulled} pulled, ${memorySyncStatus.memoriesPushed} pushed`);
+    }
+  }, [memorySyncStatus.lastSyncTime, memorySyncStatus.memoriesPulled, memorySyncStatus.memoriesPushed]);
 
   // Initialize session on mount
   useEffect(() => {
@@ -217,7 +244,7 @@ export default function Home() {
               setConfig(resumed.config);
               setError(null);
 
-              // Memory sync on resume disabled - server is source of truth
+              // Memory sync is handled by useMemorySync hook automatically
               return;
             }
           } catch {

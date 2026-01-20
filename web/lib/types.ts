@@ -47,6 +47,11 @@ export interface ModeConfig {
   empathyMinConfidence?: number;     // 0-1
   empathyAutoAdjust?: boolean;
   empathyBoostMax?: number;          // 0-50
+  // Decay Modeling - Predictive stance decay analysis
+  enableDecayModeling?: boolean;
+  // Auto-Subagent Routing - Semantic intent-based subagent invocation
+  enableAutoSubagents?: boolean;
+  autoSubagentThreshold?: number;    // 0-1, default 0.6
 }
 
 export interface Message {

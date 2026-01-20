@@ -613,6 +613,26 @@ interface Stance {
 | POST | `/api/emotion/reset` | Clear emotion history |
 | POST | `/api/chat/vision` | Claude Vision emotion analysis (rate-limited 1/min) |
 
+### Embeddings API
+
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| GET | `/api/embeddings` | Check availability and provider info |
+| POST | `/api/embeddings` | Generate embeddings |
+
+**Actions:**
+- `embed` - Single text embedding (returns 1536-dim vector)
+- `embedBatch` - Multiple texts
+- `similarity` - Cosine similarity between two vectors
+- `findSimilar` - Find most similar texts from candidates
+
+**Environment:** Requires `OPENAI_API_KEY` for server-side embeddings.
+
+**Browser Client:** The web app includes a multi-mode embeddings client (`web/lib/embeddings.ts`) that supports:
+- `server` mode - Uses `/api/embeddings` (OpenAI)
+- `local` mode - Uses @xenova/transformers (MiniLM-L6-v2, 384-dim)
+- `auto` mode - Tries server first, falls back to local
+
 ## Configuration
 
 ```typescript
@@ -691,18 +711,28 @@ const stats = agent.getMemoryStore().getOperatorStats();
 ## Testing
 
 ```bash
-# Unit tests (120 tests)
+# Run all backend tests
 npm test
+
+# Run web tests
+cd web && npm test
+
+# Run specific test file
+npm test -- --run src/__tests__/integration/embeddings-real.test.ts
 
 # Integration tests (requires ANTHROPIC_API_KEY)
 npm run test:integration
 
 # All tests
 npm run test:all
-
-# Web tests
-cd web && npm test
 ```
+
+**Test Coverage:**
+- Unit tests: SQLite adapter, session manager, embedding providers, sync scripts
+- Integration tests: Session persistence lifecycle, embeddings flow with real models
+- Real model tests: Semantic similarity benchmarks using actual MiniLM model
+
+OpenAI integration tests run when `OPENAI_API_KEY` is set.
 
 ## Development
 
@@ -719,6 +749,25 @@ npm run server
 # Watch mode
 npm run dev
 ```
+
+### Memory Synchronization
+
+Scripts for syncing memories between local SQLite and remote server:
+
+```bash
+# Bidirectional sync (pull remote -> merge -> push)
+npm run sync
+
+# Push local memories to remote only
+npm run sync:push
+```
+
+**sync-memories.ts** - Full bidirectional sync with content-based deduplication
+**push-to-remote.ts** - One-way push of local memories to remote API
+
+Environment:
+- `NOESIS_REMOTE_URL` - Remote API endpoint (default: Railway production)
+- `NOESIS_DB_PATH` - Local SQLite database path (default: `./data/metamorph.db`)
 
 ---
 
