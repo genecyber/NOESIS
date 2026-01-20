@@ -232,7 +232,8 @@ app.get('/api/chat/stream', apiKeyAuth, async (req: Request, res: Response) => {
         stanceAfter: result.stanceAfter,
         operationsApplied: result.operationsApplied.map(o => o.name),
         scores: result.scores,
-        toolsUsed: result.toolsUsed
+        toolsUsed: result.toolsUsed,
+        injectedMemories: result.injectedMemories
       })}\n\n`);
       res.end();
     },
@@ -292,7 +293,8 @@ app.post('/api/chat/stream', apiKeyAuth, async (req: Request, res: Response) => 
         stanceAfter: result.stanceAfter,
         operationsApplied: result.operationsApplied.map(o => o.name),
         scores: result.scores,
-        toolsUsed: result.toolsUsed
+        toolsUsed: result.toolsUsed,
+        injectedMemories: result.injectedMemories
       })}\n\n`);
       res.end();
     },

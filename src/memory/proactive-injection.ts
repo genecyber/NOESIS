@@ -6,7 +6,7 @@
  */
 
 import { MemoryEntry, Stance } from '../types/index.js';
-import { LocalEmbeddingProvider, DenseEmbedding } from '../core/embeddings.js';
+import { EmbeddingService, getEmbeddingService } from '../embeddings/service.js';
 
 /**
  * Memory relevance score with breakdown
@@ -70,13 +70,13 @@ const DEFAULT_CONFIG: InjectionConfig = {
  */
 class ProactiveMemoryInjector {
   private config: InjectionConfig = DEFAULT_CONFIG;
-  private embeddingProvider: LocalEmbeddingProvider;
+  private embeddingService: EmbeddingService;
   private recentlyInjected: Map<string, number> = new Map();  // memory_id -> turn_number
   private currentTurn: number = 0;
-  private contextCache: Map<string, DenseEmbedding> = new Map();
+  private contextCache: Map<string, number[]> = new Map();
 
   constructor() {
-    this.embeddingProvider = new LocalEmbeddingProvider();
+    this.embeddingService = getEmbeddingService();
   }
 
   /**
@@ -174,7 +174,7 @@ class ProactiveMemoryInjector {
    */
   async scoreMemory(
     memory: MemoryEntry,
-    contextEmbedding: DenseEmbedding,
+    contextEmbedding: number[],
     stance: Stance,
     memoryEmbedding?: number[]
   ): Promise<MemoryRelevance> {
@@ -183,15 +183,11 @@ class ProactiveMemoryInjector {
     // Semantic similarity
     let semantic = 0;
     if (memoryEmbedding) {
-      const memEmb: DenseEmbedding = {
-        vector: memoryEmbedding,
-        dimension: memoryEmbedding.length
-      };
-      semantic = this.embeddingProvider.similarity(contextEmbedding, memEmb);
+      semantic = this.embeddingService.cosineSimilarity(contextEmbedding, memoryEmbedding);
     } else {
       // Fallback to embedding the memory content
-      const memEmb = await this.embeddingProvider.embed(memory.content);
-      semantic = this.embeddingProvider.similarity(contextEmbedding, memEmb);
+      const memEmb = await this.embeddingService.embed(memory.content);
+      semantic = this.embeddingService.cosineSimilarity(contextEmbedding, memEmb);
     }
 
     // Recency
@@ -241,7 +237,7 @@ class ProactiveMemoryInjector {
     // Get context embedding
     let contextEmbedding = this.contextCache.get(context);
     if (!contextEmbedding) {
-      contextEmbedding = await this.embeddingProvider.embed(context);
+      contextEmbedding = await this.embeddingService.embed(context);
       this.contextCache.set(context, contextEmbedding);
 
       // Limit cache size

@@ -176,7 +176,7 @@ describe('MemoryStore', () => {
 
   describe('Semantic Memory', () => {
     it('adds and retrieves memory', () => {
-      const id = store.addMemory({
+      const id = store.addMemorySync({
         type: 'semantic',
         content: 'Test memory content',
         importance: 0.8,
@@ -192,7 +192,7 @@ describe('MemoryStore', () => {
     });
 
     it('searches memories by type', () => {
-      store.addMemory({
+      store.addMemorySync({
         type: 'episodic',
         content: 'Episode 1',
         importance: 0.5,
@@ -201,7 +201,7 @@ describe('MemoryStore', () => {
         metadata: {}
       });
 
-      store.addMemory({
+      store.addMemorySync({
         type: 'semantic',
         content: 'Fact 1',
         importance: 0.7,
@@ -216,7 +216,7 @@ describe('MemoryStore', () => {
     });
 
     it('searches memories by importance', () => {
-      store.addMemory({
+      store.addMemorySync({
         type: 'semantic',
         content: 'Low importance',
         importance: 0.3,
@@ -225,7 +225,7 @@ describe('MemoryStore', () => {
         metadata: {}
       });
 
-      store.addMemory({
+      store.addMemorySync({
         type: 'semantic',
         content: 'High importance',
         importance: 0.9,
@@ -240,7 +240,7 @@ describe('MemoryStore', () => {
     });
 
     it('applies decay to memories', () => {
-      const id = store.addMemory({
+      const id = store.addMemorySync({
         type: 'semantic',
         content: 'Decaying memory',
         importance: 1.0,
@@ -259,7 +259,7 @@ describe('MemoryStore', () => {
   describe('Utility', () => {
     it('clears all data', () => {
       store.saveSession({ id: 'session-1', name: 'Test' });
-      store.addMemory({
+      store.addMemorySync({
         type: 'semantic',
         content: 'Memory',
         importance: 0.5,

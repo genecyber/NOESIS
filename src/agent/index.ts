@@ -318,12 +318,32 @@ export class MetamorphAgent {
       },
       getAll: () => {
         const store = self.getMemoryStore();
-        return store.searchMemories({ limit: 100 });
+        return store.getAllMemories();
       },
-      delete: (_id) => {
-        // Memory deletion not yet implemented in MemoryStore
-        // TODO: Add deleteMemory method to MemoryStore
-        return false;
+      delete: (id) => {
+        const store = self.getMemoryStore();
+        return store.deleteMemory(id);
+      },
+      searchMemories: (query) => {
+        const store = self.getMemoryStore();
+        return store.searchMemories(query);
+      },
+      semanticSearch: (queryEmbedding, options) => {
+        const store = self.getMemoryStore();
+        return store.semanticSearch(queryEmbedding, options);
+      },
+      // Batch operations for power-user tools
+      updateMemoryContent: (id, newContent) => {
+        const store = self.getMemoryStore();
+        return store.updateMemoryContent(id, newContent);
+      },
+      batchDelete: (ids) => {
+        const store = self.getMemoryStore();
+        return store.batchDelete(ids);
+      },
+      getMemoriesWithEmbeddings: () => {
+        const store = self.getMemoryStore();
+        return store.getMemoriesWithEmbeddings();
       }
     });
 
@@ -392,6 +412,7 @@ export class MetamorphAgent {
     // 1. PRE-TURN: Build transformed system prompt
     let systemPrompt: string;
     let operators: PlannedOperation[] = [];
+    let injectedMemories: AgentResponse['injectedMemories'];
 
     // Get emotion context: use explicit option, or fall back to stored vision analysis
     const emotionContext = options?.emotionContext ?? this._currentEmotionContext ?? undefined;
@@ -409,6 +430,7 @@ export class MetamorphAgent {
       const preTurnResult = await this.hooks.preTurn(preTurnContext);
       systemPrompt = preTurnResult.systemPrompt;
       operators = preTurnResult.operators;
+      injectedMemories = preTurnResult.injectedMemories;
     } else {
       // No hooks - use basic prompt
       systemPrompt = buildSystemPrompt({
@@ -627,7 +649,8 @@ export class MetamorphAgent {
       scores,
       toolsUsed,
       subagentsInvoked,
-      coherenceWarning
+      coherenceWarning,
+      injectedMemories
     };
 
     // Emit turn:complete event for plugins
@@ -670,6 +693,7 @@ export class MetamorphAgent {
     // Build system prompt
     let systemPrompt: string;
     let operators: PlannedOperation[] = [];
+    let injectedMemories: AgentResponse['injectedMemories'];
 
     // Get emotion context: use explicit option, or fall back to stored vision analysis
     const emotionContext = options?.emotionContext ?? this._currentEmotionContext ?? undefined;
@@ -687,6 +711,7 @@ export class MetamorphAgent {
       const preTurnResult = await this.hooks.preTurn(preTurnContext);
       systemPrompt = preTurnResult.systemPrompt;
       operators = preTurnResult.operators;
+      injectedMemories = preTurnResult.injectedMemories;
     } else {
       systemPrompt = buildSystemPrompt({
         stance: stanceBefore,
@@ -970,7 +995,8 @@ export class MetamorphAgent {
         scores,
         toolsUsed,
         subagentsInvoked,
-        coherenceWarning
+        coherenceWarning,
+        injectedMemories
       };
 
       // Emit turn:complete event for plugins
@@ -1534,11 +1560,31 @@ export class MetamorphAgent {
   }
 
   /**
-   * Store a memory
+   * Store a memory with auto-embedding and semantic deduplication
    */
-  storeMemory(content: string, type: 'episodic' | 'semantic' | 'identity' = 'semantic', importance: number = 0.5): string {
+  async storeMemory(
+    content: string,
+    type: 'episodic' | 'semantic' | 'identity' = 'semantic',
+    importance: number = 0.5
+  ): Promise<{ id: string | null; isDuplicate: boolean; boostedMemoryId?: string }> {
     const store = this.ensureMemoryStore();
     return store.addMemory({
+      type,
+      content,
+      importance,
+      decay: 0.99,
+      timestamp: new Date(),
+      metadata: { conversationId: this.conversationId }
+    });
+  }
+
+  /**
+   * Store a memory synchronously without embedding or deduplication
+   * @deprecated Use async storeMemory() instead for better quality
+   */
+  storeMemorySync(content: string, type: 'episodic' | 'semantic' | 'identity' = 'semantic', importance: number = 0.5): string {
+    const store = this.ensureMemoryStore();
+    return store.addMemorySync({
       type,
       content,
       importance,

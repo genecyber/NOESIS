@@ -8,6 +8,7 @@ import { chatStream, getState, getHistory, exportState, getSubagents, updateConf
 import CommandPalette, { CommandHelp } from './CommandPalette';
 import CommandOutput from './CommandOutput';
 import ToolUsage, { ActiveToolsBar } from './ToolUsage';
+import InjectedMemories from './InjectedMemories';
 import QuestionPrompt from './QuestionPrompt';
 import { findCommand, parseCommand, COMMANDS, getCommandsByCategory } from '@/lib/commands';
 import { isPluginCommand, executePluginCommand } from '@/lib/plugins/registry';
@@ -69,6 +70,7 @@ interface ChatMessage extends Message {
     error?: string;
   };
   tools?: ToolUseEvent[];
+  injectedMemories?: ChatResponse['injectedMemories'];
 }
 
 export default function Chat({ sessionId, onSessionChange, onResponse, onStanceUpdate, onPanelChange, onNewSession, stance, config, emotionContext }: ChatProps) {
@@ -544,6 +546,7 @@ export default function Chat({ sessionId, onSessionChange, onResponse, onStanceU
             content: finalContent,
             timestamp: Date.now(),
             tools: tools.length > 0 ? tools : undefined,
+            injectedMemories: data.injectedMemories,
           },
         ]);
         setStreamingText('');
@@ -669,6 +672,7 @@ export default function Chat({ sessionId, onSessionChange, onResponse, onStanceU
             content: finalContent,
             timestamp: Date.now(),
             tools: tools.length > 0 ? tools : undefined,
+            injectedMemories: data.injectedMemories,
           },
         ]);
         setStreamingText('');
@@ -755,6 +759,9 @@ export default function Chat({ sessionId, onSessionChange, onResponse, onStanceU
                 />
               ) : msg.role === 'assistant' ? (
                 <>
+                  {msg.injectedMemories && msg.injectedMemories.count > 0 && (
+                    <InjectedMemories injectedMemories={msg.injectedMemories} />
+                  )}
                   {msg.tools && msg.tools.length > 0 && (
                     <ToolUsage tools={msg.tools} />
                   )}

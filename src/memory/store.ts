@@ -15,6 +15,7 @@ import {
   SelfModel
 } from '../types/index.js';
 import type { EmotionalArc, EmotionalPoint, EmotionalPattern } from '../core/emotional-arc.js';
+import { EmbeddingService, getEmbeddingService } from '../embeddings/service.js';
 
 export interface MemoryStoreOptions {
   dbPath?: string;
@@ -24,6 +25,7 @@ export interface MemoryStoreOptions {
 export class MemoryStore {
   private db: Database.Database;
   private readonly dbPath: string;
+  private embeddingService: EmbeddingService;
 
   constructor(options: MemoryStoreOptions = {}) {
     this.dbPath = options.inMemory ? ':memory:' : (options.dbPath || './data/metamorph.db');
@@ -38,6 +40,7 @@ export class MemoryStore {
 
     this.db = new Database(this.dbPath);
     this.initSchema();
+    this.embeddingService = getEmbeddingService();
   }
 
   /**
@@ -423,7 +426,72 @@ export class MemoryStore {
   // Semantic Memory
   // ============================================================================
 
-  addMemory(entry: Omit<MemoryEntry, 'id'>): string {
+  /**
+   * Add a memory with auto-embedding and semantic deduplication
+   * @param entry Memory entry to add (embedding will be generated if not provided)
+   * @param options Options for deduplication behavior
+   * @returns Object with id (if added) and whether it was a duplicate
+   */
+  async addMemory(
+    entry: Omit<MemoryEntry, 'id'>,
+    options: { skipDeduplication?: boolean; duplicateThreshold?: number } = {}
+  ): Promise<{ id: string | null; isDuplicate: boolean; boostedMemoryId?: string }> {
+    const { skipDeduplication = false, duplicateThreshold = 0.9 } = options;
+
+    // Generate embedding if not provided
+    let embedding = entry.embedding;
+    if (!embedding) {
+      try {
+        embedding = await this.embeddingService.embed(entry.content);
+      } catch (error) {
+        // If embedding fails, continue without embedding (graceful degradation)
+        console.warn('Failed to generate embedding for memory:', error);
+      }
+    }
+
+    // Check for semantic duplicates unless skipped
+    if (!skipDeduplication && embedding) {
+      const similar = this.semanticSearch(embedding, {
+        minSimilarity: duplicateThreshold,
+        limit: 1
+      });
+
+      if (similar.length > 0) {
+        // Boost existing memory's importance instead of creating duplicate
+        const existingMemory = similar[0];
+        await this.boostMemoryImportance(existingMemory.id, 0.1);
+        return { id: null, isDuplicate: true, boostedMemoryId: existingMemory.id };
+      }
+    }
+
+    // Proceed with storage
+    const id = uuidv4();
+
+    const stmt = this.db.prepare(`
+      INSERT INTO semantic_memory (id, type, content, embedding, importance, decay, timestamp, metadata)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+    `);
+
+    stmt.run(
+      id,
+      entry.type,
+      entry.content,
+      embedding ? Buffer.from(new Float32Array(embedding).buffer) : null,
+      entry.importance,
+      entry.decay,
+      entry.timestamp.toISOString(),
+      JSON.stringify(entry.metadata || {})
+    );
+
+    return { id, isDuplicate: false };
+  }
+
+  /**
+   * Synchronous version of addMemory for backwards compatibility
+   * Does not perform embedding or deduplication
+   * @deprecated Use async addMemory() instead
+   */
+  addMemorySync(entry: Omit<MemoryEntry, 'id'>): string {
     const id = uuidv4();
 
     const stmt = this.db.prepare(`
@@ -443,6 +511,21 @@ export class MemoryStore {
     );
 
     return id;
+  }
+
+  /**
+   * Boost a memory's importance (used for deduplication and reinforcement)
+   * @param id Memory ID to boost
+   * @param boost Amount to add to importance (default 0.1)
+   */
+  async boostMemoryImportance(id: string, boost: number = 0.1): Promise<boolean> {
+    const result = this.db.prepare(`
+      UPDATE semantic_memory
+      SET importance = MIN(importance + ?, 1.0)
+      WHERE id = ?
+    `).run(boost, id);
+
+    return result.changes > 0;
   }
 
   getMemory(id: string): MemoryEntry | null {
@@ -531,6 +614,90 @@ export class MemoryStore {
     this.db.prepare(`
       DELETE FROM semantic_memory WHERE importance < 0.1
     `).run();
+  }
+
+  /**
+   * Update memory content (for batch find/replace operations)
+   * Note: This will clear the embedding since content changed - re-embed if needed
+   * @param id Memory ID to update
+   * @param newContent New content for the memory
+   * @returns true if updated, false if not found
+   */
+  updateMemoryContent(id: string, newContent: string): boolean {
+    // Clear embedding since content changed - it will need to be re-generated
+    const result = this.db.prepare(`
+      UPDATE semantic_memory
+      SET content = ?, embedding = NULL
+      WHERE id = ?
+    `).run(newContent, id);
+
+    return result.changes > 0;
+  }
+
+  /**
+   * Batch delete multiple memories by ID
+   * @param ids Array of memory IDs to delete
+   * @returns Number of memories deleted
+   */
+  batchDelete(ids: string[]): number {
+    if (ids.length === 0) return 0;
+
+    // Use a transaction for efficiency and atomicity
+    const deleteStmt = this.db.prepare('DELETE FROM semantic_memory WHERE id = ?');
+
+    let deletedCount = 0;
+    const transaction = this.db.transaction(() => {
+      for (const id of ids) {
+        const result = deleteStmt.run(id);
+        deletedCount += result.changes;
+      }
+    });
+
+    transaction();
+    return deletedCount;
+  }
+
+  /**
+   * Delete a single memory by ID
+   * @param id Memory ID to delete
+   * @returns true if deleted, false if not found
+   */
+  deleteMemory(id: string): boolean {
+    const result = this.db.prepare('DELETE FROM semantic_memory WHERE id = ?').run(id);
+    return result.changes > 0;
+  }
+
+  /**
+   * Get all memories (for batch operations)
+   * @returns Array of all memory entries
+   */
+  getAllMemories(): MemoryEntry[] {
+    const rows = this.db.prepare(`
+      SELECT * FROM semantic_memory ORDER BY importance DESC, timestamp DESC
+    `).all() as Array<{
+      id: string;
+      type: string;
+      content: string;
+      embedding: Buffer | null;
+      importance: number;
+      decay: number;
+      timestamp: string;
+      metadata: string;
+    }>;
+
+    return rows.map(row => ({
+      id: row.id,
+      type: row.type as 'episodic' | 'semantic' | 'identity',
+      content: row.content,
+      embedding: row.embedding ? Array.from(new Float32Array(row.embedding.buffer.slice(
+        row.embedding.byteOffset,
+        row.embedding.byteOffset + row.embedding.byteLength
+      ))) : undefined,
+      importance: row.importance,
+      decay: row.decay,
+      timestamp: new Date(row.timestamp),
+      metadata: JSON.parse(row.metadata)
+    }));
   }
 
   // ============================================================================
@@ -658,6 +825,109 @@ export class MemoryStore {
     // Return the embedding if content matches an existing memory
     const match = existingMemories.find(m => m.content === content);
     return match?.embedding || null;
+  }
+
+  /**
+   * Backfill embeddings for existing memories that don't have them
+   * Useful for migrating old memories or recovering from embedding failures
+   * @param options Options for backfill behavior
+   * @returns Summary of backfill operation
+   */
+  async backfillEmbeddings(options: {
+    batchSize?: number;
+    type?: 'episodic' | 'semantic' | 'identity';
+    onProgress?: (processed: number, total: number) => void;
+  } = {}): Promise<{
+    total: number;
+    processed: number;
+    failed: number;
+    skipped: number;
+  }> {
+    const { batchSize = 10, type, onProgress } = options;
+
+    // Get all memories without embeddings
+    let sql = 'SELECT id, content FROM semantic_memory WHERE embedding IS NULL';
+    const params: string[] = [];
+
+    if (type) {
+      sql += ' AND type = ?';
+      params.push(type);
+    }
+
+    const rows = this.db.prepare(sql).all(...params) as Array<{
+      id: string;
+      content: string;
+    }>;
+
+    const total = rows.length;
+    let processed = 0;
+    let failed = 0;
+    let skipped = 0;
+
+    // Process in batches
+    for (let i = 0; i < rows.length; i += batchSize) {
+      const batch = rows.slice(i, i + batchSize);
+      const contents = batch.map(r => r.content);
+
+      try {
+        const embeddings = await this.embeddingService.embedBatch(contents);
+
+        // Update each memory with its embedding
+        const updateStmt = this.db.prepare(`
+          UPDATE semantic_memory
+          SET embedding = ?
+          WHERE id = ?
+        `);
+
+        for (let j = 0; j < batch.length; j++) {
+          try {
+            updateStmt.run(
+              Buffer.from(new Float32Array(embeddings[j]).buffer),
+              batch[j].id
+            );
+            processed++;
+          } catch (err) {
+            console.warn(`Failed to update memory ${batch[j].id}:`, err);
+            failed++;
+          }
+        }
+      } catch (err) {
+        console.warn(`Failed to generate embeddings for batch starting at ${i}:`, err);
+        failed += batch.length;
+      }
+
+      // Report progress
+      if (onProgress) {
+        onProgress(i + batch.length, total);
+      }
+    }
+
+    return { total, processed, failed, skipped };
+  }
+
+  /**
+   * Get count of memories with and without embeddings
+   * Useful for monitoring embedding coverage
+   */
+  getEmbeddingCoverage(): {
+    total: number;
+    withEmbedding: number;
+    withoutEmbedding: number;
+    coveragePercent: number;
+  } {
+    const total = this.db.prepare('SELECT COUNT(*) as count FROM semantic_memory').get() as { count: number };
+    const withEmbedding = this.db.prepare('SELECT COUNT(*) as count FROM semantic_memory WHERE embedding IS NOT NULL').get() as { count: number };
+
+    const totalCount = total.count;
+    const withCount = withEmbedding.count;
+    const withoutCount = totalCount - withCount;
+
+    return {
+      total: totalCount,
+      withEmbedding: withCount,
+      withoutEmbedding: withoutCount,
+      coveragePercent: totalCount > 0 ? (withCount / totalCount) * 100 : 100
+    };
   }
 
   // ============================================================================

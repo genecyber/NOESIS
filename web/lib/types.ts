@@ -66,6 +66,16 @@ export interface ChatResponse {
   };
   toolsUsed: string[];
   operationsApplied: Array<{ name: string }>;
+  injectedMemories?: {
+    count: number;
+    memories: Array<{
+      type: string;
+      content: string;
+      relevanceScore: number;
+      reason: string;
+    }>;
+    tokensUsed: number;
+  };
 }
 
 export interface SessionResponse {

@@ -172,6 +172,17 @@ export function createTransformationHooks(memoryStore?: MemoryStore): Transforma
       }
 
       // 5. Proactive Memory Injection (Ralph Iteration 5 - Feature 4)
+      let injectedMemories: {
+        count: number;
+        memories: Array<{
+          type: string;
+          content: string;
+          relevanceScore: number;
+          reason: string;
+        }>;
+        tokensUsed: number;
+      } | undefined;
+
       if (memoryStore && config.enableProactiveMemory !== false) {
         try {
           const allMemories = memoryStore.searchMemories({ limit: 100 });
@@ -198,6 +209,18 @@ ${memoryLines.join('\n')}
 ${injection.attribution.length > 0 ? `Consider: ${injection.attribution.join(', ')}` : ''}`;
 
               systemPrompt = systemPrompt + '\n' + memorySection;
+
+              // Capture injection info for UI display
+              injectedMemories = {
+                count: injection.memories.length,
+                memories: injection.memories.map(m => ({
+                  type: m.memory.type,
+                  content: m.memory.content,
+                  relevanceScore: m.totalScore,
+                  reason: m.reason
+                })),
+                tokensUsed: injection.contextUsed
+              };
             }
           }
         } catch (error) {
@@ -209,7 +232,8 @@ ${injection.attribution.length > 0 ? `Consider: ${injection.attribution.join(', 
       return {
         systemPrompt,
         operators,
-        stanceAfterPlan
+        stanceAfterPlan,
+        injectedMemories
       };
     },
 

@@ -301,6 +301,16 @@ export interface AgentResponse {
   toolsUsed: string[];
   subagentsInvoked: string[];
   coherenceWarning?: string;  // Warning when coherence score is below floor
+  injectedMemories?: {
+    count: number;
+    memories: Array<{
+      type: string;
+      content: string;
+      relevanceScore: number;
+      reason: string;
+    }>;
+    tokensUsed: number;
+  };
 }
 
 // ============================================================================
@@ -321,6 +331,16 @@ export interface PreTurnResult {
   operators: PlannedOperation[];
   stanceAfterPlan: Stance;
   autoInvokedCommands?: Array<{ command: string; output: string }>;  // Commands auto-invoked based on triggers
+  injectedMemories?: {
+    count: number;
+    memories: Array<{
+      type: string;
+      content: string;
+      relevanceScore: number;
+      reason: string;
+    }>;
+    tokensUsed: number;
+  };
 }
 
 export interface PostTurnContext {
