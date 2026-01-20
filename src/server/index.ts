@@ -1115,7 +1115,8 @@ app.post('/api/chat/vision', apiKeyAuth, async (req: Request, res: Response) => 
 
 // List streams for a session
 app.get('/api/streams', apiKeyAuth, (req, res) => {
-  const sessionId = req.query.sessionId as string || 'default';
+  // If sessionId is provided, filter by it; otherwise return ALL streams
+  const sessionId = req.query.sessionId as string | undefined;
   const streams = streamManager.listStreams(sessionId);
   res.json({ streams });
 });

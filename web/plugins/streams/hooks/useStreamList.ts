@@ -9,7 +9,7 @@ interface UseStreamListOptions {
 }
 
 export function useStreamList(options: UseStreamListOptions): UseStreamListReturn {
-  const { sessionId, wsConnection } = options;
+  const { wsConnection } = options;
 
   const [streams, setStreams] = useState<StreamInfo[]>([]);
   const [loading, setLoading] = useState(true);
@@ -19,8 +19,9 @@ export function useStreamList(options: UseStreamListOptions): UseStreamListRetur
     try {
       setLoading(true);
       const port = process.env.NEXT_PUBLIC_API_PORT || '3001';
+      // Fetch ALL streams (don't filter by session) so we discover everything
       const response = await fetch(
-        `http://${window.location.hostname}:${port}/api/streams?sessionId=${encodeURIComponent(sessionId)}`
+        `http://${window.location.hostname}:${port}/api/streams`
       );
 
       if (!response.ok) {
@@ -35,7 +36,7 @@ export function useStreamList(options: UseStreamListOptions): UseStreamListRetur
     } finally {
       setLoading(false);
     }
-  }, [sessionId]);
+  }, []);
 
   // Listen for WebSocket updates to refresh list
   useEffect(() => {
