@@ -6,13 +6,47 @@
 
 import type { EmbeddingProvider } from '../types.js';
 import * as path from 'path';
+import * as fs from 'fs';
 import { fileURLToPath } from 'url';
 
-// Get the project root directory
+// Get the project root directory - try multiple approaches
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
-const PROJECT_ROOT = path.resolve(__dirname, '../../..');
-const MODELS_DIR = path.join(PROJECT_ROOT, 'models');
+
+function findModelsDir(): string {
+  // Try relative to this file (works in dev)
+  const fromFile = path.resolve(__dirname, '../../..', 'models');
+  if (fs.existsSync(fromFile)) {
+    console.log(`[LocalEmbedding] Found models at: ${fromFile}`);
+    return fromFile;
+  }
+
+  // Try relative to cwd (works on Railway)
+  const fromCwd = path.join(process.cwd(), 'models');
+  if (fs.existsSync(fromCwd)) {
+    console.log(`[LocalEmbedding] Found models at: ${fromCwd}`);
+    return fromCwd;
+  }
+
+  // Try env var
+  const fromEnv = process.env.MODELS_DIR;
+  if (fromEnv && fs.existsSync(fromEnv)) {
+    console.log(`[LocalEmbedding] Found models at: ${fromEnv}`);
+    return fromEnv;
+  }
+
+  console.error(`[LocalEmbedding] Models not found! Tried:`);
+  console.error(`  - ${fromFile}`);
+  console.error(`  - ${fromCwd}`);
+  console.error(`  - MODELS_DIR env: ${fromEnv || '(not set)'}`);
+  console.error(`  - cwd: ${process.cwd()}`);
+  console.error(`  - __dirname: ${__dirname}`);
+
+  // Return cwd path as fallback (will trigger download)
+  return fromCwd;
+}
+
+const MODELS_DIR = findModelsDir();
 
 // Dynamic import to handle the transformers library
 let pipeline: typeof import('@xenova/transformers').pipeline | null = null;
