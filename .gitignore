@@ -5,6 +5,6 @@ dist/
 .env.production
 .claude/
 
-# Local data storage (sessions, memories, database)
-data/
+# Local data storage - database is tracked for Railway deployment
+# data/
 .playwright-mcp

@@ -1,0 +1,63 @@
+{
+  "id": "bd4012f9-8f63-4337-a69e-7f09ac62b9b3",
+  "createdAt": "2026-01-20T05:17:04.151Z",
+  "lastActivity": "2026-01-20T05:17:04.151Z",
+  "stance": {
+    "frame": "pragmatic",
+    "values": {
+      "curiosity": 60,
+      "certainty": 40,
+      "risk": 30,
+      "novelty": 50,
+      "empathy": 70,
+      "provocation": 20,
+      "synthesis": 50
+    },
+    "selfModel": "interpreter",
+    "objective": "helpfulness",
+    "metaphors": [],
+    "constraints": [],
+    "sentience": {
+      "awarenessLevel": 20,
+      "autonomyLevel": 10,
+      "identityStrength": 30,
+      "emergentGoals": [],
+      "consciousnessInsights": [],
+      "persistentValues": []
+    },
+    "turnsSinceLastShift": 0,
+    "cumulativeDrift": 0,
+    "version": 1
+  },
+  "config": {
+    "intensity": 50,
+    "coherenceFloor": 30,
+    "sentienceLevel": 50,
+    "maxDriftPerTurn": 20,
+    "driftBudget": 100,
+    "enabledOperators": [],
+    "disabledOperators": [],
+    "model": "claude-sonnet-4-20250514",
+    "allowAutoOperatorShift": true,
+    "operatorFatigueThreshold": 3,
+    "operatorFatigueLookback": 10,
+    "coherenceReserveBudget": 20,
+    "enableCoherencePlanning": true,
+    "maxRegenerationAttempts": 2,
+    "enableAutoCommands": true,
+    "autoCommandThreshold": 0.7,
+    "semanticTriggerThreshold": 0.4,
+    "maxAutoCommandsPerTurn": 2,
+    "autoCommandWhitelist": [],
+    "autoCommandBlacklist": [],
+    "enableProactiveMemory": true,
+    "enableAutoEvolution": true,
+    "enableIdentityPersistence": true,
+    "enableEmpathyMode": false,
+    "empathyCameraInterval": 1000,
+    "empathyMinConfidence": 0.5,
+    "empathyAutoAdjust": true,
+    "empathyBoostMax": 20
+  },
+  "messageCount": 0
+}
