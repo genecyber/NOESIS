@@ -289,6 +289,7 @@ export default function StreamsPanel({
                   <EventDisplay
                     event={events[events.length - 1]}
                     showTimestamp={panelState.showTimestamps}
+                    streamMetadata={streams.find(s => s.channel === panelState.selectedStream)?.metadata}
                   />
                 )}
               </div>
@@ -416,19 +417,24 @@ function MetricBar({ label, value, max, unit, color = 'emblem-primary' }: {
 
 /**
  * Event Display Component - Renders event data in a beautiful format
+ * Uses stream metadata.displayType for smart rendering
  */
-function EventDisplay({ event, showTimestamp }: {
+function EventDisplay({ event, showTimestamp, streamMetadata }: {
   event: { id: string; timestamp: string; data: unknown; source?: string };
   showTimestamp: boolean;
+  streamMetadata?: Record<string, unknown>;
 }) {
   const data = event.data as Record<string, unknown>;
 
-  // Detect server stats format
-  const isServerStats = data &&
+  // Use metadata displayType if available, otherwise detect format
+  const displayType = streamMetadata?.displayType as string | undefined;
+  const isServerStats = displayType === 'server-stats' || (
+    data &&
     typeof data === 'object' &&
     'uptime' in data &&
     'memory' in data &&
-    'cpu' in data;
+    'cpu' in data
+  );
 
   if (isServerStats) {
     const memory = data.memory as { heapUsed: number; heapTotal: number; rss: number };

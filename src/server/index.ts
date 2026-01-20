@@ -1326,8 +1326,44 @@ function startDemoStream(): void {
   const DEMO_CHANNEL = `${DEMO_SESSION}:server:stats`;
   const INTERVAL_MS = 5000;
 
-  // Create the demo stream
-  streamManager.createStream(DEMO_CHANNEL, DEMO_SESSION);
+  // JSON Schema for server stats - viewers can use this for smart rendering
+  const serverStatsSchema = {
+    $schema: 'http://json-schema.org/draft-07/schema#',
+    title: 'Server Stats',
+    description: 'Real-time server performance metrics',
+    type: 'object' as const,
+    properties: {
+      uptime: { type: 'integer' as const, description: 'Server uptime in seconds' },
+      memory: {
+        type: 'object' as const,
+        properties: {
+          heapUsed: { type: 'integer' as const, description: 'Heap memory used (MB)' },
+          heapTotal: { type: 'integer' as const, description: 'Total heap memory (MB)' },
+          rss: { type: 'integer' as const, description: 'Resident set size (MB)' },
+        },
+      },
+      cpu: {
+        type: 'object' as const,
+        properties: {
+          user: { type: 'integer' as const, description: 'User CPU time (ms)' },
+          system: { type: 'integer' as const, description: 'System CPU time (ms)' },
+        },
+      },
+      connections: { type: 'integer' as const, description: 'Active stream count' },
+      timestamp: { type: 'string' as const, format: 'date-time' },
+    },
+  };
+
+  // Metadata for the viewer to understand how to display this stream
+  const metadata = {
+    displayType: 'server-stats',
+    displayName: 'Server Stats',
+    description: 'Real-time server performance metrics',
+    refreshInterval: INTERVAL_MS,
+  };
+
+  // Create the demo stream with schema and metadata
+  streamManager.createStream(DEMO_CHANNEL, DEMO_SESSION, serverStatsSchema, metadata);
   console.log(`Demo stream started: ${DEMO_CHANNEL}`);
 
   // Publish stats every 5 seconds
