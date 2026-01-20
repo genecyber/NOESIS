@@ -57,12 +57,10 @@ function connectStore(sessionId: string, store: ConnectionStore) {
   if (store.state.ws?.readyState === WebSocket.OPEN) return;
   if (store.state.ws?.readyState === WebSocket.CONNECTING) return;
 
-  const isSecure = window.location.protocol === 'https:';
-  const protocol = isSecure ? 'wss:' : 'ws:';
-  const host = window.location.hostname;
-  // In production (https), use default port. In dev, use configured port.
-  const port = isSecure ? '' : `:${process.env.NEXT_PUBLIC_API_PORT || '3001'}`;
-  const url = `${protocol}//${host}${port}/ws/streams?sessionId=${encodeURIComponent(sessionId)}`;
+  // Backend API URL - use env var in production, localhost in dev
+  const apiUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001';
+  const wsUrl = apiUrl.replace(/^http/, 'ws');
+  const url = `${wsUrl}/ws/streams?sessionId=${encodeURIComponent(sessionId)}`;
 
   try {
     const ws = new WebSocket(url);
