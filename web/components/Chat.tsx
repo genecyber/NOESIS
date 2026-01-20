@@ -609,13 +609,96 @@ export default function Chat({ sessionId, onSessionChange, onResponse, onStanceU
     }
   };
 
-  // Handle question answer submission
+  // Handle question answer submission - sends answer as a follow-up chat message
   const handleQuestionAnswer = useCallback((questionId: string, answers: Record<number, string[]>) => {
-    // For now, log the answers and clear the question state
-    // Future: Send answer back to agent via API
-    console.log('[QuestionPrompt] Answer submitted:', { questionId, answers });
+    if (!sessionId || !pendingQuestion) return;
+
+    // Format the answers as a structured response message
+    const answerLines: string[] = [];
+    pendingQuestion.questions.forEach((q, idx) => {
+      const selectedAnswers = answers[idx] || [];
+      if (selectedAnswers.length > 0) {
+        answerLines.push(`**${q.header}**: ${selectedAnswers.join(', ')}`);
+      }
+    });
+
+    const answerMessage = answerLines.length > 0
+      ? answerLines.join('\n')
+      : 'No selection made';
+
+    // Clear the question state first
     setPendingQuestion(null);
-  }, []);
+
+    // Add user's answer as a message
+    const userMessage: ChatMessage = {
+      role: 'user',
+      content: answerMessage,
+      timestamp: Date.now(),
+      type: 'message',
+    };
+
+    setMessages(prev => [...prev, userMessage]);
+    setIsLoading(true);
+    setStreamingText('');
+    setConnectionStatus('streaming');
+    accumulatedTextRef.current = '';
+    toolsRef.current.clear();
+    setActiveTools([]);
+
+    // Send the answer as a new chat message to continue the conversation
+    abortRef.current = chatStream(sessionId, answerMessage, emotionContext, {
+      onText: (text) => {
+        accumulatedTextRef.current += text;
+        setStreamingText(accumulatedTextRef.current);
+      },
+      onToolEvent: (event) => {
+        toolsRef.current.set(event.id, event);
+        setActiveTools(Array.from(toolsRef.current.values()));
+      },
+      onQuestion: (event) => {
+        setPendingQuestion(event);
+      },
+      onComplete: (data) => {
+        setIsLoading(false);
+        setConnectionStatus('connected');
+        const finalContent = accumulatedTextRef.current || data.response;
+        const tools = Array.from(toolsRef.current.values());
+        setMessages(prev => [
+          ...prev,
+          {
+            role: 'assistant',
+            content: finalContent,
+            timestamp: Date.now(),
+            tools: tools.length > 0 ? tools : undefined,
+          },
+        ]);
+        setStreamingText('');
+        accumulatedTextRef.current = '';
+        setActiveTools([]);
+        toolsRef.current.clear();
+        onResponse?.(data);
+
+        if (data.stanceAfter && onStanceUpdate) {
+          onStanceUpdate(data.stanceAfter);
+        }
+      },
+      onError: (error) => {
+        setIsLoading(false);
+        setConnectionStatus('disconnected');
+        setStreamingText('');
+        accumulatedTextRef.current = '';
+        setMessages(prev => [
+          ...prev,
+          {
+            role: 'assistant',
+            content: `Error: ${error.message}`,
+            timestamp: Date.now(),
+          },
+        ]);
+        setTimeout(() => setConnectionStatus('connected'), 3000);
+      },
+    });
+  }, [sessionId, pendingQuestion, emotionContext, onResponse, onStanceUpdate]);
 
   // Handle question cancellation
   const handleQuestionCancel = useCallback(() => {
