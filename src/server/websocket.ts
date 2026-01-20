@@ -35,8 +35,8 @@ export function createWebSocketServer(server: HTTPServer, streamManager: StreamM
 
     console.log(`[WebSocket] New connection: ${connection.id} for session ${sessionId}`);
 
-    // Send initial stream list for this session
-    const streams = streamManager.listStreams(sessionId);
+    // Send initial stream list (all streams, not filtered by session)
+    const streams = streamManager.listStreams();
     send(ws, { type: 'stream_list', streams });
 
     ws.on('message', (rawData: RawData) => {
@@ -63,13 +63,10 @@ export function createWebSocketServer(server: HTTPServer, streamManager: StreamM
     });
   });
 
-  // Forward stream manager events to relevant subscribers
+  // Forward stream manager events to ALL connections (global discovery)
   streamManager.on('stream:created', ({ channel, info }) => {
-    const sessionId = info.sessionId;
-    for (const [ws, conn] of connections) {
-      if (conn.sessionId === sessionId) {
-        send(ws, { type: 'stream_created', channel, info });
-      }
+    for (const [ws] of connections) {
+      send(ws, { type: 'stream_created', channel, info });
     }
   });
 
@@ -98,12 +95,7 @@ function handleMessage(
         return;
       }
 
-      // Check session access (can only subscribe to own session's streams)
-      if (stream.sessionId !== connection.sessionId) {
-        send(ws, { type: 'error', code: 'ACCESS_DENIED', message: 'Cannot subscribe to another session\'s stream' });
-        return;
-      }
-
+      // Allow subscribing to any stream (global discovery)
       const success = streamManager.subscribe(message.channel, ws);
       if (success) {
         connection.subscribedChannels.add(message.channel);
@@ -169,21 +161,16 @@ function handleMessage(
     }
 
     case 'list_streams': {
-      const sessionToList = message.sessionId || connection.sessionId;
-      // Only allow listing own session's streams
-      if (sessionToList !== connection.sessionId) {
-        send(ws, { type: 'error', code: 'ACCESS_DENIED', message: 'Cannot list another session\'s streams' });
-        return;
-      }
-      const streams = streamManager.listStreams(sessionToList);
+      // Return all streams (global discovery)
+      const streams = streamManager.listStreams();
       send(ws, { type: 'stream_list', streams });
       break;
     }
 
     case 'get_history': {
       const stream = streamManager.getStream(message.channel);
-      if (!stream || stream.sessionId !== connection.sessionId) {
-        send(ws, { type: 'error', code: 'ACCESS_DENIED', message: 'Cannot access stream history' });
+      if (!stream) {
+        send(ws, { type: 'error', code: 'STREAM_NOT_FOUND', message: `Stream not found: ${message.channel}` });
         return;
       }
       const events = streamManager.getHistory(message.channel, message.limit);
