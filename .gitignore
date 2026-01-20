@@ -11,3 +11,12 @@ dist/
 
 # Next.js build output
 web/.next/
+
+# Build artifacts
+*.tsbuildinfo
+
+# Session data (local only)
+data/sessions/
+
+# Test output directories
+**/__tests__/
