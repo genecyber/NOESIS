@@ -11,8 +11,8 @@ import EvolutionTimeline from '@/components/EvolutionTimeline';
 import SessionBrowser from '@/components/SessionBrowser';
 import MemoryBrowser from '@/components/MemoryBrowser';
 import { Button, Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui';
-import { createSession, updateConfig, getState, getTimeline, getEvolution, resumeSession, syncMemoriesToServer } from '@/lib/api';
-import { getLastSessionId, saveLastSessionId, getPreferences, savePreferences, getMemoriesFromStorage, getPendingSyncItems, removeSyncQueueItem, isOnline } from '@/lib/storage';
+import { createSession, updateConfig, getState, getTimeline, getEvolution, resumeSession } from '@/lib/api';
+import { getLastSessionId, saveLastSessionId, getPreferences, savePreferences } from '@/lib/storage';
 import type { Stance, ModeConfig, ChatResponse, TimelineEntry, EvolutionSnapshot, EmotionContext } from '@/lib/types';
 import { cn } from '@/lib/utils';
 // Plugin system
@@ -196,34 +196,11 @@ export default function Home() {
     setMobilePanelOpen(false);
   }, []);
 
-  // Sync pending items on load (standard PWA pattern)
+  // Sync pending items on load - DISABLED to prevent duplicate memories
+  // The server is the source of truth; browser should only pull, not push
   useEffect(() => {
-    const syncOnLoad = async () => {
-      if (!isOnline()) return;
-
-      try {
-        const pendingItems = await getPendingSyncItems();
-        for (const item of pendingItems) {
-          try {
-            if (item.type === 'memories' && item.id !== undefined) {
-              await syncMemoriesToServer(item.sessionId, item.data as Parameters<typeof syncMemoriesToServer>[1]);
-              await removeSyncQueueItem(item.id);
-              console.log('[Sync] Synced pending memories for session:', item.sessionId);
-            }
-          } catch (err) {
-            console.error('[Sync] Failed to sync item:', err);
-          }
-        }
-      } catch (err) {
-        console.error('[Sync] Failed to process sync queue:', err);
-      }
-    };
-
-    syncOnLoad();
-
-    const handleOnline = () => syncOnLoad();
-    window.addEventListener('online', handleOnline);
-    return () => window.removeEventListener('online', handleOnline);
+    // Memory sync disabled - was causing duplicate entries
+    // TODO: Re-enable with proper deduplication on server side
   }, []);
 
   // Initialize session on mount
@@ -240,14 +217,7 @@ export default function Home() {
               setConfig(resumed.config);
               setError(null);
 
-              if (isOnline()) {
-                const localMemories = getMemoriesFromStorage(lastSessionId);
-                if (localMemories.length > 0) {
-                  syncMemoriesToServer(lastSessionId, localMemories).catch(err =>
-                    console.error('[Sync] Failed to sync memories on resume:', err)
-                  );
-                }
-              }
+              // Memory sync on resume disabled - server is source of truth
               return;
             }
           } catch {

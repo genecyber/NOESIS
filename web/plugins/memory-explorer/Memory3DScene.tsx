@@ -77,9 +77,12 @@ function MemoryNode({ node, isSelected, isHovered, onClick, onHover }: MemoryNod
   // Get color based on memory type
   const color = COLORS[node.type];
 
-  // Scale based on importance (0.3 to 1.0)
-  const baseScale = 0.3 + node.importance * 0.7;
-  const scale = isHovered ? baseScale * 1.2 : baseScale;
+  // Normalize importance (could be 0-100 or 0-1)
+  const normalizedImportance = node.importance > 1 ? node.importance / 100 : node.importance;
+
+  // Scale based on importance (0.1 to 0.4) - small nodes with some size variation
+  const baseScale = 0.1 + normalizedImportance * 0.3;
+  const scale = isHovered ? baseScale * 1.3 : baseScale;
 
   // Animate glow pulse
   useFrame((state) => {
@@ -410,8 +413,8 @@ export default function Memory3DScene({
     <div className="w-full h-full" style={{ backgroundColor: COLORS.background }}>
       <Canvas
         camera={{
-          position: [0, 10, 30],
-          fov: 60,
+          position: [0, 20, 60],
+          fov: 50,
           near: 0.1,
           far: 1000,
         }}

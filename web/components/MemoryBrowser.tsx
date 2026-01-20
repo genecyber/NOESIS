@@ -62,7 +62,7 @@ export function MemoryBrowser({ sessionId }: MemoryBrowserProps) {
     try {
       setLoading(true);
       // Fetch all memories from server (filter locally for better caching)
-      const data = await getMemories(sid);
+      const data = await getMemories(sid, undefined, 500);
 
       // Sync server memories to localStorage
       syncWithServer(data.memories);

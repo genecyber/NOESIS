@@ -23,6 +23,7 @@ import { EmotionProcessor } from '../plugins/emotion-detection/emotion-processor
 import { pluginEventBus } from '../plugins/event-bus.js';
 import { createWebSocketServer } from './websocket.js';
 import { streamManager } from '../plugins/streams/stream-manager.js';
+import { EmbeddingService } from '../embeddings/service.js';
 
 const app = express();
 
@@ -41,6 +42,30 @@ const runtime = new MetamorphRuntime();
 const faceDetector = new FaceApiDetector();
 const emotionProcessor = new EmotionProcessor();
 let emotionDetectorInitialized = false;
+
+// Embedding service (singleton instance)
+const embeddingService = new EmbeddingService({
+  provider: 'local',
+  localModel: 'Xenova/all-MiniLM-L6-v2'
+});
+let embeddingServiceInitialized = false;
+
+// Initialize embedding service lazily on first use
+async function initializeEmbeddingService(): Promise<boolean> {
+  if (embeddingServiceInitialized) {
+    return true;
+  }
+
+  try {
+    await embeddingService.initialize();
+    embeddingServiceInitialized = true;
+    console.log('[Server] Embedding service initialized successfully');
+    return true;
+  } catch (error) {
+    console.error('[Server] Failed to initialize embedding service:', error);
+    return false;
+  }
+}
 
 // Initialize emotion detector lazily on first use
 async function initializeEmotionDetector(): Promise<boolean> {
@@ -423,7 +448,7 @@ app.get('/api/evolution', apiKeyAuth, (req: Request, res: Response) => {
 app.get('/api/memories', apiKeyAuth, (req: Request, res: Response) => {
   const sessionId = req.query.sessionId as string;
   const type = req.query.type as string | undefined;
-  const limit = parseInt(req.query.limit as string) || 50;
+  const limit = parseInt(req.query.limit as string) || 500;
 
   const agent = getOrCreateAgent(sessionId);
   const memories = agent.searchMemories({
@@ -1162,6 +1187,102 @@ app.delete('/api/streams/:channel', apiKeyAuth, (req, res) => {
   const channel = decodeURIComponent(req.params.channel);
   streamManager.closeStream(channel);
   res.json({ success: true });
+});
+
+// ============================================================================
+// Embeddings Endpoints
+// ============================================================================
+
+// Get embeddings API info
+app.get('/api/embeddings', apiKeyAuth, (_req: Request, res: Response) => {
+  res.json({
+    service: 'embeddings',
+    version: '1.0.0',
+    model: 'Xenova/all-MiniLM-L6-v2',
+    dimensions: 384,
+    initialized: embeddingServiceInitialized,
+    endpoints: {
+      POST: {
+        embed: { action: 'embed', text: 'string' },
+        embedBatch: { action: 'embedBatch', texts: 'string[]' },
+        similarity: { action: 'similarity', embedding1: 'number[]', embedding2: 'number[]' },
+        findSimilar: { action: 'findSimilar', query: 'string', candidates: 'string[]', topK: 'number (optional)' }
+      }
+    }
+  });
+});
+
+// Embeddings operations
+app.post('/api/embeddings', apiKeyAuth, async (req: Request, res: Response) => {
+  try {
+    const { action, text, texts, embedding1, embedding2, query, candidates, topK } = req.body;
+
+    if (!action) {
+      res.status(400).json({ error: 'action is required' });
+      return;
+    }
+
+    // Initialize embedding service if needed
+    const initialized = await initializeEmbeddingService();
+    if (!initialized) {
+      res.status(503).json({ error: 'Embedding service not available' });
+      return;
+    }
+
+    switch (action) {
+      case 'embed': {
+        if (!text || typeof text !== 'string') {
+          res.status(400).json({ error: 'text is required for embed action' });
+          return;
+        }
+        const embedding = await embeddingService.embed(text);
+        res.json({ embedding });
+        break;
+      }
+
+      case 'embedBatch': {
+        if (!texts || !Array.isArray(texts) || texts.length === 0) {
+          res.status(400).json({ error: 'texts array is required for embedBatch action' });
+          return;
+        }
+        const embeddings = await embeddingService.embedBatch(texts);
+        res.json({ embeddings });
+        break;
+      }
+
+      case 'similarity': {
+        if (!embedding1 || !embedding2 || !Array.isArray(embedding1) || !Array.isArray(embedding2)) {
+          res.status(400).json({ error: 'embedding1 and embedding2 arrays are required for similarity action' });
+          return;
+        }
+        const similarity = embeddingService.cosineSimilarity(embedding1, embedding2);
+        res.json({ similarity });
+        break;
+      }
+
+      case 'findSimilar': {
+        if (!query || typeof query !== 'string') {
+          res.status(400).json({ error: 'query string is required for findSimilar action' });
+          return;
+        }
+        if (!candidates || !Array.isArray(candidates) || candidates.length === 0) {
+          res.status(400).json({ error: 'candidates array is required for findSimilar action' });
+          return;
+        }
+        const results = await embeddingService.findMostSimilar(query, candidates, topK || 5);
+        res.json({ results: results.map(r => ({ text: r.text, similarity: r.similarity })) });
+        break;
+      }
+
+      default:
+        res.status(400).json({ error: `Unknown action: ${action}` });
+    }
+  } catch (error) {
+    console.error('[Server] Embeddings error:', error);
+    res.status(500).json({
+      error: error instanceof Error ? error.message : 'Embeddings operation failed'
+    });
+  }
 });
 
 // Error handling middleware

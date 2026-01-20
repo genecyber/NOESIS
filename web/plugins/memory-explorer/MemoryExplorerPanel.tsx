@@ -138,7 +138,7 @@ export default function MemoryExplorerPanel({
       const positions = projectTo3D(embeddings);
 
       // Scale positions for better visualization (spread them out more)
-      const scale = 15;
+      const scale = 25;
 
       // Create memory nodes with positions
       const nodes: MemoryNodeData[] = memories.map((memory, index) => ({
