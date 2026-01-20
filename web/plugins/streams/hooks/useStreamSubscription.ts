@@ -1,9 +1,133 @@
 'use client';
 
-import { useState, useEffect, useCallback, useRef } from 'react';
+import { useState, useEffect, useCallback, useRef, useSyncExternalStore } from 'react';
 import type { StreamEvent, ServerMessage, ClientMessage, UseStreamSubscriptionReturn } from '../types';
 
 const MAX_EVENTS_DEFAULT = 500;
+
+// ============================================================================
+// Singleton Connection Manager
+// ============================================================================
+
+interface ConnectionState {
+  ws: WebSocket | null;
+  connected: boolean;
+  error: string | null;
+  refCount: number;
+  reconnectTimeout: NodeJS.Timeout | null;
+}
+
+interface ConnectionStore {
+  state: ConnectionState;
+  listeners: Set<() => void>;
+  subscribedChannels: Set<string>;
+  messageHandlers: Set<(msg: ServerMessage) => void>;
+}
+
+// Module-level singleton map: one connection per sessionId
+const connectionStores = new Map<string, ConnectionStore>();
+
+function getOrCreateStore(sessionId: string): ConnectionStore {
+  let store = connectionStores.get(sessionId);
+  if (!store) {
+    store = {
+      state: {
+        ws: null,
+        connected: false,
+        error: null,
+        refCount: 0,
+        reconnectTimeout: null,
+      },
+      listeners: new Set(),
+      subscribedChannels: new Set(),
+      messageHandlers: new Set(),
+    };
+    connectionStores.set(sessionId, store);
+  }
+  return store;
+}
+
+function notifyListeners(store: ConnectionStore) {
+  for (const listener of store.listeners) {
+    listener();
+  }
+}
+
+function connectStore(sessionId: string, store: ConnectionStore) {
+  if (store.state.ws?.readyState === WebSocket.OPEN) return;
+  if (store.state.ws?.readyState === WebSocket.CONNECTING) return;
+
+  const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+  const host = window.location.hostname;
+  const port = process.env.NEXT_PUBLIC_API_PORT || '3001';
+  const url = `${protocol}//${host}:${port}/ws/streams?sessionId=${encodeURIComponent(sessionId)}`;
+
+  try {
+    const ws = new WebSocket(url);
+    store.state.ws = ws;
+
+    ws.onopen = () => {
+      store.state.connected = true;
+      store.state.error = null;
+      notifyListeners(store);
+
+      // Resubscribe to all channels
+      for (const channel of store.subscribedChannels) {
+        ws.send(JSON.stringify({ type: 'subscribe', channel }));
+      }
+    };
+
+    ws.onmessage = (event) => {
+      try {
+        const msg: ServerMessage = JSON.parse(event.data);
+        // Dispatch to all message handlers
+        for (const handler of store.messageHandlers) {
+          handler(msg);
+        }
+      } catch (e) {
+        console.error('[StreamConnection] Failed to parse message:', e);
+      }
+    };
+
+    ws.onerror = () => {
+      store.state.error = 'WebSocket connection error';
+      notifyListeners(store);
+    };
+
+    ws.onclose = () => {
+      store.state.connected = false;
+      store.state.ws = null;
+      notifyListeners(store);
+
+      // Auto-reconnect if there are still subscribers
+      if (store.state.refCount > 0) {
+        store.state.reconnectTimeout = setTimeout(() => {
+          connectStore(sessionId, store);
+        }, 3000);
+      }
+    };
+  } catch (e) {
+    store.state.error = e instanceof Error ? e.message : 'Failed to connect';
+    notifyListeners(store);
+  }
+}
+
+function disconnectStore(store: ConnectionStore) {
+  if (store.state.reconnectTimeout) {
+    clearTimeout(store.state.reconnectTimeout);
+    store.state.reconnectTimeout = null;
+  }
+  if (store.state.ws) {
+    store.state.ws.close();
+    store.state.ws = null;
+  }
+  store.state.connected = false;
+  notifyListeners(store);
+}
+
+// ============================================================================
+// Hook Implementation
+// ============================================================================
 
 interface UseStreamSubscriptionOptions {
   sessionId: string;
@@ -17,122 +141,104 @@ export function useStreamSubscription(
   const { sessionId, maxEvents = MAX_EVENTS_DEFAULT, autoConnect = true } = options;
 
   const [events, setEvents] = useState<StreamEvent[]>([]);
-  const [connected, setConnected] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-
-  const wsRef = useRef<WebSocket | null>(null);
   const subscribedChannelsRef = useRef<Set<string>>(new Set());
-  const reconnectTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+  const storeRef = useRef<ConnectionStore | null>(null);
 
-  const connect = useCallback(() => {
-    if (wsRef.current?.readyState === WebSocket.OPEN) return;
+  // Get or create the singleton store for this session
+  if (!storeRef.current) {
+    storeRef.current = getOrCreateStore(sessionId);
+  }
+  const store = storeRef.current;
 
-    const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-    const host = window.location.hostname;
-    const port = process.env.NEXT_PUBLIC_API_PORT || '3001';
-    const url = `${protocol}//${host}:${port}/ws/streams?sessionId=${encodeURIComponent(sessionId)}`;
-
-    try {
-      const ws = new WebSocket(url);
-      wsRef.current = ws;
-
-      ws.onopen = () => {
-        setConnected(true);
-        setError(null);
-
-        // Resubscribe to previously subscribed channels
-        for (const channel of subscribedChannelsRef.current) {
-          send({ type: 'subscribe', channel });
-        }
+  // Subscribe to connection state changes
+  const connectionState = useSyncExternalStore(
+    useCallback((onStoreChange) => {
+      store.listeners.add(onStoreChange);
+      return () => {
+        store.listeners.delete(onStoreChange);
       };
+    }, [store]),
+    () => store.state,
+    () => store.state
+  );
 
-      ws.onmessage = (event) => {
-        try {
-          const msg: ServerMessage = JSON.parse(event.data);
-          handleMessage(msg);
-        } catch (e) {
-          console.error('[useStreamSubscription] Failed to parse message:', e);
-        }
-      };
+  const connected = connectionState.connected;
+  const error = connectionState.error;
 
-      ws.onerror = () => {
-        setError('WebSocket connection error');
-      };
-
-      ws.onclose = () => {
-        setConnected(false);
-        wsRef.current = null;
-
-        // Auto-reconnect after 3 seconds
-        if (autoConnect) {
-          reconnectTimeoutRef.current = setTimeout(connect, 3000);
-        }
-      };
-    } catch (e) {
-      setError(e instanceof Error ? e.message : 'Failed to connect');
-    }
-  }, [sessionId, autoConnect]);
-
-  const send = useCallback((message: ClientMessage) => {
-    if (wsRef.current?.readyState === WebSocket.OPEN) {
-      wsRef.current.send(JSON.stringify(message));
-    }
-  }, []);
-
+  // Handle incoming messages
   const handleMessage = useCallback((msg: ServerMessage) => {
     switch (msg.type) {
       case 'event':
         setEvents(prev => {
           const next = [...prev, msg.event];
-          // Trim to max events
           return next.slice(-maxEvents);
         });
         break;
 
       case 'history':
         setEvents(prev => {
-          // Merge history with existing events, avoiding duplicates
           const existingIds = new Set(prev.map(e => e.id));
           const newEvents = msg.events.filter(e => !existingIds.has(e.id));
           return [...newEvents, ...prev].slice(-maxEvents);
         });
         break;
-
-      case 'error':
-        setError(`${msg.code}: ${msg.message}`);
-        break;
     }
   }, [maxEvents]);
 
-  const subscribe = useCallback((channel: string) => {
-    subscribedChannelsRef.current.add(channel);
-    send({ type: 'subscribe', channel });
-  }, [send]);
-
-  const unsubscribe = useCallback((channel: string) => {
-    subscribedChannelsRef.current.delete(channel);
-    send({ type: 'unsubscribe', channel });
-  }, [send]);
-
-  const clear = useCallback(() => {
-    setEvents([]);
-  }, []);
-
-  // Connect on mount
+  // Register/unregister message handler
   useEffect(() => {
-    if (autoConnect) {
-      connect();
+    store.messageHandlers.add(handleMessage);
+    return () => {
+      store.messageHandlers.delete(handleMessage);
+    };
+  }, [store, handleMessage]);
+
+  // Connect on mount, disconnect on unmount (ref counting)
+  useEffect(() => {
+    if (!autoConnect) return;
+
+    store.state.refCount++;
+
+    // Connect if this is the first subscriber
+    if (store.state.refCount === 1) {
+      connectStore(sessionId, store);
     }
 
     return () => {
-      if (reconnectTimeoutRef.current) {
-        clearTimeout(reconnectTimeoutRef.current);
-      }
-      if (wsRef.current) {
-        wsRef.current.close();
+      store.state.refCount--;
+
+      // Disconnect if no more subscribers
+      if (store.state.refCount === 0) {
+        disconnectStore(store);
       }
     };
-  }, [connect, autoConnect]);
+  }, [sessionId, store, autoConnect]);
+
+  // Send a message through the shared WebSocket
+  const send = useCallback((message: ClientMessage) => {
+    if (store.state.ws?.readyState === WebSocket.OPEN) {
+      store.state.ws.send(JSON.stringify(message));
+    }
+  }, [store]);
+
+  // Subscribe to a channel
+  const subscribe = useCallback((channel: string) => {
+    subscribedChannelsRef.current.add(channel);
+    store.subscribedChannels.add(channel);
+    send({ type: 'subscribe', channel });
+  }, [store, send]);
+
+  // Unsubscribe from a channel
+  const unsubscribe = useCallback((channel: string) => {
+    subscribedChannelsRef.current.delete(channel);
+    store.subscribedChannels.delete(channel);
+    send({ type: 'unsubscribe', channel });
+  }, [store, send]);
+
+  // Clear local events
+  const clear = useCallback(() => {
+    setEvents([]);
+  }, []);
 
   return {
     events,
