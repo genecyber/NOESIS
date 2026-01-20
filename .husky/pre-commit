@@ -1,0 +1,8 @@
+#!/bin/sh
+
+# Sync remote memories before commit
+echo "Syncing remote memories..."
+npx tsx scripts/sync-remote.ts
+
+# Continue with commit even if sync fails (network issues shouldn't block commits)
+exit 0
