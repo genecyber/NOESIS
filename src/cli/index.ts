@@ -161,7 +161,7 @@ program
 
           // Regular chat
           if (useStreaming) {
-            await handleStreamingChat(agent, trimmedInput);
+            await handleStreamingChat(agent, trimmedInput, rl);
           } else {
             await handleNonStreamingChat(agent, trimmedInput);
           }
@@ -376,7 +376,117 @@ function printBanner(config: Partial<ModeConfig>): void {
   console.log();
 }
 
-async function handleStreamingChat(agent: MetamorphAgent, input: string): Promise<void> {
+// Interface for AskUserQuestion tool input
+interface AskUserQuestionInput {
+  questions: Array<{
+    question: string;      // The question text
+    header: string;        // Short label (max 12 chars)
+    options: Array<{       // 2-4 options
+      label: string;       // Option text (1-5 words)
+      description: string; // Explanation
+    }>;
+    multiSelect: boolean;  // Allow multiple selections
+  }>;  // 1-4 questions
+}
+
+// Helper function to prompt user for a question and get their response
+async function promptUserQuestion(
+  rl: readline.Interface,
+  question: AskUserQuestionInput['questions'][0]
+): Promise<string> {
+  return new Promise((resolve) => {
+    // Build display box
+    const headerPadded = question.header.substring(0, 12).padEnd(12, ' ');
+    const boxWidth = 50;
+    const topBorder = chalk.cyan(`\n  ┌─ ${headerPadded} ${'─'.repeat(boxWidth - headerPadded.length - 5)}┐`);
+    const bottomBorder = chalk.cyan(`  └${'─'.repeat(boxWidth)}┘`);
+
+    console.log(topBorder);
+    console.log(chalk.cyan('  │ ') + chalk.white(question.question));
+    console.log(chalk.cyan('  │'));
+
+    // Display options
+    const options = question.options || [];
+    options.forEach((opt, idx) => {
+      console.log(chalk.cyan('  │ ') + chalk.yellow(`${idx + 1}. `) + chalk.white(opt.label));
+      if (opt.description) {
+        console.log(chalk.cyan('  │    ') + chalk.gray(opt.description));
+      }
+    });
+
+    // Always add "Other" option
+    const otherIdx = options.length + 1;
+    console.log(chalk.cyan('  │ ') + chalk.yellow(`${otherIdx}. `) + chalk.white('Other (custom input)'));
+    console.log(chalk.cyan('  │'));
+    console.log(bottomBorder);
+
+    const promptText = question.multiSelect
+      ? chalk.green(`  Your choice(s) (1-${otherIdx}, comma-separated): `)
+      : chalk.green(`  Your choice (1-${otherIdx}): `);
+
+    rl.question(promptText, (answer) => {
+      const trimmedAnswer = answer.trim();
+
+      // Parse the answer
+      if (question.multiSelect) {
+        // Parse comma-separated numbers
+        const selections = trimmedAnswer.split(',').map(s => parseInt(s.trim(), 10)).filter(n => !isNaN(n));
+        const results: string[] = [];
+
+        for (const sel of selections) {
+          if (sel === otherIdx) {
+            // Will prompt for custom input after this
+            results.push('OTHER');
+          } else if (sel >= 1 && sel <= options.length) {
+            results.push(options[sel - 1].label);
+          }
+        }
+
+        // Check if "Other" was selected
+        if (results.includes('OTHER')) {
+          rl.question(chalk.green('  Enter custom response: '), (customAnswer) => {
+            const filtered = results.filter(r => r !== 'OTHER');
+            filtered.push(customAnswer.trim());
+            resolve(filtered.join(', '));
+          });
+        } else {
+          resolve(results.join(', '));
+        }
+      } else {
+        // Single selection
+        const sel = parseInt(trimmedAnswer, 10);
+
+        if (sel === otherIdx) {
+          rl.question(chalk.green('  Enter custom response: '), (customAnswer) => {
+            resolve(customAnswer.trim());
+          });
+        } else if (sel >= 1 && sel <= options.length) {
+          resolve(options[sel - 1].label);
+        } else {
+          // Invalid selection, return raw input
+          resolve(trimmedAnswer);
+        }
+      }
+    });
+  });
+}
+
+// Helper to handle all questions from AskUserQuestion tool
+async function handleAskUserQuestions(
+  rl: readline.Interface,
+  input: AskUserQuestionInput
+): Promise<string[]> {
+  const responses: string[] = [];
+
+  for (const question of input.questions) {
+    const response = await promptUserQuestion(rl, question);
+    responses.push(response);
+  }
+
+  return responses;
+}
+
+async function handleStreamingChat(agent: MetamorphAgent, input: string, rl: readline.Interface): Promise<void> {
   currentAbortController = new AbortController();
   let responseStarted = false;
   let toolsShown = new Set<string>();
@@ -421,6 +531,40 @@ async function handleStreamingChat(agent: MetamorphAgent, input: string): Promis
         console.log(chalk.magenta(`\n  [Subagent: ${name} starting...]`));
       } else {
         console.log(chalk.magenta(`  [Subagent: ${name} complete]`));
+      }
+    },
+    onToolEvent: async (event) => {
+      // Handle AskUserQuestion tool
+      if (event.name === 'AskUserQuestion' && event.status === 'started') {
+        // Stop spinner while waiting for user input
+        if (currentSpinner) {
+          currentSpinner.stop();
+          currentSpinner = null;
+        }
+
+        try {
+          const questionInput = event.input as unknown as AskUserQuestionInput;
+
+          // Validate input structure
+          if (!questionInput.questions || !Array.isArray(questionInput.questions)) {
+            console.log(chalk.yellow('\n  [Invalid AskUserQuestion input format]'));
+            return;
+          }
+
+          // Handle each question and collect responses
+          const responses = await handleAskUserQuestions(rl, questionInput);
+
+          // Log the responses for debugging/visibility
+          console.log(chalk.gray(`\n  [User responses collected: ${responses.length}]`));
+
+          // The SDK handles tool result automatically based on user interaction
+          // The responses are collected but the actual tool result is managed by the Agent SDK
+        } catch (error) {
+          console.error(chalk.red('\n  [Error handling user question:]'), error instanceof Error ? error.message : 'Unknown error');
+        }
+
+        // Restart spinner for continued processing
+        currentSpinner = ora({ text: 'Continuing...', discardStdin: false }).start();
       }
     },
     onComplete: (result) => {

@@ -208,6 +208,9 @@ app.get('/api/chat/stream', apiKeyAuth, async (req: Request, res: Response) => {
     onToolEvent: (event) => {
       res.write(`event: tool_event\ndata: ${JSON.stringify(event)}\n\n`);
     },
+    onQuestion: (question) => {
+      res.write(`event: question\ndata: ${JSON.stringify(question)}\n\n`);
+    },
     onSubagent: (name, status) => {
       res.write(`event: subagent\ndata: ${JSON.stringify({ name, status })}\n\n`);
     },
@@ -264,6 +267,9 @@ app.post('/api/chat/stream', apiKeyAuth, async (req: Request, res: Response) => 
     },
     onToolEvent: (event) => {
       res.write(`event: tool_event\ndata: ${JSON.stringify(event)}\n\n`);
+    },
+    onQuestion: (question) => {
+      res.write(`event: question\ndata: ${JSON.stringify(question)}\n\n`);
     },
     onSubagent: (name, status) => {
       res.write(`event: subagent\ndata: ${JSON.stringify({ name, status })}\n\n`);

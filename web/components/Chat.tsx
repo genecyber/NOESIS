@@ -3,11 +3,12 @@
 import { useState, useRef, useEffect, useCallback } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import ReactMarkdown from 'react-markdown';
-import type { Message, ChatResponse, Stance, ModeConfig, ToolUseEvent } from '@/lib/types';
+import type { Message, ChatResponse, Stance, ModeConfig, ToolUseEvent, QuestionEvent } from '@/lib/types';
 import { chatStream, getState, getHistory, exportState, getSubagents, updateConfig, invokeSubagent, getMemories, getSessions, deleteSession } from '@/lib/api';
 import CommandPalette, { CommandHelp } from './CommandPalette';
 import CommandOutput from './CommandOutput';
 import ToolUsage, { ActiveToolsBar } from './ToolUsage';
+import QuestionPrompt from './QuestionPrompt';
 import { findCommand, parseCommand, COMMANDS, getCommandsByCategory } from '@/lib/commands';
 import { isPluginCommand, executePluginCommand } from '@/lib/plugins/registry';
 import { useInputHistory } from '@/lib/hooks/useLocalStorage';
@@ -89,6 +90,9 @@ export default function Chat({ sessionId, onSessionChange, onResponse, onStanceU
   // Tool usage tracking during streaming
   const [activeTools, setActiveTools] = useState<ToolUseEvent[]>([]);
   const toolsRef = useRef<Map<string, ToolUseEvent>>(new Map());
+
+  // AskUserQuestion tool state
+  const [pendingQuestion, setPendingQuestion] = useState<QuestionEvent | null>(null);
 
   // Input history with localStorage persistence
   const { history: inputHistory, addToHistory } = useInputHistory();
@@ -524,6 +528,10 @@ export default function Chat({ sessionId, onSessionChange, onResponse, onStanceU
         // Update active tools state for display
         setActiveTools(Array.from(toolsRef.current.values()));
       },
+      onQuestion: (event) => {
+        // Set pending question for QuestionPrompt to render
+        setPendingQuestion(event);
+      },
       onComplete: (data) => {
         setIsLoading(false);
         setConnectionStatus('connected');
@@ -600,6 +608,20 @@ export default function Chat({ sessionId, onSessionChange, onResponse, onStanceU
       toolsRef.current.clear();
     }
   };
+
+  // Handle question answer submission
+  const handleQuestionAnswer = useCallback((questionId: string, answers: Record<number, string[]>) => {
+    // For now, log the answers and clear the question state
+    // Future: Send answer back to agent via API
+    console.log('[QuestionPrompt] Answer submitted:', { questionId, answers });
+    setPendingQuestion(null);
+  }, []);
+
+  // Handle question cancellation
+  const handleQuestionCancel = useCallback(() => {
+    console.log('[QuestionPrompt] Question cancelled');
+    setPendingQuestion(null);
+  }, []);
 
   const statusColor = connectionStatus === 'connected' ? 'bg-emblem-accent'
     : connectionStatus === 'streaming' ? 'bg-blue-500'
@@ -771,6 +793,15 @@ export default function Chat({ sessionId, onSessionChange, onResponse, onStanceU
 
       {/* Help dialog */}
       {showHelp && <CommandHelp onClose={() => setShowHelp(false)} />}
+
+      {/* Question prompt from AskUserQuestion tool */}
+      {pendingQuestion && (
+        <QuestionPrompt
+          question={pendingQuestion}
+          onAnswer={handleQuestionAnswer}
+          onCancel={handleQuestionCancel}
+        />
+      )}
     </div>
   );
 }

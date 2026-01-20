@@ -14,6 +14,7 @@ import type {
   EvolutionSnapshot,
   ToolUseEvent,
   EmotionContext,
+  QuestionEvent,
 } from './types';
 
 // Re-export EmotionContext for backward compatibility
@@ -138,6 +139,7 @@ export function chatStream(
   callbacks: {
     onText?: (text: string) => void;
     onToolEvent?: (event: ToolUseEvent) => void;
+    onQuestion?: (event: QuestionEvent) => void;
     onComplete?: (data: ChatResponse) => void;
     onError?: (error: Error) => void;
   }
@@ -192,6 +194,8 @@ export function chatStream(
                 callbacks.onText(parsed.text);
               } else if (currentEvent === 'tool_event' && callbacks.onToolEvent) {
                 callbacks.onToolEvent(parsed);
+              } else if (currentEvent === 'question' && callbacks.onQuestion) {
+                callbacks.onQuestion(parsed);
               } else if (currentEvent === 'complete' && callbacks.onComplete) {
                 callbacks.onComplete(parsed);
               } else if (currentEvent === 'error' && callbacks.onError) {

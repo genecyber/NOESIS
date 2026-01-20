@@ -113,10 +113,29 @@ export interface ToolUseEvent {
   error?: string;
 }
 
+export interface QuestionOption {
+  label: string;
+  description: string;
+}
+
+export interface Question {
+  question: string;
+  header: string;
+  options: QuestionOption[];
+  multiSelect: boolean;
+}
+
+export interface QuestionEvent {
+  id: string;
+  questions: Question[];
+  status: 'pending' | 'answered' | 'cancelled';
+}
+
 export interface StreamCallbacks {
   onText?: (text: string) => void;
   onToolUse?: (tool: string) => void;
-  onToolEvent?: (event: ToolUseEvent) => void;
+  onToolEvent?: (event: ToolUseEvent) => void | Promise<void>;
+  onQuestion?: (question: QuestionEvent) => void;
   onSubagent?: (name: string, status: 'start' | 'end') => void;
   onComplete?: (response: AgentResponse) => void;
   onError?: (error: Error) => void;
@@ -740,12 +759,32 @@ export class MetamorphAgent {
           for (const block of toolBlocks) {
             if (!activeTools.has(block.id)) {
               activeTools.set(block.id, block);
-              callbacks.onToolEvent?.({
+              // Await onToolEvent in case it's async (e.g., for AskUserQuestion tool)
+              await callbacks.onToolEvent?.({
                 id: block.id,
                 name: block.name,
                 input: block.input,
                 status: 'started',
               });
+
+              // Detect AskUserQuestion tool and emit question event
+              if (block.name === 'AskUserQuestion' && callbacks.onQuestion) {
+                const input = block.input as {
+                  questions?: Array<{
+                    question: string;
+                    header: string;
+                    options: Array<{ label: string; description: string }>;
+                    multiSelect: boolean;
+                  }>;
+                };
+                if (input.questions && Array.isArray(input.questions)) {
+                  callbacks.onQuestion({
+                    id: block.id,
+                    questions: input.questions,
+                    status: 'pending'
+                  });
+                }
+              }
             }
           }
         }
@@ -756,7 +795,7 @@ export class MetamorphAgent {
           if (toolResult) {
             const toolBlock = activeTools.get(toolResult.toolUseId);
             if (toolBlock) {
-              callbacks.onToolEvent?.({
+              await callbacks.onToolEvent?.({
                 id: toolResult.toolUseId,
                 name: toolBlock.name,
                 input: toolBlock.input,

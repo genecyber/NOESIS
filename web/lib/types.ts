@@ -119,6 +119,25 @@ export interface ToolUseEvent {
   error?: string;
 }
 
+// AskUserQuestion tool events for interactive questions
+export interface QuestionOption {
+  label: string;
+  description: string;
+}
+
+export interface Question {
+  question: string;
+  header: string;
+  options: QuestionOption[];
+  multiSelect: boolean;
+}
+
+export interface QuestionEvent {
+  id: string;
+  questions: Question[];
+  status: 'pending' | 'answered' | 'cancelled';
+}
+
 // Empathy Mode - Detected emotion context from webcam
 export interface EmotionContext {
   currentEmotion: string;
