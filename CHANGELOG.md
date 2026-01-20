@@ -28,6 +28,36 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ### Added
 
+#### Pipable Streams System
+- **WebSocket Server**: Real-time streaming server at `/ws/streams` endpoint
+  - `src/server/websocket.ts` - WebSocket server with connection management and heartbeat monitoring
+  - Support for stream creation, data publishing, and subscription
+  - Automatic client cleanup and connection health monitoring
+- **StreamManager Service**: Central stream coordination with JSON Schema validation
+  - `src/services/stream-manager.ts` - Stream lifecycle management and routing
+  - JSON Schema validation for stream metadata
+  - Stream registry with type-safe metadata storage
+  - Support for multiple concurrent subscribers per stream
+- **CLI Tool**: `metamorph-stream` command for piping stdin to streams
+  - `src/cli/stream.ts` - Stream publishing from command line
+  - Usage: `echo "data" | metamorph-stream --stream-id my-stream`
+  - Real-time output piping from bash processes to web clients
+  - WebSocket client with automatic reconnection
+- **Web Plugin**: StreamsPanel and StreamViewer components for real-time visualization
+  - `web/plugins/streams/` - React components for stream management
+  - `StreamsPanel.tsx` - Main panel for browsing active streams
+  - `StreamViewer.tsx` - Real-time stream output display
+  - Auto-scroll and filtering capabilities
+- **Event Bus Integration**: Stream events published to plugin event bus
+  - `stream:created`, `stream:data`, `stream:ended` events
+  - Plugin-to-plugin communication through stream events
+- **Key Files Created**:
+  - `src/server/websocket.ts` - WebSocket server implementation
+  - `src/services/stream-manager.ts` - Stream management service
+  - `src/cli/stream.ts` - CLI streaming tool
+  - `web/plugins/streams/` - Web UI components
+  - `docs/PIPABLE_STREAMS.md` - Complete documentation
+
 #### Unified Runtime Architecture
 - **MetamorphRuntime**: Single unified runtime for both CLI and HTTP adapters
   - `src/runtime/runtime.ts` - Core runtime class managing sessions and commands

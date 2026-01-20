@@ -11,6 +11,7 @@
   - [Features](#features)
   - [Running the Web UI](#running-the-web-ui)
   - [Deployment (Railway)](#deployment-railway)
+- [Streams](#streams)
 - [Skills & Capabilities Reference](#skills--capabilities-reference)
   - [Conversation Skills](#conversation-skills)
   - [Introspection Skills](#introspection-skills)
@@ -172,6 +173,66 @@ cd web && railway up
 **Environment Variables**:
 - `ANTHROPIC_API_KEY`: Your Anthropic API key (required)
 - `NEXT_PUBLIC_API_URL`: API server URL for web UI streaming (e.g., `https://your-api.railway.app`)
+
+---
+
+## Streams
+
+The Streams system enables real-time data streaming from agent scripts and external processes to the web UI through WebSocket-based pub/sub channels.
+
+**What It Does**:
+- Pipes arbitrary data from command-line scripts, background processes, or Node.js code to the web interface
+- Displays streaming data in real-time alongside agent conversations
+- Validates data against JSON schemas for type safety
+- Maintains event history with configurable retention
+
+**Key Features**:
+- **WebSocket Pub/Sub**: Bidirectional, session-scoped channels with subscribe/publish patterns
+- **CLI Piping Tool**: `metamorph-stream` command for bash integration (`| metamorph-stream -s session-id`)
+- **JSON Schema Validation**: Optional schema enforcement for structured data streams
+- **Channel Naming**: Convention-based naming `{sessionId}:{identifier}:{type}` for organization
+- **Event History**: Configurable history buffer per stream (default: 1000 events)
+- **Session Isolation**: Streams are scoped to sessions and automatically cleaned up
+
+**Quick Example**:
+
+```bash
+# Pipe log file to web UI
+tail -f /var/log/app.log | metamorph-stream -s user-123 -c logs
+
+# Stream JSON data with validation
+python data_processor.py | metamorph-stream -s user-123 --json --schema ./schema.json
+
+# Monitor system metrics
+watch -n 1 'top -l 1 | head -20' | metamorph-stream -s user-123 -c metrics
+```
+
+**Programmatic Usage**:
+
+```typescript
+// Node.js WebSocket client
+import WebSocket from 'ws';
+
+const ws = new WebSocket('ws://localhost:3001/ws/streams?sessionId=user-123');
+
+ws.on('open', () => {
+  // Create a stream
+  ws.send(JSON.stringify({
+    type: 'create_stream',
+    channel: 'user-123:monitor:cpu',
+    schema: { type: 'object', properties: { usage: { type: 'number' } } }
+  }));
+
+  // Publish events
+  ws.send(JSON.stringify({
+    type: 'publish',
+    channel: 'user-123:monitor:cpu',
+    event: { data: { usage: 42.5 }, source: 'monitor-1' }
+  }));
+});
+```
+
+**Full Documentation**: See [docs/PIPABLE_STREAMS.md](./docs/PIPABLE_STREAMS.md) for implementation details, WebSocket protocol reference, and advanced usage.
 
 ---
 
