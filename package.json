@@ -20,8 +20,9 @@
     "test:all": "vitest run",
     "lint": "eslint src --ext .ts",
     "clean": "rm -rf dist",
-    "sync:remote": "npx tsx scripts/sync-remote.ts",
-    "push:remote": "npx tsx scripts/push-to-remote.ts",
+    "sync": "npx tsx scripts/sync-memories.ts",
+    "sync:pull": "npx tsx scripts/sync-remote.ts",
+    "sync:push": "npx tsx scripts/push-to-remote.ts",
     "dedupe": "npx tsx scripts/dedupe-memories.ts"
   },
   "engines": {
