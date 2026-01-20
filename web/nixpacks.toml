@@ -1,10 +1,10 @@
 # Nixpacks configuration for Railway deployment (Web UI)
 
 [phases.setup]
-nixPkgs = ["nodejs_20"]
+nixPkgs = ["nodejs_22"]
 
 [phases.install]
-cmds = ["npm ci"]
+cmds = ["npm install --legacy-peer-deps"]
 cacheDirectories = []
 
 [phases.build]
