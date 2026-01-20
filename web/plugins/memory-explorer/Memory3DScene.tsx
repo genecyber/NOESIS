@@ -7,8 +7,8 @@
 
 'use client';
 
-import { useRef, useState, useMemo, useCallback } from 'react';
-import { Canvas, useFrame, ThreeEvent } from '@react-three/fiber';
+import { useRef, useState, useMemo, useCallback, useEffect } from 'react';
+import { Canvas, useFrame, useThree, ThreeEvent } from '@react-three/fiber';
 import { OrbitControls, Stars, Line, Html, Billboard, Text } from '@react-three/drei';
 import * as THREE from 'three';
 
@@ -29,6 +29,29 @@ interface ConnectionData {
   from: string;
   to: string;
   strength: number;
+}
+
+// =============================================================================
+// Pulse Effect Types
+// =============================================================================
+
+interface ActivePulse {
+  edgeKey: string;
+  fromId: string;
+  toId: string;
+  progress: number; // 0 to 1
+  brightness: number; // based on connection strength
+  speed: number; // units per second
+  color: string;
+  startTime: number;
+}
+
+interface PulseState {
+  sourceNodeId: string;
+  startTime: number;
+  visitedNodes: Set<string>;
+  activePulses: ActivePulse[];
+  flashingNodes: Map<string, number>; // nodeId -> flash start time
 }
 
 interface Memory3DSceneProps {
@@ -66,13 +89,15 @@ interface MemoryNodeProps {
   node: MemoryNodeData;
   isSelected: boolean;
   isHovered: boolean;
+  flashIntensity: number; // 0 to 1 for pulse flash effect
   onClick: (nodeId: string) => void;
   onHover: (nodeId: string | null) => void;
 }
 
-function MemoryNode({ node, isSelected, isHovered, onClick, onHover }: MemoryNodeProps) {
+function MemoryNode({ node, isSelected, isHovered, flashIntensity, onClick, onHover }: MemoryNodeProps) {
   const meshRef = useRef<THREE.Mesh>(null);
   const glowRef = useRef<THREE.Mesh>(null);
+  const flashGlowRef = useRef<THREE.Mesh>(null);
 
   // Get color based on memory type
   const color = COLORS[node.type];
@@ -84,11 +109,18 @@ function MemoryNode({ node, isSelected, isHovered, onClick, onHover }: MemoryNod
   const baseScale = 0.1 + normalizedImportance * 0.3;
   const scale = isHovered ? baseScale * 1.3 : baseScale;
 
+  // Show flash glow when pulse arrives
+  const showFlash = flashIntensity > 0;
+
   // Animate glow pulse
   useFrame((state) => {
     if (glowRef.current && (isSelected || isHovered)) {
       const pulse = Math.sin(state.clock.elapsedTime * 3) * 0.1 + 1;
       glowRef.current.scale.setScalar(scale * 1.5 * pulse);
+    }
+    // Animate flash glow
+    if (flashGlowRef.current && showFlash) {
+      flashGlowRef.current.scale.setScalar(scale * (2 + flashIntensity));
     }
   });
 
@@ -118,6 +150,19 @@ function MemoryNode({ node, isSelected, isHovered, onClick, onHover }: MemoryNod
 
   return (
     <group position={[node.position.x, node.position.y, node.position.z]}>
+      {/* Flash glow effect when pulse arrives */}
+      {showFlash && (
+        <mesh ref={flashGlowRef} scale={scale * (2 + flashIntensity)}>
+          <sphereGeometry args={[1, 16, 16]} />
+          <meshBasicMaterial
+            color={color}
+            transparent
+            opacity={0.4 * flashIntensity}
+            depthWrite={false}
+          />
+        </mesh>
+      )}
+
       {/* Glow effect for selected/hovered nodes */}
       {(isSelected || isHovered) && (
         <mesh ref={glowRef} scale={scale * 1.5}>
@@ -143,7 +188,7 @@ function MemoryNode({ node, isSelected, isHovered, onClick, onHover }: MemoryNod
         <meshStandardMaterial
           color={color}
           emissive={color}
-          emissiveIntensity={isSelected ? 0.5 : isHovered ? 0.3 : 0.1}
+          emissiveIntensity={showFlash ? 0.8 * flashIntensity : isSelected ? 0.5 : isHovered ? 0.3 : 0.1}
           roughness={0.3}
           metalness={0.7}
         />
@@ -204,9 +249,10 @@ interface ConnectionLinesProps {
   nodes: MemoryNodeData[];
   selectedNodeId: string | null;
   hoveredNodeId: string | null;
+  glowingEdges: Map<string, number>; // edgeKey -> glow intensity (0-1)
 }
 
-function ConnectionLines({ connections, nodes, selectedNodeId, hoveredNodeId }: ConnectionLinesProps) {
+function ConnectionLines({ connections, nodes, selectedNodeId, hoveredNodeId, glowingEdges }: ConnectionLinesProps) {
   // Create a map of node positions for quick lookup
   const nodePositions = useMemo(() => {
     const map = new Map<string, [number, number, number]>();
@@ -232,35 +278,47 @@ function ConnectionLines({ connections, nodes, selectedNodeId, hoveredNodeId }: 
           hoveredNodeId === conn.from ||
           hoveredNodeId === conn.to;
 
+        // Check for pulse glow
+        const edgeKey = `${conn.from}-${conn.to}`;
+        const reverseKey = `${conn.to}-${conn.from}`;
+        const glowIntensity = glowingEdges.get(edgeKey) || glowingEdges.get(reverseKey) || 0;
+
         return {
           points: [fromPos, toPos] as [[number, number, number], [number, number, number]],
           strength: conn.strength,
           isActive,
+          glowIntensity,
+          edgeKey,
         };
       })
       .filter(Boolean) as Array<{
         points: [[number, number, number], [number, number, number]];
         strength: number;
         isActive: boolean;
+        glowIntensity: number;
+        edgeKey: string;
       }>;
-  }, [connections, nodePositions, selectedNodeId, hoveredNodeId]);
+  }, [connections, nodePositions, selectedNodeId, hoveredNodeId, glowingEdges]);
 
   return (
     <group>
-      {lines.map((line, index) => (
-        <Line
-          key={index}
-          points={line.points}
-          color={line.isActive ? COLORS.connectionActive : COLORS.connection}
-          lineWidth={line.isActive ? 2 : 1}
-          transparent
-          opacity={line.isActive ? 0.8 : 0.2 + line.strength * 0.3}
-          dashed={!line.isActive}
-          dashScale={10}
-          dashSize={0.5}
-          gapSize={0.3}
-        />
-      ))}
+      {lines.map((line, index) => {
+        const isGlowing = line.glowIntensity > 0;
+        return (
+          <Line
+            key={line.edgeKey}
+            points={line.points}
+            color={isGlowing ? '#ffffff' : line.isActive ? COLORS.connectionActive : COLORS.connection}
+            lineWidth={isGlowing ? 2 + line.glowIntensity * 2 : line.isActive ? 2 : 1}
+            transparent
+            opacity={isGlowing ? 0.3 + line.glowIntensity * 0.7 : line.isActive ? 0.8 : 0.2 + line.strength * 0.3}
+            dashed={!line.isActive && !isGlowing}
+            dashScale={10}
+            dashSize={0.5}
+            gapSize={0.3}
+          />
+        );
+      })}
     </group>
   );
 }
@@ -288,6 +346,253 @@ function GridBackground() {
 }
 
 // =============================================================================
+// Pulse Orb Component - A glowing sphere that travels along edges
+// =============================================================================
+
+interface PulseOrbProps {
+  position: [number, number, number];
+  color: string;
+  brightness: number;
+  size?: number;
+}
+
+function PulseOrb({ position, color, brightness, size = 0.15 }: PulseOrbProps) {
+  const meshRef = useRef<THREE.Mesh>(null);
+
+  useFrame((state) => {
+    if (meshRef.current) {
+      // Subtle pulsing effect
+      const pulse = Math.sin(state.clock.elapsedTime * 10) * 0.1 + 1;
+      meshRef.current.scale.setScalar(size * pulse);
+    }
+  });
+
+  return (
+    <group position={position}>
+      {/* Outer glow */}
+      <mesh scale={size * 3}>
+        <sphereGeometry args={[1, 8, 8]} />
+        <meshBasicMaterial
+          color={color}
+          transparent
+          opacity={0.2 * brightness}
+          depthWrite={false}
+        />
+      </mesh>
+      {/* Inner glow */}
+      <mesh scale={size * 1.5}>
+        <sphereGeometry args={[1, 8, 8]} />
+        <meshBasicMaterial
+          color={color}
+          transparent
+          opacity={0.4 * brightness}
+          depthWrite={false}
+        />
+      </mesh>
+      {/* Core */}
+      <mesh ref={meshRef} scale={size}>
+        <sphereGeometry args={[1, 16, 16]} />
+        <meshBasicMaterial
+          color={'#ffffff'}
+          transparent
+          opacity={0.9 * brightness}
+        />
+      </mesh>
+    </group>
+  );
+}
+
+// =============================================================================
+// Pulse Effect Component - Manages and renders traveling pulses
+// =============================================================================
+
+interface PulseEffectProps {
+  connections: ConnectionData[];
+  nodes: MemoryNodeData[];
+  pulseState: PulseState | null;
+  onPulseUpdate: (newState: PulseState | null) => void;
+  onEdgeGlow: (edgeKey: string, intensity: number) => void;
+  onNodeFlash: (nodeId: string, intensity: number) => void;
+}
+
+function PulseEffect({
+  connections,
+  nodes,
+  pulseState,
+  onPulseUpdate,
+  onEdgeGlow,
+  onNodeFlash,
+}: PulseEffectProps) {
+  const { clock } = useThree();
+
+  // Create position lookup maps
+  const nodePositions = useMemo(() => {
+    const map = new Map<string, THREE.Vector3>();
+    nodes.forEach((node) => {
+      map.set(node.id, new THREE.Vector3(node.position.x, node.position.y, node.position.z));
+    });
+    return map;
+  }, [nodes]);
+
+  // Create connection lookup for finding neighbors
+  const connectionMap = useMemo(() => {
+    const map = new Map<string, ConnectionData[]>();
+    connections.forEach((conn) => {
+      // Add to 'from' node's connections
+      const fromConns = map.get(conn.from) || [];
+      fromConns.push(conn);
+      map.set(conn.from, fromConns);
+      // Add to 'to' node's connections (bidirectional)
+      const toConns = map.get(conn.to) || [];
+      toConns.push(conn);
+      map.set(conn.to, toConns);
+    });
+    return map;
+  }, [connections]);
+
+  // Get node color for pulse
+  const nodeColors = useMemo(() => {
+    const map = new Map<string, string>();
+    nodes.forEach((node) => {
+      map.set(node.id, COLORS[node.type]);
+    });
+    return map;
+  }, [nodes]);
+
+  // Animation loop
+  useFrame(() => {
+    if (!pulseState || pulseState.activePulses.length === 0) return;
+
+    const currentTime = clock.elapsedTime;
+    const newPulses: ActivePulse[] = [];
+    const completedPulses: ActivePulse[] = [];
+    const newVisitedNodes = new Set(pulseState.visitedNodes);
+    const newFlashingNodes = new Map(pulseState.flashingNodes);
+
+    // Process each active pulse
+    pulseState.activePulses.forEach((pulse) => {
+      const fromPos = nodePositions.get(pulse.fromId);
+      const toPos = nodePositions.get(pulse.toId);
+
+      if (!fromPos || !toPos) return;
+
+      // Calculate distance and travel time
+      const distance = fromPos.distanceTo(toPos);
+      const travelTime = distance / pulse.speed;
+      const elapsed = currentTime - pulse.startTime;
+      const progress = Math.min(elapsed / travelTime, 1);
+
+      // Update edge glow based on pulse position
+      const glowIntensity = Math.max(0, 1 - Math.abs(progress - 0.5) * 2) * pulse.brightness;
+      onEdgeGlow(pulse.edgeKey, glowIntensity);
+
+      if (progress >= 1) {
+        // Pulse reached destination
+        completedPulses.push(pulse);
+
+        // Flash the destination node
+        const targetId = pulse.toId;
+        newFlashingNodes.set(targetId, currentTime);
+        onNodeFlash(targetId, pulse.brightness);
+
+        // If not visited, spawn new pulses to neighbors
+        if (!newVisitedNodes.has(targetId)) {
+          newVisitedNodes.add(targetId);
+
+          const neighborConnections = connectionMap.get(targetId) || [];
+          neighborConnections.forEach((conn) => {
+            const neighborId = conn.from === targetId ? conn.to : conn.from;
+
+            if (!newVisitedNodes.has(neighborId)) {
+              // Create new pulse to this neighbor
+              const edgeKey = `${targetId}-${neighborId}`;
+              const baseSpeed = 8; // base speed in units per second
+              const strengthBonus = conn.strength * 6; // faster for stronger connections
+              const speed = baseSpeed + strengthBonus;
+
+              newPulses.push({
+                edgeKey,
+                fromId: targetId,
+                toId: neighborId,
+                progress: 0,
+                brightness: conn.strength * 0.8, // Brightness based on connection strength
+                speed,
+                color: nodeColors.get(targetId) || '#ffffff',
+                startTime: currentTime,
+              });
+            }
+          });
+        }
+      } else {
+        // Keep the pulse active with updated progress
+        newPulses.push({ ...pulse, progress });
+      }
+    });
+
+    // Fade out edge glows for completed pulses
+    completedPulses.forEach((pulse) => {
+      // Schedule glow fadeout (handled by the glow map cleanup)
+    });
+
+    // Fade out node flashes (0.5 second duration)
+    const flashDuration = 0.5;
+    newFlashingNodes.forEach((startTime, nodeId) => {
+      const flashElapsed = currentTime - startTime;
+      if (flashElapsed >= flashDuration) {
+        newFlashingNodes.delete(nodeId);
+        onNodeFlash(nodeId, 0);
+      } else {
+        const flashIntensity = 1 - flashElapsed / flashDuration;
+        onNodeFlash(nodeId, flashIntensity);
+      }
+    });
+
+    // Update state
+    if (newPulses.length === 0 && newFlashingNodes.size === 0) {
+      // Animation complete
+      onPulseUpdate(null);
+    } else {
+      onPulseUpdate({
+        ...pulseState,
+        visitedNodes: newVisitedNodes,
+        activePulses: newPulses,
+        flashingNodes: newFlashingNodes,
+      });
+    }
+  });
+
+  // Render pulse orbs
+  if (!pulseState) return null;
+
+  return (
+    <group>
+      {pulseState.activePulses.map((pulse) => {
+        const fromPos = nodePositions.get(pulse.fromId);
+        const toPos = nodePositions.get(pulse.toId);
+
+        if (!fromPos || !toPos) return null;
+
+        // Interpolate position
+        const position: [number, number, number] = [
+          fromPos.x + (toPos.x - fromPos.x) * pulse.progress,
+          fromPos.y + (toPos.y - fromPos.y) * pulse.progress,
+          fromPos.z + (toPos.z - fromPos.z) * pulse.progress,
+        ];
+
+        return (
+          <PulseOrb
+            key={pulse.edgeKey}
+            position={position}
+            color={pulse.color}
+            brightness={pulse.brightness}
+          />
+        );
+      })}
+    </group>
+  );
+}
+
+// =============================================================================
 // Scene Content Component (inside Canvas)
 // =============================================================================
 
@@ -310,7 +615,13 @@ function SceneContent({
   showConnections,
   autoRotate,
 }: SceneContentProps) {
+  const { clock } = useThree();
   const [hoveredNodeId, setHoveredNodeId] = useState<string | null>(null);
+
+  // Pulse effect state
+  const [pulseState, setPulseState] = useState<PulseState | null>(null);
+  const [glowingEdges, setGlowingEdges] = useState<Map<string, number>>(new Map());
+  const [flashingNodes, setFlashingNodes] = useState<Map<string, number>>(new Map());
 
   // Handle hover state
   const handleHover = useCallback(
@@ -320,6 +631,94 @@ function SceneContent({
     },
     [onNodeHover]
   );
+
+  // Handle node click - triggers pulse effect
+  const handleNodeClick = useCallback(
+    (nodeId: string) => {
+      // Call the parent's onNodeClick
+      onNodeClick(nodeId);
+
+      // Start pulse effect from this node
+      const connectedEdges = connections.filter(
+        (c) => c.from === nodeId || c.to === nodeId
+      );
+
+      if (connectedEdges.length === 0) return;
+
+      // Get the node's color for the initial pulses
+      const sourceNode = nodes.find((n) => n.id === nodeId);
+      const sourceColor = sourceNode ? COLORS[sourceNode.type] : '#ffffff';
+
+      // Create initial pulses to all connected nodes
+      const initialPulses: ActivePulse[] = connectedEdges.map((conn) => {
+        const isFromSource = conn.from === nodeId;
+        const targetId = isFromSource ? conn.to : conn.from;
+        const edgeKey = `${nodeId}-${targetId}`;
+        const baseSpeed = 8;
+        const strengthBonus = conn.strength * 6;
+        const speed = baseSpeed + strengthBonus;
+
+        return {
+          edgeKey,
+          fromId: nodeId,
+          toId: targetId,
+          progress: 0,
+          brightness: conn.strength,
+          speed,
+          color: sourceColor,
+          startTime: clock.elapsedTime,
+        };
+      });
+
+      // Flash the source node
+      setFlashingNodes(new Map([[nodeId, 1]]));
+
+      setPulseState({
+        sourceNodeId: nodeId,
+        startTime: clock.elapsedTime,
+        visitedNodes: new Set([nodeId]),
+        activePulses: initialPulses,
+        flashingNodes: new Map([[nodeId, clock.elapsedTime]]),
+      });
+    },
+    [connections, nodes, onNodeClick, clock]
+  );
+
+  // Handle pulse state updates from PulseEffect
+  const handlePulseUpdate = useCallback((newState: PulseState | null) => {
+    setPulseState(newState);
+    if (newState === null) {
+      // Clear all glowing edges when pulse animation completes
+      setGlowingEdges(new Map());
+      setFlashingNodes(new Map());
+    }
+  }, []);
+
+  // Handle edge glow updates
+  const handleEdgeGlow = useCallback((edgeKey: string, intensity: number) => {
+    setGlowingEdges((prev) => {
+      const next = new Map(prev);
+      if (intensity <= 0) {
+        next.delete(edgeKey);
+      } else {
+        next.set(edgeKey, intensity);
+      }
+      return next;
+    });
+  }, []);
+
+  // Handle node flash updates
+  const handleNodeFlash = useCallback((nodeId: string, intensity: number) => {
+    setFlashingNodes((prev) => {
+      const next = new Map(prev);
+      if (intensity <= 0) {
+        next.delete(nodeId);
+      } else {
+        next.set(nodeId, intensity);
+      }
+      return next;
+    });
+  }, []);
 
   return (
     <>
@@ -363,8 +762,19 @@ function SceneContent({
           nodes={nodes}
           selectedNodeId={selectedNodeId}
           hoveredNodeId={hoveredNodeId}
+          glowingEdges={glowingEdges}
         />
       )}
+
+      {/* Pulse effect */}
+      <PulseEffect
+        connections={connections}
+        nodes={nodes}
+        pulseState={pulseState}
+        onPulseUpdate={handlePulseUpdate}
+        onEdgeGlow={handleEdgeGlow}
+        onNodeFlash={handleNodeFlash}
+      />
 
       {/* Memory nodes */}
       {nodes.map((node) => (
@@ -373,7 +783,8 @@ function SceneContent({
           node={node}
           isSelected={selectedNodeId === node.id}
           isHovered={hoveredNodeId === node.id}
-          onClick={onNodeClick}
+          flashIntensity={flashingNodes.get(node.id) || 0}
+          onClick={handleNodeClick}
           onHover={handleHover}
         />
       ))}
