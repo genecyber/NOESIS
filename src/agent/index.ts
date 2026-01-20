@@ -769,7 +769,6 @@ export class MetamorphAgent {
 
               // Detect AskUserQuestion tool and emit question event
               if (block.name === 'AskUserQuestion' && callbacks.onQuestion) {
-                console.log('[METAMORPH] AskUserQuestion tool detected, raw input:', JSON.stringify(block.input));
 
                 type QuestionType = {
                   question: string;
@@ -801,14 +800,11 @@ export class MetamorphAgent {
                     multiSelect: q.multiSelect ?? false,
                   }));
 
-                  console.log('[METAMORPH] Emitting question event:', JSON.stringify(normalizedQuestions));
                   callbacks.onQuestion({
                     id: block.id,
                     questions: normalizedQuestions,
                     status: 'pending'
                   });
-                } else {
-                  console.log('[METAMORPH] AskUserQuestion input not valid questions array:', JSON.stringify(block.input));
                 }
               }
             }

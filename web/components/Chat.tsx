@@ -529,8 +529,6 @@ export default function Chat({ sessionId, onSessionChange, onResponse, onStanceU
         setActiveTools(Array.from(toolsRef.current.values()));
       },
       onQuestion: (event) => {
-        // Set pending question for QuestionPrompt to render
-        console.log('[Chat] Received question event, setting pendingQuestion:', event);
         setPendingQuestion(event);
       },
       onComplete: (data) => {

@@ -195,7 +195,6 @@ export function chatStream(
               } else if (currentEvent === 'tool_event' && callbacks.onToolEvent) {
                 callbacks.onToolEvent(parsed);
               } else if (currentEvent === 'question' && callbacks.onQuestion) {
-                console.log('[API] Received question event:', parsed);
                 callbacks.onQuestion(parsed);
               } else if (currentEvent === 'complete' && callbacks.onComplete) {
                 callbacks.onComplete(parsed);
