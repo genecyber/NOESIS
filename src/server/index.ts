@@ -1318,7 +1318,7 @@ export function startServer(port: number = Number(PORT)): void {
  * Shows the streams system working out of the box.
  */
 function startDemoStream(): void {
-  const DEMO_SESSION = 'demo';
+  const DEMO_SESSION = 'default';
   const DEMO_CHANNEL = `${DEMO_SESSION}:server:stats`;
   const INTERVAL_MS = 5000;
 
