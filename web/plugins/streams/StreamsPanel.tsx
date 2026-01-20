@@ -8,7 +8,7 @@
 
 'use client';
 
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
   Radio,
@@ -44,9 +44,17 @@ export default function StreamsPanel({
   const [showSettings, setShowSettings] = useState(false);
 
   // Use stream hooks
-  const { connected, error: subscriptionError } = useStreamSubscription({
+  const {
+    connected,
+    error: subscriptionError,
+    events,
+    subscribe,
+    unsubscribe,
+    clear,
+  } = useStreamSubscription({
     sessionId: sessionId || 'default',
     autoConnect: true,
+    maxEvents: panelState.maxEvents,
   });
 
   const {
@@ -60,6 +68,24 @@ export default function StreamsPanel({
 
   // Combined error
   const error = subscriptionError || listError;
+
+  // Track previous selection for subscription management
+  const prevSelectedRef = useRef<string | null>(null);
+
+  // Subscribe/unsubscribe when selection changes
+  useEffect(() => {
+    const prev = prevSelectedRef.current;
+    const current = panelState.selectedStream;
+
+    if (prev && prev !== current) {
+      unsubscribe(prev);
+    }
+    if (current && current !== prev) {
+      subscribe(current);
+    }
+
+    prevSelectedRef.current = current;
+  }, [panelState.selectedStream, subscribe, unsubscribe]);
 
   // Handle stream selection
   const handleStreamSelect = useCallback((channel: string) => {
@@ -231,11 +257,54 @@ export default function StreamsPanel({
             initial={{ opacity: 0, height: 0 }}
             animate={{ opacity: 1, height: 'auto' }}
             exit={{ opacity: 0, height: 0 }}
-            className="overflow-hidden"
+            className="overflow-hidden space-y-3"
           >
             <StreamDetails
               stream={streams.find(s => s.channel === panelState.selectedStream)}
             />
+
+            {/* Live Events */}
+            <div className="glass-card p-3 space-y-2">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-2 text-sm font-medium text-emblem-text">
+                  <Activity className="w-4 h-4" />
+                  <span>Live Events</span>
+                  <span className="text-xs text-emblem-muted">({events.length})</span>
+                </div>
+                <button
+                  onClick={clear}
+                  className="text-xs text-emblem-muted hover:text-emblem-text transition-colors"
+                >
+                  Clear
+                </button>
+              </div>
+
+              <div className="max-h-48 overflow-y-auto space-y-1">
+                {events.length === 0 ? (
+                  <div className="text-xs text-emblem-muted text-center py-4">
+                    Waiting for events...
+                  </div>
+                ) : (
+                  events.slice(-20).map((event) => (
+                    <div
+                      key={event.id}
+                      className="text-xs font-mono bg-emblem-surface/50 rounded p-2 overflow-x-auto"
+                    >
+                      {panelState.showTimestamps && (
+                        <span className="text-emblem-muted mr-2">
+                          {new Date(event.timestamp).toLocaleTimeString()}
+                        </span>
+                      )}
+                      <span className="text-emblem-text">
+                        {typeof event.data === 'object'
+                          ? JSON.stringify(event.data, null, 0)
+                          : String(event.data)}
+                      </span>
+                    </div>
+                  ))
+                )}
+              </div>
+            </div>
           </motion.div>
         )}
       </AnimatePresence>
