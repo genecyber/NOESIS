@@ -18,10 +18,11 @@ export function useStreamList(options: UseStreamListOptions): UseStreamListRetur
   const fetchStreams = useCallback(async () => {
     try {
       setLoading(true);
-      const port = process.env.NEXT_PUBLIC_API_PORT || '3001';
+      // Use NEXT_PUBLIC_API_URL in production, fallback to localhost for dev
+      const apiBase = process.env.NEXT_PUBLIC_API_URL || `http://${window.location.hostname}:3001`;
       // Fetch ALL streams (don't filter by session) so we discover everything
       const response = await fetch(
-        `http://${window.location.hostname}:${port}/api/streams`
+        `${apiBase}/api/streams`
       );
 
       if (!response.ok) {
