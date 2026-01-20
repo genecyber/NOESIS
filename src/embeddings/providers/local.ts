@@ -1,12 +1,22 @@
 /**
  * Local Embedding Provider
  * Uses @xenova/transformers for offline embeddings
+ * Models are bundled in the models/ directory
  */
 
 import type { EmbeddingProvider } from '../types.js';
+import * as path from 'path';
+import { fileURLToPath } from 'url';
+
+// Get the project root directory
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
+const PROJECT_ROOT = path.resolve(__dirname, '../../..');
+const MODELS_DIR = path.join(PROJECT_ROOT, 'models');
 
 // Dynamic import to handle the transformers library
 let pipeline: typeof import('@xenova/transformers').pipeline | null = null;
+let env: typeof import('@xenova/transformers').env | null = null;
 type FeatureExtractionPipeline = Awaited<ReturnType<typeof import('@xenova/transformers').pipeline>>;
 
 export class LocalEmbeddingProvider implements EmbeddingProvider {
@@ -28,9 +38,23 @@ export class LocalEmbeddingProvider implements EmbeddingProvider {
       if (!pipeline) {
         const transformers = await import('@xenova/transformers');
         pipeline = transformers.pipeline;
+        env = transformers.env;
+
+        // Configure to use bundled models
+        if (env) {
+          // Use local models directory instead of downloading
+          env.localModelPath = MODELS_DIR;
+          // Allow remote as fallback in case model isn't bundled
+          env.allowRemoteModels = true;
+          // Cache to local models dir
+          env.cacheDir = MODELS_DIR;
+
+          console.log(`[LocalEmbedding] Using models from: ${MODELS_DIR}`);
+        }
       }
       return true;
-    } catch {
+    } catch (error) {
+      console.error('[LocalEmbedding] Failed to load transformers:', error);
       return false;
     }
   }
@@ -45,15 +69,26 @@ export class LocalEmbeddingProvider implements EmbeddingProvider {
           if (!pipeline) {
             const transformers = await import('@xenova/transformers');
             pipeline = transformers.pipeline;
+            env = transformers.env;
+
+            if (env) {
+              env.localModelPath = MODELS_DIR;
+              env.allowRemoteModels = true;
+              env.cacheDir = MODELS_DIR;
+            }
           }
 
-          console.log(`Loading embedding model: ${this.modelName}...`);
+          console.log(`[LocalEmbedding] Loading model: ${this.modelName}...`);
+          console.log(`[LocalEmbedding] Models directory: ${MODELS_DIR}`);
+
           const model = await pipeline('feature-extraction', this.modelName, {
             quantized: true, // Use quantized model for smaller size
           });
-          console.log('Embedding model loaded successfully');
+
+          console.log('[LocalEmbedding] Model loaded successfully');
           return model;
         } catch (error) {
+          console.error('[LocalEmbedding] Failed to load model:', error);
           this.initError = error instanceof Error ? error : new Error(String(error));
           throw this.initError;
         }

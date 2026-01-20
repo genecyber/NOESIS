@@ -44,11 +44,15 @@ const emotionProcessor = new EmotionProcessor();
 let emotionDetectorInitialized = false;
 
 // Embedding service (singleton instance)
+// Use OpenAI in production if API key is set, otherwise use local
+const embeddingProvider = process.env.OPENAI_API_KEY ? 'openai' : 'local';
 const embeddingService = new EmbeddingService({
-  provider: 'local',
-  localModel: 'Xenova/all-MiniLM-L6-v2'
+  provider: embeddingProvider,
+  localModel: 'Xenova/all-MiniLM-L6-v2',
+  openaiApiKey: process.env.OPENAI_API_KEY
 });
 let embeddingServiceInitialized = false;
+console.log(`[Server] Using ${embeddingProvider} embedding provider`);
 
 // Initialize embedding service lazily on first use
 async function initializeEmbeddingService(): Promise<boolean> {
@@ -57,12 +61,20 @@ async function initializeEmbeddingService(): Promise<boolean> {
   }
 
   try {
+    console.log('[Server] Initializing embedding service...');
+    console.log('[Server] Provider:', embeddingProvider);
+    console.log('[Server] Memory:', Math.round(process.memoryUsage().heapUsed / 1024 / 1024), 'MB used');
+
     await embeddingService.initialize();
     embeddingServiceInitialized = true;
+
     console.log('[Server] Embedding service initialized successfully');
+    console.log('[Server] Provider name:', embeddingService.getProviderName());
+    console.log('[Server] Dimensions:', embeddingService.getDimensions());
     return true;
   } catch (error) {
     console.error('[Server] Failed to initialize embedding service:', error);
+    console.error('[Server] Error details:', error instanceof Error ? error.stack : String(error));
     return false;
   }
 }
