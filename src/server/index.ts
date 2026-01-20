@@ -521,17 +521,16 @@ app.delete('/api/session/:id', apiKeyAuth, (req: Request, res: Response) => {
   }
 });
 
-// List all sessions
-app.get('/api/sessions', apiKeyAuth, (_req: Request, res: Response) => {
-  // Get session info and enrich with stance for backward compatibility
-  const sessions = runtime.sessions.listSessions().map(info => {
-    const session = runtime.sessions.getSession(info.id);
-    return {
-      ...info,
-      stance: session?.agent.getCurrentStance()
-    };
-  });
-  res.json({ sessions });
+// List all sessions (includes persisted sessions from SQLite)
+app.get('/api/sessions', apiKeyAuth, async (_req: Request, res: Response) => {
+  try {
+    // Get all sessions from persistence (includes ones not in memory)
+    const sessions = await runtime.sessions.listSessionsAsync();
+    res.json({ sessions });
+  } catch (error) {
+    console.error('Failed to list sessions:', error);
+    res.status(500).json({ error: 'Failed to list sessions' });
+  }
 });
 
 // Execute a command (exposes all 50+ CLI commands via HTTP)
@@ -1299,7 +1298,11 @@ export { app, server };
 // Default to 3001 to avoid conflict with Next.js dev server (3000)
 const PORT = process.env.PORT || 3001;
 
-export function startServer(port: number = Number(PORT)): void {
+export async function startServer(port: number = Number(PORT)): Promise<void> {
+  // Load persisted sessions from SQLite
+  console.log('[Server] Loading sessions from SQLite...');
+  await runtime.sessions.loadAllSessions();
+
   // Initialize WebSocket server
   createWebSocketServer(server, streamManager);
 
@@ -1352,5 +1355,8 @@ function startDemoStream(): void {
 
 // Run if this is the main module
 if (import.meta.url === `file://${process.argv[1]}`) {
-  startServer();
+  startServer().catch(err => {
+    console.error('Failed to start server:', err);
+    process.exit(1);
+  });
 }

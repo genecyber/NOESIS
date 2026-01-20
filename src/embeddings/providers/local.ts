@@ -3,7 +3,7 @@
  * Uses @xenova/transformers for offline embeddings
  */
 
-import type { EmbeddingProvider } from '../types';
+import type { EmbeddingProvider } from '../types.js';
 
 // Dynamic import to handle the transformers library
 let pipeline: typeof import('@xenova/transformers').pipeline | null = null;
