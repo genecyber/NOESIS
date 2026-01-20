@@ -3,7 +3,7 @@
  * Will use Ollama's local embedding models when available
  */
 
-import type { EmbeddingProvider } from '../types.js';
+import type { EmbeddingProvider } from '../types';
 
 export class OllamaEmbeddingProvider implements EmbeddingProvider {
   name = 'ollama-nomic-embed';

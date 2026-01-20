@@ -3,7 +3,7 @@
  * Will use OpenAI's text-embedding-3-small model when API key is provided
  */
 
-import type { EmbeddingProvider } from '../types.js';
+import type { EmbeddingProvider } from '../types';
 
 export class OpenAIEmbeddingProvider implements EmbeddingProvider {
   name = 'openai-embedding-3-small';

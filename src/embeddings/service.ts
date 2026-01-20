@@ -3,11 +3,11 @@
  * Central service for text embeddings with provider abstraction and caching
  */
 
-import type { EmbeddingProvider, EmbeddingServiceConfig } from './types.js';
-import { DEFAULT_EMBEDDING_CONFIG } from './types.js';
-import { LocalEmbeddingProvider } from './providers/local.js';
-import { OpenAIEmbeddingProvider } from './providers/openai.js';
-import { OllamaEmbeddingProvider } from './providers/ollama.js';
+import type { EmbeddingProvider, EmbeddingServiceConfig } from './types';
+import { DEFAULT_EMBEDDING_CONFIG } from './types';
+import { LocalEmbeddingProvider } from './providers/local';
+import { OpenAIEmbeddingProvider } from './providers/openai';
+import { OllamaEmbeddingProvider } from './providers/ollama';
 
 export class EmbeddingService {
   private config: EmbeddingServiceConfig;

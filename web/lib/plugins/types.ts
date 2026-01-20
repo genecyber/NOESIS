@@ -149,6 +149,36 @@ export interface StorageCapability {
   clear(): void;
 }
 
+/** Memory entry structure */
+export interface Memory {
+  id: string;
+  type: 'episodic' | 'semantic' | 'identity';
+  content: string;
+  importance: number;
+  timestamp: number;
+  metadata?: Record<string, unknown>;
+}
+
+/** Memory search options */
+export interface MemorySearchOptions {
+  type?: 'episodic' | 'semantic' | 'identity';
+  minImportance?: number;
+  limit?: number;
+  query?: string;
+}
+
+/** Memory capability interface - access to METAMORPH memory system */
+export interface MemoryCapability {
+  /** Get all memories (optionally filtered by type) */
+  getMemories(options?: MemorySearchOptions): Promise<Memory[]>;
+  /** Add a new memory */
+  addMemory(memory: Omit<Memory, 'id' | 'timestamp'>): Promise<Memory>;
+  /** Delete a memory by ID */
+  deleteMemory(id: string): Promise<boolean>;
+  /** Search memories by content similarity */
+  searchMemories(query: string, options?: Omit<MemorySearchOptions, 'query'>): Promise<Memory[]>;
+}
+
 // =============================================================================
 // Plugin Commands
 // =============================================================================
@@ -249,6 +279,7 @@ export interface PlatformCapabilities {
   stt: STTCapability;
   vision: VisionCapability;
   storage: StorageCapability;
+  memory: MemoryCapability;
 }
 
 // =============================================================================

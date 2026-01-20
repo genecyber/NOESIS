@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
+import { useState, useEffect, useCallback, useRef, useMemo, ComponentType } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Layers, Settings, Clock, Brain, FolderOpen, MessageSquare, Menu, X, GripVertical, ChevronDown, Plus } from 'lucide-react';
 import Chat from '@/components/Chat';
@@ -22,7 +22,7 @@ import { plugins } from '@/plugins';
 import type { PanelDefinition, PanelProps } from '@/lib/plugins/types';
 
 // Core tabs (non-plugin panels)
-const CORE_TABS: { id: string; label: string; icon: React.ElementType }[] = [
+const CORE_TABS: { id: string; label: string; icon: ComponentType<{ className?: string }> }[] = [
   { id: 'stance', label: 'Stance', icon: Layers },
   { id: 'config', label: 'Config', icon: Settings },
   { id: 'timeline', label: 'Timeline', icon: Clock },

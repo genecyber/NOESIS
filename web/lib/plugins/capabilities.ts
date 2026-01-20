@@ -15,12 +15,22 @@ import type {
   STTCapability,
   VisionCapability,
   StorageCapability,
+  MemoryCapability,
+  Memory,
+  MemorySearchOptions,
   PlatformCapabilities,
   TTSOptions,
   STTOptions,
 } from './types';
 import type { EmotionContext } from '@/lib/types';
-import { analyzeVisionEmotion } from '@/lib/api';
+import { analyzeVisionEmotion, getMemories as getMemoriesFromAPI } from '@/lib/api';
+import {
+  getMemoriesFromStorage,
+  addMemoryToStorage,
+  deleteMemoryFromStorage,
+  searchMemoriesInStorage,
+  type StoredMemory,
+} from '@/lib/storage';
 
 // =============================================================================
 // Webcam Capability
@@ -369,6 +379,87 @@ export function createStorageCapability(pluginId: string): StorageCapability {
 }
 
 // =============================================================================
+// Memory Capability (METAMORPH Memory System)
+// =============================================================================
+
+export function createMemoryCapability(sessionId?: string): MemoryCapability {
+  const capability: MemoryCapability = {
+    async getMemories(options?: MemorySearchOptions): Promise<Memory[]> {
+      if (!sessionId) {
+        console.warn('[MemoryCapability] No session ID, returning empty');
+        return [];
+      }
+
+      try {
+        // Try server API first (has semantic search)
+        const result = await getMemoriesFromAPI(sessionId, options?.type, options?.limit);
+        return result.memories.map(m => ({
+          id: m.id,
+          type: m.type,
+          content: m.content,
+          importance: m.importance,
+          timestamp: new Date(m.timestamp).getTime(),
+        }));
+      } catch {
+        // Fall back to local storage
+        console.log('[MemoryCapability] Falling back to local storage');
+        const localMemories = searchMemoriesInStorage(sessionId, {
+          type: options?.type,
+          minImportance: options?.minImportance,
+          limit: options?.limit,
+        });
+        return localMemories;
+      }
+    },
+
+    async addMemory(memory: Omit<Memory, 'id' | 'timestamp'>): Promise<Memory> {
+      if (!sessionId) {
+        throw new Error('Session ID required to add memory');
+      }
+
+      const newMemory: StoredMemory = {
+        id: `mem_${Date.now()}_${Math.random().toString(36).slice(2, 9)}`,
+        type: memory.type,
+        content: memory.content,
+        importance: memory.importance,
+        timestamp: Date.now(),
+        metadata: memory.metadata,
+      };
+
+      // Add to local storage (syncs to server via PWA sync)
+      addMemoryToStorage(sessionId, newMemory);
+
+      return newMemory;
+    },
+
+    async deleteMemory(id: string): Promise<boolean> {
+      if (!sessionId) {
+        throw new Error('Session ID required to delete memory');
+      }
+
+      return deleteMemoryFromStorage(sessionId, id);
+    },
+
+    async searchMemories(query: string, options?: Omit<MemorySearchOptions, 'query'>): Promise<Memory[]> {
+      if (!sessionId) {
+        return [];
+      }
+
+      // For now, do simple client-side content matching
+      // TODO: Add server-side semantic search endpoint
+      const allMemories = await capability.getMemories(options);
+      const queryLower = query.toLowerCase();
+
+      return allMemories.filter(m =>
+        m.content.toLowerCase().includes(queryLower)
+      );
+    },
+  };
+
+  return capability;
+}
+
+// =============================================================================
 // Create All Capabilities
 // =============================================================================
 
@@ -382,5 +473,6 @@ export function createPlatformCapabilities(
     stt: createSTTCapability(),
     vision: createVisionCapability(sessionId),
     storage: createStorageCapability(pluginId),
+    memory: createMemoryCapability(sessionId),
   };
 }
