@@ -769,20 +769,37 @@ export class MetamorphAgent {
 
               // Detect AskUserQuestion tool and emit question event
               if (block.name === 'AskUserQuestion' && callbacks.onQuestion) {
-                const input = block.input as {
-                  questions?: Array<{
-                    question: string;
-                    header: string;
-                    options: Array<{ label: string; description: string }>;
-                    multiSelect: boolean;
-                  }>;
+                type QuestionType = {
+                  question: string;
+                  header: string;
+                  options: Array<{ label: string; description: string }>;
+                  multiSelect: boolean;
                 };
-                if (input.questions && Array.isArray(input.questions)) {
+
+                // Handle both input formats:
+                // 1. { questions: [...] } - standard SDK format
+                // 2. [...] - array directly (some SDK versions)
+                let questions: QuestionType[] | undefined;
+
+                if (Array.isArray(block.input)) {
+                  // Input is an array of questions directly
+                  questions = block.input as QuestionType[];
+                } else if (block.input && typeof block.input === 'object') {
+                  const inputObj = block.input as { questions?: QuestionType[] };
+                  questions = inputObj.questions;
+                }
+
+                if (questions && Array.isArray(questions) && questions.length > 0) {
+                  if (this.verbose) {
+                    console.log('[METAMORPH] AskUserQuestion detected:', JSON.stringify(questions, null, 2));
+                  }
                   callbacks.onQuestion({
                     id: block.id,
-                    questions: input.questions,
+                    questions: questions,
                     status: 'pending'
                   });
+                } else if (this.verbose) {
+                  console.log('[METAMORPH] AskUserQuestion input not recognized:', JSON.stringify(block.input));
                 }
               }
             }
