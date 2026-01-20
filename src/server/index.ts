@@ -1307,7 +1307,46 @@ export function startServer(port: number = Number(PORT)): void {
     console.log(`Health check: http://localhost:${port}/health`);
     console.log(`API info: http://localhost:${port}/api`);
     console.log(`WebSocket streams: ws://localhost:${port}/ws/streams`);
+
+    // Start demo server-stats stream
+    startDemoStream();
   });
+}
+
+/**
+ * Demo stream that publishes server stats every 5 seconds.
+ * Shows the streams system working out of the box.
+ */
+function startDemoStream(): void {
+  const DEMO_SESSION = 'demo';
+  const DEMO_CHANNEL = `${DEMO_SESSION}:server:stats`;
+  const INTERVAL_MS = 5000;
+
+  // Create the demo stream
+  streamManager.createStream(DEMO_CHANNEL, DEMO_SESSION);
+  console.log(`Demo stream started: ${DEMO_CHANNEL}`);
+
+  // Publish stats every 5 seconds
+  const startTime = Date.now();
+  setInterval(() => {
+    const memUsage = process.memoryUsage();
+    const cpuUsage = process.cpuUsage();
+
+    streamManager.publishEvent(DEMO_CHANNEL, {
+      uptime: Math.floor((Date.now() - startTime) / 1000),
+      memory: {
+        heapUsed: Math.round(memUsage.heapUsed / 1024 / 1024),
+        heapTotal: Math.round(memUsage.heapTotal / 1024 / 1024),
+        rss: Math.round(memUsage.rss / 1024 / 1024),
+      },
+      cpu: {
+        user: Math.round(cpuUsage.user / 1000),
+        system: Math.round(cpuUsage.system / 1000),
+      },
+      connections: streamManager.listStreams().length,
+      timestamp: new Date().toISOString(),
+    }, 'server');
+  }, INTERVAL_MS);
 }
 
 // Run if this is the main module
