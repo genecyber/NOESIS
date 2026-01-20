@@ -125,6 +125,7 @@ registerCliPlugin(myPlugin);
 | `microphone` | Speech-to-text via Web Speech API |
 | `vision` | AI image analysis (prompt-driven) |
 | `storage` | Plugin-scoped localStorage |
+| `memory` | Access to METAMORPH memory system |
 
 ### Vision API
 
@@ -165,11 +166,71 @@ capabilities.displayCapture.stop();
 
 Note: `displayCapture` may be `null` if browser doesn't support getDisplayMedia.
 
+### Memory Capability
+
+Access and manage METAMORPH's persistent memory system:
+
+```typescript
+// Get memories with optional filtering
+const memories = await capabilities.memory.getMemories({
+  type: 'episodic',        // Filter by type: 'episodic' | 'semantic' | 'identity'
+  minImportance: 0.5,      // Minimum importance score (0-1)
+  limit: 10                // Maximum number of results
+});
+
+// Add a new memory
+const memory = await capabilities.memory.addMemory({
+  type: 'semantic',
+  content: 'User prefers dark mode interfaces',
+  importance: 0.8,
+  metadata: {
+    source: 'preferences',
+    tags: ['ui', 'theme']
+  }
+});
+
+// Search memories by content similarity
+const related = await capabilities.memory.searchMemories(
+  'user interface preferences',
+  { type: 'semantic', limit: 5 }
+);
+
+// Delete a memory
+const deleted = await capabilities.memory.deleteMemory(memory.id);
+```
+
+#### Memory Types
+
+- **`episodic`**: Specific experiences and events (e.g., "User asked about Python on 2026-01-15")
+- **`semantic`**: General knowledge and facts (e.g., "User is a Python developer")
+- **`identity`**: Core identity and persistent traits (e.g., "I value clarity in communication")
+
+#### Memory Interface
+
+```typescript
+interface Memory {
+  id: string;                           // Unique memory identifier
+  type: 'episodic' | 'semantic' | 'identity';
+  content: string;                      // The memory content
+  importance: number;                   // Importance score (0-1)
+  timestamp: number;                    // Creation timestamp
+  metadata?: Record<string, unknown>;   // Optional metadata
+}
+
+interface MemorySearchOptions {
+  type?: 'episodic' | 'semantic' | 'identity';
+  minImportance?: number;
+  limit?: number;
+  query?: string;
+}
+```
+
 ### CLI Capabilities
 
 | Capability | Description |
 |------------|-------------|
 | `storage` | File-based plugin storage |
+| `memory` | Access to METAMORPH memory system |
 
 ## Permissions
 

@@ -414,6 +414,7 @@ Capabilities are platform features your plugin needs. The available capabilities
 | `vision` | AI image analysis via Claude Vision | Backend API |
 | `displayCapture` | Screen/window/tab sharing | `navigator.mediaDevices.getDisplayMedia()` |
 | `storage` | Plugin-scoped localStorage | `localStorage` |
+| `memory` | Long-term memory storage and retrieval | Backend API |
 | `notifications` | Browser notifications | `Notification` API |
 | `fullscreen` | Fullscreen mode | `Fullscreen` API |
 
@@ -422,6 +423,7 @@ Capabilities are platform features your plugin needs. The available capabilities
 | Capability | Description | Implementation |
 |------------|-------------|----------------|
 | `storage` | Plugin-scoped file storage | File system (`.metamorph/plugins/{id}/`) |
+| `memory` | Long-term memory storage and retrieval | File system (`.metamorph/memory/`) |
 | `filesystem:read` | Read files from disk | Node.js `fs` module |
 | `filesystem:write` | Write files to disk | Node.js `fs` module |
 | `network:fetch` | Make HTTP requests | `fetch` API |
@@ -430,6 +432,7 @@ Capabilities are platform features your plugin needs. The available capabilities
 
 Both web and CLI plugins have access to:
 - `storage` - Platform-specific key-value storage (localStorage on web, file-based in CLI)
+- `memory` - Long-term memory storage and retrieval for episodic, semantic, and identity memories
 
 ### Permissions
 
@@ -792,6 +795,168 @@ async function fetchExternalData(ctx: PluginContext) {
 ```
 
 **Note:** Requires `network:fetch` permission.
+
+#### Memory Capability
+
+The Memory capability provides long-term memory storage and retrieval across both web and CLI platforms. It allows plugins to store and search episodic experiences, semantic knowledge, and identity-related information.
+
+```typescript
+interface MemoryCapability {
+  // Get all memories with optional filtering
+  getMemories(options?: MemorySearchOptions): Promise<Memory[]>;
+
+  // Add a new memory
+  addMemory(memory: Omit<Memory, 'id' | 'timestamp'>): Promise<Memory>;
+
+  // Delete a memory by ID
+  deleteMemory(id: string): Promise<void>;
+
+  // Search memories by content
+  searchMemories(query: string, options?: MemorySearchOptions): Promise<Memory[]>;
+}
+```
+
+**Memory Interface:**
+
+```typescript
+interface Memory {
+  id: string;                        // Unique memory identifier
+  type: 'episodic' | 'semantic' | 'identity';  // Memory type
+  content: string;                   // Memory content
+  importance: number;                // 0-100, importance score
+  timestamp: number;                 // Unix timestamp
+  metadata?: Record<string, unknown>; // Additional metadata
+}
+```
+
+**Memory Types:**
+
+| Type | Description | Use Case |
+|------|-------------|----------|
+| `episodic` | Specific events and experiences | "User mentioned they work at Google", "Last conversation was about AI ethics" |
+| `semantic` | Facts and general knowledge | "User prefers TypeScript over JavaScript", "User is interested in machine learning" |
+| `identity` | Core identity and personality traits | "User is empathetic and values honesty", "User has a technical background" |
+
+**MemorySearchOptions:**
+
+```typescript
+interface MemorySearchOptions {
+  type?: 'episodic' | 'semantic' | 'identity';  // Filter by memory type
+  minImportance?: number;            // Minimum importance (0-100)
+  limit?: number;                    // Maximum results to return
+  startDate?: number;                // Unix timestamp - only memories after this date
+  endDate?: number;                  // Unix timestamp - only memories before this date
+}
+```
+
+**Usage Example (Web):**
+
+```tsx
+async function trackUserPreference(capabilities: PlatformCapabilities) {
+  // Add a semantic memory
+  await capabilities.memory.addMemory({
+    type: 'semantic',
+    content: 'User prefers dark mode interfaces',
+    importance: 75,
+    metadata: { category: 'preferences', source: 'settings' }
+  });
+
+  // Search for preferences
+  const preferences = await capabilities.memory.searchMemories(
+    'prefers',
+    { type: 'semantic', minImportance: 50 }
+  );
+
+  console.log('User preferences:', preferences);
+}
+```
+
+**Usage Example (CLI):**
+
+```typescript
+async function rememberConversationContext(ctx: PluginContext) {
+  // Add an episodic memory
+  await ctx.capabilities.memory.addMemory({
+    type: 'episodic',
+    content: 'User asked about implementing authentication in Next.js',
+    importance: 80,
+    metadata: {
+      topic: 'web-development',
+      framework: 'nextjs',
+      sessionId: ctx.sessionId
+    }
+  });
+
+  // Get recent episodic memories
+  const recentMemories = await ctx.capabilities.memory.getMemories({
+    type: 'episodic',
+    limit: 10,
+    startDate: Date.now() - 7 * 24 * 60 * 60 * 1000  // Last 7 days
+  });
+
+  // Delete old, low-importance memories
+  const oldMemories = await ctx.capabilities.memory.getMemories({
+    endDate: Date.now() - 30 * 24 * 60 * 60 * 1000,  // Older than 30 days
+    minImportance: 0,
+    limit: 100
+  });
+
+  for (const memory of oldMemories) {
+    if (memory.importance < 40) {
+      await ctx.capabilities.memory.deleteMemory(memory.id);
+    }
+  }
+}
+```
+
+**Best Practices:**
+
+1. **Use Appropriate Types**: Choose the right memory type for the information
+   - `episodic` for specific events and conversations
+   - `semantic` for learned facts and patterns
+   - `identity` for core user traits and preferences
+
+2. **Set Meaningful Importance**: Use the importance score to prioritize memories
+   - 0-30: Low importance, can be deleted
+   - 31-70: Medium importance, useful context
+   - 71-100: High importance, core information
+
+3. **Include Rich Metadata**: Add metadata to make memories searchable and contextual
+   ```typescript
+   metadata: {
+     topic: 'programming',
+     language: 'typescript',
+     sessionId: 'abc123',
+     userMood: 'frustrated',
+     resolvedIssue: true
+   }
+   ```
+
+4. **Clean Up Old Memories**: Periodically remove low-importance or outdated memories
+   ```typescript
+   // Delete memories older than 90 days with low importance
+   const oldLowPriority = await capabilities.memory.getMemories({
+     endDate: Date.now() - 90 * 24 * 60 * 60 * 1000,
+     minImportance: 0,
+     limit: 500
+   });
+
+   for (const memory of oldLowPriority) {
+     if (memory.importance < 30) {
+       await capabilities.memory.deleteMemory(memory.id);
+     }
+   }
+   ```
+
+5. **Search Semantically**: Use natural language queries for searching
+   ```typescript
+   const results = await capabilities.memory.searchMemories(
+     'user career goals and aspirations',
+     { type: 'identity', minImportance: 60 }
+   );
+   ```
+
+**Note:** Requires `memory:read` permission for reading and `memory:write` permission for creating/deleting memories.
 
 ---
 
