@@ -279,29 +279,17 @@ export default function StreamsPanel({
                 </button>
               </div>
 
-              <div className="max-h-48 overflow-y-auto space-y-1">
+              <div className="space-y-2">
                 {events.length === 0 ? (
                   <div className="text-xs text-emblem-muted text-center py-4">
+                    <Radio className="w-5 h-5 mx-auto mb-2 animate-pulse opacity-50" />
                     Waiting for events...
                   </div>
                 ) : (
-                  events.slice(-20).map((event) => (
-                    <div
-                      key={event.id}
-                      className="text-xs font-mono bg-emblem-surface/50 rounded p-2 overflow-x-auto"
-                    >
-                      {panelState.showTimestamps && (
-                        <span className="text-emblem-muted mr-2">
-                          {new Date(event.timestamp).toLocaleTimeString()}
-                        </span>
-                      )}
-                      <span className="text-emblem-text">
-                        {typeof event.data === 'object'
-                          ? JSON.stringify(event.data, null, 0)
-                          : String(event.data)}
-                      </span>
-                    </div>
-                  ))
+                  <EventDisplay
+                    event={events[events.length - 1]}
+                    showTimestamp={panelState.showTimestamps}
+                  />
                 )}
               </div>
             </div>
@@ -380,6 +368,166 @@ export default function StreamsPanel({
         )}
       </AnimatePresence>
     </div>
+  );
+}
+
+/**
+ * Format uptime seconds into human readable string
+ */
+function formatUptime(seconds: number): string {
+  const hours = Math.floor(seconds / 3600);
+  const minutes = Math.floor((seconds % 3600) / 60);
+  const secs = seconds % 60;
+
+  if (hours > 0) return `${hours}h ${minutes}m ${secs}s`;
+  if (minutes > 0) return `${minutes}m ${secs}s`;
+  return `${secs}s`;
+}
+
+/**
+ * Progress bar component for metrics
+ */
+function MetricBar({ label, value, max, unit, color = 'emblem-primary' }: {
+  label: string;
+  value: number;
+  max: number;
+  unit: string;
+  color?: string;
+}) {
+  const percentage = Math.min((value / max) * 100, 100);
+  return (
+    <div className="space-y-1">
+      <div className="flex justify-between text-xs">
+        <span className="text-emblem-muted">{label}</span>
+        <span className="text-emblem-text">{value} {unit}</span>
+      </div>
+      <div className="h-1.5 bg-emblem-surface rounded-full overflow-hidden">
+        <motion.div
+          className={`h-full bg-${color} rounded-full`}
+          initial={{ width: 0 }}
+          animate={{ width: `${percentage}%` }}
+          transition={{ duration: 0.3, ease: 'easeOut' }}
+          style={{ backgroundColor: color === 'emblem-primary' ? 'var(--emblem-primary)' : color }}
+        />
+      </div>
+    </div>
+  );
+}
+
+/**
+ * Event Display Component - Renders event data in a beautiful format
+ */
+function EventDisplay({ event, showTimestamp }: {
+  event: { id: string; timestamp: string; data: unknown; source?: string };
+  showTimestamp: boolean;
+}) {
+  const data = event.data as Record<string, unknown>;
+
+  // Detect server stats format
+  const isServerStats = data &&
+    typeof data === 'object' &&
+    'uptime' in data &&
+    'memory' in data &&
+    'cpu' in data;
+
+  if (isServerStats) {
+    const memory = data.memory as { heapUsed: number; heapTotal: number; rss: number };
+    const cpu = data.cpu as { user: number; system: number };
+    const uptime = data.uptime as number;
+    const connections = data.connections as number;
+
+    return (
+      <motion.div
+        key={event.id}
+        initial={{ opacity: 0, y: -10 }}
+        animate={{ opacity: 1, y: 0 }}
+        className="space-y-3"
+      >
+        {/* Header with timestamp */}
+        {showTimestamp && (
+          <div className="flex items-center gap-2 text-xs text-emblem-muted">
+            <Clock className="w-3 h-3" />
+            <span>{new Date(event.timestamp).toLocaleTimeString()}</span>
+            {event.source && (
+              <span className="px-1.5 py-0.5 bg-emblem-primary/20 text-emblem-primary rounded text-[10px]">
+                {event.source}
+              </span>
+            )}
+          </div>
+        )}
+
+        {/* Stats Grid */}
+        <div className="grid grid-cols-2 gap-3">
+          {/* Uptime */}
+          <div className="bg-emblem-surface/30 rounded-lg p-2.5">
+            <div className="text-[10px] text-emblem-muted uppercase tracking-wide">Uptime</div>
+            <div className="text-lg font-semibold text-emblem-text">{formatUptime(uptime)}</div>
+          </div>
+
+          {/* Connections */}
+          <div className="bg-emblem-surface/30 rounded-lg p-2.5">
+            <div className="text-[10px] text-emblem-muted uppercase tracking-wide">Streams</div>
+            <div className="text-lg font-semibold text-emblem-text">{connections}</div>
+          </div>
+        </div>
+
+        {/* Memory */}
+        <div className="space-y-2">
+          <div className="text-[10px] text-emblem-muted uppercase tracking-wide">Memory</div>
+          <MetricBar label="Heap" value={memory.heapUsed} max={memory.heapTotal} unit="MB" />
+          <MetricBar label="RSS" value={memory.rss} max={memory.rss * 1.5} unit="MB" color="#22c55e" />
+        </div>
+
+        {/* CPU */}
+        <div className="space-y-2">
+          <div className="text-[10px] text-emblem-muted uppercase tracking-wide">CPU Time (ms)</div>
+          <div className="grid grid-cols-2 gap-2 text-xs">
+            <div className="flex justify-between bg-emblem-surface/30 rounded px-2 py-1.5">
+              <span className="text-emblem-muted">User</span>
+              <span className="text-emblem-text font-mono">{cpu.user.toLocaleString()}</span>
+            </div>
+            <div className="flex justify-between bg-emblem-surface/30 rounded px-2 py-1.5">
+              <span className="text-emblem-muted">System</span>
+              <span className="text-emblem-text font-mono">{cpu.system.toLocaleString()}</span>
+            </div>
+          </div>
+        </div>
+      </motion.div>
+    );
+  }
+
+  // Generic JSON display for non-server-stats data
+  return (
+    <motion.div
+      key={event.id}
+      initial={{ opacity: 0, y: -10 }}
+      animate={{ opacity: 1, y: 0 }}
+      className="space-y-2"
+    >
+      {showTimestamp && (
+        <div className="flex items-center gap-2 text-xs text-emblem-muted">
+          <Clock className="w-3 h-3" />
+          <span>{new Date(event.timestamp).toLocaleTimeString()}</span>
+        </div>
+      )}
+
+      {typeof data === 'object' && data !== null ? (
+        <div className="grid gap-1.5">
+          {Object.entries(data).map(([key, value]) => (
+            <div key={key} className="flex items-start gap-2 text-xs bg-emblem-surface/30 rounded px-2 py-1.5">
+              <span className="text-emblem-muted shrink-0">{key}:</span>
+              <span className="text-emblem-text font-mono break-all">
+                {typeof value === 'object' ? JSON.stringify(value) : String(value)}
+              </span>
+            </div>
+          ))}
+        </div>
+      ) : (
+        <div className="text-sm text-emblem-text bg-emblem-surface/30 rounded px-2 py-1.5">
+          {String(data)}
+        </div>
+      )}
+    </motion.div>
   );
 }
 
