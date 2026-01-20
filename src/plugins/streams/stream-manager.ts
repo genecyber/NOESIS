@@ -1,5 +1,6 @@
 import { EventEmitter } from 'events';
 import Ajv from 'ajv';
+import addFormats from 'ajv-formats';
 import { v4 as uuidv4 } from 'uuid';
 import type { WebSocket } from 'ws';
 import type {
@@ -21,12 +22,18 @@ export class StreamManager extends EventEmitter {
   private history = new Map<string, StreamEvent[]>();
   private subscribers = new Map<string, Set<WebSocket>>();
   private schemas = new Map<string, JSONSchema7>();
-  private ajv = new Ajv();
+  private ajv: Ajv;
+
+  // Initialize AJV in constructor to properly apply formats
   private config: Required<StreamManagerConfig>;
 
   constructor(config?: StreamManagerConfig) {
     super();
     this.config = { ...DEFAULT_CONFIG, ...config };
+
+    // Initialize AJV with format support (date-time, uri, email, etc.)
+    this.ajv = new Ajv({ allErrors: true });
+    addFormats(this.ajv);
   }
 
   // Create or get a stream (auto-creates on first event)
