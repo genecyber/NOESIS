@@ -8,6 +8,7 @@
 import type { WebPlugin } from '@/lib/plugins/types';
 import { emotionPlugin } from './emotion';
 import { memoryExplorerPlugin } from './memory-explorer';
+import { streamsPlugin } from './streams';
 
 /**
  * All available plugins - add new plugins here
@@ -15,6 +16,7 @@ import { memoryExplorerPlugin } from './memory-explorer';
 export const plugins: WebPlugin[] = [
   emotionPlugin,
   memoryExplorerPlugin,
+  streamsPlugin,
 ];
 
 /**
@@ -32,4 +34,4 @@ export function getPluginIds(): string[] {
 }
 
 // Re-export individual plugins for direct imports
-export { emotionPlugin, memoryExplorerPlugin };
+export { emotionPlugin, memoryExplorerPlugin, streamsPlugin };

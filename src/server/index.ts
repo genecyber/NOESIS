@@ -14,14 +14,20 @@
 
 import express, { Request, Response, NextFunction } from 'express';
 import cors from 'cors';
+import { createServer } from 'http';
 import { MetamorphAgent, StreamCallbacks } from '../agent/index.js';
 import { ModeConfig } from '../types/index.js';
 import { MetamorphRuntime } from '../runtime/index.js';
 import { FaceApiDetector } from '../plugins/emotion-detection/face-api-detector.js';
 import { EmotionProcessor } from '../plugins/emotion-detection/emotion-processor.js';
 import { pluginEventBus } from '../plugins/event-bus.js';
+import { createWebSocketServer } from './websocket.js';
+import { streamManager } from '../plugins/streams/stream-manager.js';
 
 const app = express();
+
+// Create HTTP server for WebSocket support
+const server = createServer(app);
 
 // Middleware
 app.use(cors());
@@ -1078,6 +1084,86 @@ app.post('/api/chat/vision', apiKeyAuth, async (req: Request, res: Response) => 
   }
 });
 
+// ============================================================================
+// Streams Endpoints
+// ============================================================================
+
+// List streams for a session
+app.get('/api/streams', apiKeyAuth, (req, res) => {
+  const sessionId = req.query.sessionId as string || 'default';
+  const streams = streamManager.listStreams(sessionId);
+  res.json({ streams });
+});
+
+// Get stream info
+app.get('/api/streams/:channel', apiKeyAuth, (req, res) => {
+  const channel = decodeURIComponent(req.params.channel);
+  const stream = streamManager.getStream(channel);
+  if (!stream) {
+    res.status(404).json({ error: 'Stream not found' });
+    return;
+  }
+  res.json({ stream });
+});
+
+// Create a stream
+app.post('/api/streams', apiKeyAuth, (req, res) => {
+  try {
+    const { channel, sessionId, schema, metadata } = req.body;
+    const effectiveSessionId = sessionId || 'default';
+    const stream = streamManager.createStream(channel, effectiveSessionId, schema, metadata);
+    res.json({ stream });
+  } catch (err) {
+    res.status(400).json({ error: err instanceof Error ? err.message : 'Failed to create stream' });
+  }
+});
+
+// Publish an event to a stream (for HTTP-based publishing)
+app.post('/api/streams/:channel/event', apiKeyAuth, (req, res) => {
+  const channel = decodeURIComponent(req.params.channel);
+  const { data, source } = req.body;
+  const event = streamManager.publishEvent(channel, data, source);
+  if (!event) {
+    res.status(400).json({ error: 'Failed to publish event (validation error or stream issue)' });
+    return;
+  }
+  res.json({ event });
+});
+
+// Get stream history
+app.get('/api/streams/:channel/history', apiKeyAuth, (req, res) => {
+  const channel = decodeURIComponent(req.params.channel);
+  const limit = req.query.limit ? parseInt(req.query.limit as string, 10) : 100;
+  const events = streamManager.getHistory(channel, limit);
+  res.json({ events });
+});
+
+// Set/update stream schema
+app.post('/api/streams/:channel/schema', apiKeyAuth, (req, res) => {
+  const channel = decodeURIComponent(req.params.channel);
+  const { schema } = req.body;
+  streamManager.setSchema(channel, schema);
+  res.json({ success: true });
+});
+
+// Get stream schema
+app.get('/api/streams/:channel/schema', apiKeyAuth, (req, res) => {
+  const channel = decodeURIComponent(req.params.channel);
+  const schema = streamManager.getSchema(channel);
+  if (!schema) {
+    res.status(404).json({ error: 'No schema defined for stream' });
+    return;
+  }
+  res.json({ schema });
+});
+
+// Close a stream
+app.delete('/api/streams/:channel', apiKeyAuth, (req, res) => {
+  const channel = decodeURIComponent(req.params.channel);
+  streamManager.closeStream(channel);
+  res.json({ success: true });
+});
+
 // Error handling middleware
 app.use((err: Error, _req: Request, res: Response, _next: NextFunction) => {
   console.error('Server error:', err);
@@ -1085,17 +1171,21 @@ app.use((err: Error, _req: Request, res: Response, _next: NextFunction) => {
 });
 
 // Export for use as module
-export { app };
+export { app, server };
 
 // Start server if run directly
 // Default to 3001 to avoid conflict with Next.js dev server (3000)
 const PORT = process.env.PORT || 3001;
 
 export function startServer(port: number = Number(PORT)): void {
-  app.listen(port, () => {
+  // Initialize WebSocket server
+  createWebSocketServer(server, streamManager);
+
+  server.listen(port, () => {
     console.log(`METAMORPH API server running on port ${port}`);
     console.log(`Health check: http://localhost:${port}/health`);
     console.log(`API info: http://localhost:${port}/api`);
+    console.log(`WebSocket streams: ws://localhost:${port}/ws/streams`);
   });
 }
 

@@ -17,14 +17,18 @@ export interface PluginManifest {
   version: string;
   description: string;
   author: string;
-  license: string;
+  license?: string;
   homepage?: string;
   repository?: string;
-  keywords: string[];
-  metamorphVersion: string;  // Minimum compatible version
-  entryPoint: string;
-  permissions: PluginPermission[];
+  keywords?: string[];
+  metamorphVersion?: string;  // Minimum compatible version
+  entryPoint?: string;
+  permissions?: PluginPermission[];
   dependencies?: Record<string, string>;
+  // Support for plugin-system style manifests
+  operators?: unknown[];
+  hooks?: unknown[];
+  settings?: unknown[];
 }
 
 export type PluginPermission =
@@ -243,7 +247,7 @@ export default class ${this.toPascalCase(manifest.name)}Plugin implements Plugin
       const plugin = new pluginClass();
 
       // Create context
-      const context = this.createPluginContext(manifest.name, manifest.permissions);
+      const context = this.createPluginContext(manifest.name, manifest.permissions || []);
 
       // Initialize plugin
       await plugin.initialize(context);
@@ -578,11 +582,11 @@ ${manifest.license}
 
 This plugin requires the following permissions:
 
-${manifest.permissions.map(p => `- \`${p}\``).join('\n')}
+${(manifest.permissions || []).map(p => `- \`${p}\``).join('\n')}
 
 ## Keywords
 
-${manifest.keywords.join(', ')}
+${(manifest.keywords || []).join(', ')}
 
 ${manifest.homepage ? `## Homepage\n\n${manifest.homepage}` : ''}
 

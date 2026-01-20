@@ -24,7 +24,11 @@ export type PluginEventType =
   | 'emotion:detected'
   | 'emotion:vision_request'
   | 'memory:added'
-  | 'operator:applied';
+  | 'operator:applied'
+  | 'stream:created'
+  | 'stream:event'
+  | 'stream:closed'
+  | 'stream:validation_error';
 
 /**
  * Type-safe event data mapping
@@ -75,6 +79,23 @@ export interface PluginEventData {
       stanceDelta?: Partial<Stance>;
       error?: string;
     };
+  };
+  'stream:created': {
+    channel: string;
+    sessionId: string;
+    info: unknown; // StreamInfo
+  };
+  'stream:event': {
+    channel: string;
+    event: unknown; // StreamEvent
+  };
+  'stream:closed': {
+    channel: string;
+    reason?: string;
+  };
+  'stream:validation_error': {
+    channel: string;
+    errors?: string[];
   };
 }
 
