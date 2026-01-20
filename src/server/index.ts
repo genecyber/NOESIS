@@ -708,13 +708,23 @@ app.post('/api/sync', apiKeyAuth, async (req: Request, res: Response) => {
         let synced = 0;
         for (const memory of memories) {
           try {
-            // Add memory to the agent's memory store
-            agent.storeMemory(
-              memory.content,
-              memory.type,
-              memory.importance
+            // Get existing memories to check for duplicates
+            const existingMemories = agent.searchMemories({ type: memory.type, limit: 1000 });
+
+            // Check if already exists (by content to be safe, since IDs may differ)
+            const alreadyExists = existingMemories.some(
+              m => m.content === memory.content && m.type === memory.type
             );
-            synced++;
+
+            if (!alreadyExists) {
+              // Add memory to the agent's memory store
+              agent.storeMemory(
+                memory.content,
+                memory.type,
+                memory.importance
+              );
+              synced++;
+            }
           } catch (e) {
             console.error(`Failed to sync memory ${memory.id}:`, e);
           }

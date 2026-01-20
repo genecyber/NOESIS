@@ -263,6 +263,12 @@ export function mergeMemories(
   serverMemories: StoredMemory[]
 ): StoredMemory[] {
   const localMemories = getMemoriesFromStorage(sessionId);
+
+  // If server has no memories, don't overwrite local
+  if (!serverMemories || serverMemories.length === 0) {
+    return localMemories;
+  }
+
   const merged = new Map<string, StoredMemory>();
 
   // Add local memories first
