@@ -769,6 +769,8 @@ export class MetamorphAgent {
 
               // Detect AskUserQuestion tool and emit question event
               if (block.name === 'AskUserQuestion' && callbacks.onQuestion) {
+                console.log('[METAMORPH] AskUserQuestion tool detected, raw input:', JSON.stringify(block.input));
+
                 type QuestionType = {
                   question: string;
                   header: string;
@@ -776,7 +778,7 @@ export class MetamorphAgent {
                   multiSelect: boolean;
                 };
 
-                // Handle both input formats:
+                // Handle multiple input formats:
                 // 1. { questions: [...] } - standard SDK format
                 // 2. [...] - array directly (some SDK versions)
                 let questions: QuestionType[] | undefined;
@@ -789,17 +791,24 @@ export class MetamorphAgent {
                   questions = inputObj.questions;
                 }
 
+                // Validate we have valid questions
                 if (questions && Array.isArray(questions) && questions.length > 0) {
-                  if (this.verbose) {
-                    console.log('[METAMORPH] AskUserQuestion detected:', JSON.stringify(questions, null, 2));
-                  }
+                  // Ensure each question has required fields, providing defaults
+                  const normalizedQuestions = questions.map((q, idx) => ({
+                    question: q.question || `Question ${idx + 1}`,
+                    header: q.header || 'Question',
+                    options: Array.isArray(q.options) ? q.options : [],
+                    multiSelect: q.multiSelect ?? false,
+                  }));
+
+                  console.log('[METAMORPH] Emitting question event:', JSON.stringify(normalizedQuestions));
                   callbacks.onQuestion({
                     id: block.id,
-                    questions: questions,
+                    questions: normalizedQuestions,
                     status: 'pending'
                   });
-                } else if (this.verbose) {
-                  console.log('[METAMORPH] AskUserQuestion input not recognized:', JSON.stringify(block.input));
+                } else {
+                  console.log('[METAMORPH] AskUserQuestion input not valid questions array:', JSON.stringify(block.input));
                 }
               }
             }
