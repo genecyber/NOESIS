@@ -36,7 +36,7 @@ export const memoryExplorerPlugin: WebPlugin = definePlugin({
   },
 
   panel: {
-    id: 'memories',
+    id: 'memory-explorer',
     label: '3D Memories',
     icon: Brain,
     component: MemoryExplorerPanel,
