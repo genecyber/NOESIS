@@ -7,6 +7,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 ## Table of Contents
 
 - [Unreleased](#unreleased)
+  - [Plugin System Enhancements](#plugin-system-enhancements)
   - [Unified Runtime Architecture](#unified-runtime-architecture)
   - [Agent Self-Introspection MCP Tools](#agent-self-introspection-mcp-tools)
   - [Integrated Adaptation Mechanisms](#integrated-adaptation-mechanisms)
@@ -77,6 +78,27 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
   - Injects up to 3 memories into system prompt with relevance scores
   - Uses semantic similarity, recency decay, stance alignment, and cooldown tracking
   - Controlled by `config.enableProactiveMemory` (default: true)
+
+#### Plugin System Enhancements
+- **Memory Capability**: Plugins can now access METAMORPH's memory system
+  - `MemoryCapability` interface with `getMemories()`, `addMemory()`, `deleteMemory()`, `searchMemories()`
+  - `Memory` interface with id, type (episodic/semantic/identity), content, importance, timestamp, metadata
+  - `MemorySearchOptions` for filtering by type, importance, and limit
+  - Server API fallback to localStorage for offline support
+  - Full documentation in PLUGINS.md and SDK README
+- **Dynamic Plugin Panels**: Panels now loaded from plugin registry instead of hardcoded
+  - `pluginRegistry.getPanels()` returns all enabled plugin panels
+  - Panels rendered dynamically with proper `PanelProps` (sessionId, stance, config, emotion, capabilities)
+  - Core panels (Stance, Config, Timeline, Evolution, Sessions, Memories) preserved
+  - Plugin panels appear after core panels in tab order
+- **Plugin Auto-Discovery**: Plugins in `web/plugins/` automatically registered on app load
+  - `web/plugins/index.ts` exports all discovered plugins
+  - Plugins registered and enabled during app initialization
+  - No manual registration needed for built-in plugins
+- **Plugin Commands in CommandPalette**: Plugin-defined commands now appear in slash command menu
+  - `COMMANDS` proxy now handles `indexOf` for proper command lookup
+  - Plugin commands execute via `isPluginCommand()` / `executePluginCommand()` before switch statement
+  - Commands appear in autocomplete with descriptions
 
 #### Web UI Enhancements
 - **Slash Commands in Chat**: All 60+ CLI commands available via `/` in chat with autocomplete
