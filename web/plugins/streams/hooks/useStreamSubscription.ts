@@ -57,10 +57,12 @@ function connectStore(sessionId: string, store: ConnectionStore) {
   if (store.state.ws?.readyState === WebSocket.OPEN) return;
   if (store.state.ws?.readyState === WebSocket.CONNECTING) return;
 
-  const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+  const isSecure = window.location.protocol === 'https:';
+  const protocol = isSecure ? 'wss:' : 'ws:';
   const host = window.location.hostname;
-  const port = process.env.NEXT_PUBLIC_API_PORT || '3001';
-  const url = `${protocol}//${host}:${port}/ws/streams?sessionId=${encodeURIComponent(sessionId)}`;
+  // In production (https), use default port. In dev, use configured port.
+  const port = isSecure ? '' : `:${process.env.NEXT_PUBLIC_API_PORT || '3001'}`;
+  const url = `${protocol}//${host}${port}/ws/streams?sessionId=${encodeURIComponent(sessionId)}`;
 
   try {
     const ws = new WebSocket(url);
