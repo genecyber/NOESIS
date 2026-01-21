@@ -4,7 +4,8 @@ import { useState, useRef, useEffect, useCallback } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import ReactMarkdown from 'react-markdown';
 import type { Message, ChatResponse, Stance, ModeConfig, ToolUseEvent, QuestionEvent } from '@/lib/types';
-import { chatStream, getState, getHistory, exportState, getSubagents, updateConfig, invokeSubagent, getMemories, getSessions, deleteSession } from '@/lib/api';
+import { chatStream, getState, getHistory, exportState, getSubagents, updateConfig, invokeSubagent, getMemories, getSessions, deleteSession, sendSteeringMessage } from '@/lib/api';
+import type { SteeringMessage } from '@/lib/types';
 import CommandPalette, { CommandHelp } from './CommandPalette';
 import CommandOutput from './CommandOutput';
 import ToolUsage, { ActiveToolsBar } from './ToolUsage';
@@ -96,6 +97,10 @@ export default function Chat({ sessionId, onSessionChange, onResponse, onStanceU
 
   // AskUserQuestion tool state
   const [pendingQuestion, setPendingQuestion] = useState<QuestionEvent | null>(null);
+
+  // Steering message queue
+  const [steeringQueue, setSteeringQueue] = useState<SteeringMessage[]>([]);
+  const [steeringSent, setSteeringSent] = useState<number>(0); // Count of sent steering messages
 
   // Input history with localStorage persistence
   const { history: inputHistory, addToHistory } = useInputHistory();
@@ -554,6 +559,9 @@ export default function Chat({ sessionId, onSessionChange, onResponse, onStanceU
         accumulatedTextRef.current = '';
         setActiveTools([]);
         toolsRef.current.clear();
+        // Clear steering queue on completion
+        setSteeringQueue([]);
+        setSteeringSent(0);
         onResponse?.(data);
 
         // Dispatch event for injected memories to trigger mini preview pulse
@@ -614,8 +622,44 @@ export default function Chat({ sessionId, onSessionChange, onResponse, onStanceU
       accumulatedTextRef.current = '';
       setActiveTools([]);
       toolsRef.current.clear();
+      // Clear steering queue on stop
+      setSteeringQueue([]);
+      setSteeringSent(0);
     }
   };
+
+  // Handle steering message submission
+  const handleSteeringSubmit = useCallback(async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!input.trim() || !sessionId || !isLoading) return;
+
+    const content = input.trim();
+    setInput('');
+
+    // Add to local queue immediately for UI feedback
+    const localMessage: SteeringMessage = {
+      id: `local-${Date.now()}`,
+      content,
+      timestamp: Date.now(),
+    };
+    setSteeringQueue(prev => [...prev, localMessage]);
+
+    try {
+      // Send to server
+      const result = await sendSteeringMessage(sessionId, content);
+      // Update the local message with the server ID
+      setSteeringQueue(prev =>
+        prev.map(m =>
+          m.id === localMessage.id ? { ...m, id: result.message.id } : m
+        )
+      );
+      setSteeringSent(prev => prev + 1);
+    } catch (error) {
+      console.error('[Chat] Failed to send steering message:', error);
+      // Remove the local message if server call failed
+      setSteeringQueue(prev => prev.filter(m => m.id !== localMessage.id));
+    }
+  }, [input, sessionId, isLoading]);
 
   // Handle question answer submission - sends answer as a follow-up chat message
   const handleQuestionAnswer = useCallback((questionId: string, answers: Record<number, string[]>) => {

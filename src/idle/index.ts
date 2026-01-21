@@ -3,11 +3,11 @@
  */
 
 export * from './types.js';
-export { IdleDetector, GlobalIdleDetector } from './detector.js';
+export { IdleDetector } from './detector.js';
 export { EmergentGoalPromoter } from './goal-promoter.js';
 export { AutonomousEvolutionOrchestrator } from './evolution-orchestrator.js';
 
-import { IdleDetector, GlobalIdleDetector } from './detector.js';
+import { IdleDetector } from './detector.js';
 import { EmergentGoalPromoter } from './goal-promoter.js';
 import { AutonomousEvolutionOrchestrator } from './evolution-orchestrator.js';
 import {

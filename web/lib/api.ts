@@ -15,6 +15,7 @@ import type {
   ToolUseEvent,
   EmotionContext,
   QuestionEvent,
+  SteeringMessage,
 } from './types';
 
 // Re-export EmotionContext for backward compatibility
@@ -590,4 +591,60 @@ export async function getEmotionContext(
   message?: string;
 }> {
   return fetchJson(`${API_BASE}/sync/emotions?sessionId=${encodeURIComponent(sessionId)}`);
+}
+
+// ============================================================================
+// Steering API - User guidance during streaming/tool use
+// ============================================================================
+
+/**
+ * Send a steering message to guide Claude during processing
+ * These messages are queued and incorporated during the tool loop
+ *
+ * @param sessionId - The session ID
+ * @param content - The steering message content
+ * @returns The created steering message
+ */
+export async function sendSteeringMessage(
+  sessionId: string,
+  content: string
+): Promise<{
+  success: boolean;
+  message: SteeringMessage;
+}> {
+  return fetchJson(`${API_BASE}/steering`, {
+    method: 'POST',
+    body: JSON.stringify({ sessionId, content }),
+  });
+}
+
+/**
+ * Get pending steering messages for a session
+ *
+ * @param sessionId - The session ID
+ * @returns Array of pending steering messages
+ */
+export async function getSteeringMessages(
+  sessionId: string
+): Promise<{
+  success: boolean;
+  messages: SteeringMessage[];
+}> {
+  return fetchJson(`${API_BASE}/steering/${encodeURIComponent(sessionId)}`);
+}
+
+/**
+ * Clear all steering messages for a session
+ *
+ * @param sessionId - The session ID
+ */
+export async function clearSteeringMessages(
+  sessionId: string
+): Promise<{
+  success: boolean;
+  cleared: number;
+}> {
+  return fetchJson(`${API_BASE}/steering/${encodeURIComponent(sessionId)}`, {
+    method: 'DELETE',
+  });
 }

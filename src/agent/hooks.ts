@@ -14,6 +14,68 @@ import {
   TriggerResult,
   EmotionContext
 } from '../types/index.js';
+
+/**
+ * Steering message from user during tool loop
+ */
+export interface SteeringMessage {
+  id: string;
+  content: string;
+  timestamp: number;
+  processed?: boolean;
+}
+
+/**
+ * Steering message provider function type
+ * Returns pending steering messages for a session
+ */
+export type SteeringMessageProvider = (sessionId: string) => SteeringMessage[];
+
+// Global steering message provider (set by server)
+let steeringMessageProvider: SteeringMessageProvider | null = null;
+
+/**
+ * Register a steering message provider
+ * Called by the server to allow hooks to access steering messages
+ */
+export function registerSteeringProvider(provider: SteeringMessageProvider): void {
+  steeringMessageProvider = provider;
+}
+
+/**
+ * Unregister the steering message provider
+ */
+export function unregisterSteeringProvider(): void {
+  steeringMessageProvider = null;
+}
+
+/**
+ * Get pending steering messages for a session
+ */
+export function getSteeringMessages(sessionId: string): SteeringMessage[] {
+  if (!steeringMessageProvider) return [];
+  return steeringMessageProvider(sessionId);
+}
+
+/**
+ * Format steering messages for injection into system prompt
+ */
+export function formatSteeringContext(messages: SteeringMessage[]): string {
+  if (messages.length === 0) return '';
+
+  const formattedMessages = messages.map((m, i) =>
+    `[STEERING ${i + 1}] ${m.content}`
+  ).join('\n');
+
+  return `
+## User Steering Guidance
+
+The user has provided real-time guidance during this response. Incorporate this direction:
+
+${formattedMessages}
+
+Adjust your current approach to honor this steering. This takes priority over your current plan.`;
+}
 import { buildSystemPrompt } from '../core/prompt-builder.js';
 import {
   detectTriggers,

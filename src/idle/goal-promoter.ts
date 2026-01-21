@@ -21,14 +21,14 @@ interface Memory {
   metadata?: Record<string, any>;
 }
 
-interface Goal {
-  id: string;
-  title: string;
-  description: string;
-  status: 'pending' | 'active' | 'completed' | 'suspended';
-  priority: number;
-  createdAt: Date;
-}
+// interface Goal {
+//   id: string;
+//   title: string;
+//   description: string;
+//   status: 'pending' | 'active' | 'completed' | 'suspended';
+//   priority: number;
+//   createdAt: Date;
+// }
 
 export class EmergentGoalPromoter {
   private config: GoalPromotionConfig;
@@ -36,13 +36,13 @@ export class EmergentGoalPromoter {
   private promotedGoalIds: Set<string> = new Set();
 
   // These would be injected dependencies in real implementation
-  private memorySystem: any; // MCP memory tools
-  private goalManager: any; // GoalPursuitManager
+  // private memorySystem: any; // MCP memory tools
+  // private goalManager: any; // GoalPursuitManager
 
   constructor(
     config: Partial<GoalPromotionConfig> = {},
-    memorySystem?: any,
-    goalManager?: any
+    _memorySystem?: any,
+    _goalManager?: any
   ) {
     this.config = {
       memoryImportanceThreshold: 80, // Only promote high-importance memories
@@ -52,8 +52,8 @@ export class EmergentGoalPromoter {
       ...config
     };
 
-    this.memorySystem = memorySystem;
-    this.goalManager = goalManager;
+    // this.memorySystem = memorySystem;
+    // this.goalManager = goalManager;
   }
 
   /**
@@ -499,7 +499,7 @@ export class EmergentGoalPromoter {
   /**
    * Create progress metrics for a goal
    */
-  private createProgressMetrics(goalText: string, category: string): any[] {
+  private createProgressMetrics(_goalText: string, category: string): any[] {
     const metrics = [];
 
     // Common metrics for all goals

@@ -306,8 +306,8 @@ export class AutonomousEvolutionIntegration {
    */
   private async executeEvolutionWithSafetyBounds(
     trigger: EvolutionTrigger,
-    currentStance: any,
-    session: AutonomousSession
+    _currentStance: any,
+    _session: AutonomousSession
   ): Promise<AutonomousEvolutionResult> {
 
     // Simulate evolution execution (in real implementation would call actual evolution)
@@ -338,7 +338,7 @@ export class AutonomousEvolutionIntegration {
    */
   private performPostEvolutionValidation(
     result: AutonomousEvolutionResult,
-    session: AutonomousSession
+    _session: AutonomousSession
   ): { safe: boolean; violations: string[] } {
     const violations: string[] = [];
 

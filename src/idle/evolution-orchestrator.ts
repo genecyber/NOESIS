@@ -10,10 +10,7 @@ import {
   SafetyConstraints,
   OrchestrationConfig,
   IdleState,
-  AutonomousEvent,
-  AutonomousGoal,
   CoherenceMetrics,
-  ResourceMetrics,
   IdleSystemError,
   SafetyViolationError
 } from './types.js';
@@ -32,7 +29,7 @@ export class AutonomousEvolutionOrchestrator extends EventEmitter {
   private idleDetector: IdleDetector;
   private goalPromoter: EmergentGoalPromoter;
   private autoEvolutionManager: any; // AutoEvolutionManager
-  private goalPursuitManager: any; // GoalPursuitManager
+  // private goalPursuitManager: any; // GoalPursuitManager - available for future use
 
   constructor(
     config: Partial<OrchestrationConfig> = {},
@@ -61,7 +58,7 @@ export class AutonomousEvolutionOrchestrator extends EventEmitter {
     this.idleDetector = dependencies.idleDetector;
     this.goalPromoter = dependencies.goalPromoter;
     this.autoEvolutionManager = dependencies.autoEvolutionManager;
-    this.goalPursuitManager = dependencies.goalPursuitManager;
+    // this.goalPursuitManager = dependencies.goalPursuitManager;
 
     this.setupEventHandlers();
   }
@@ -238,7 +235,7 @@ export class AutonomousEvolutionOrchestrator extends EventEmitter {
     });
 
     // Handle activity during sessions
-    this.idleDetector.on('activity', (activity) => {
+    this.idleDetector.on('activity', (_activity) => {
       if (this.currentSession && this.currentSession.status === 'active') {
         this.log('User activity detected during autonomous session - ending session');
         this.endSession(this.currentSession.id, 'user_activity_detected');
@@ -258,8 +255,9 @@ export class AutonomousEvolutionOrchestrator extends EventEmitter {
         const sessionMode = this.determineSessionMode();
         await this.createAndExecuteSession(sessionMode);
       } catch (error) {
+        const errorMessage = error instanceof Error ? error.message : String(error);
         this.log(`Failed to start autonomous session: ${error}`);
-        this.emit('session_start_failed', { error: error.message });
+        this.emit('session_start_failed', { error: errorMessage });
       }
     }
   }
@@ -381,10 +379,11 @@ export class AutonomousEvolutionOrchestrator extends EventEmitter {
     try {
       await this.executeSessionActivities(session);
     } catch (error) {
+      const errorMessage = error instanceof Error ? error.message : String(error);
       this.log(`Session execution failed: ${error}`);
       this.addSessionActivity({
         type: 'validation',
-        description: `Session execution failed: ${error.message}`,
+        description: `Session execution failed: ${errorMessage}`,
         component: 'orchestrator',
         outcome: 'failure'
       });
@@ -440,9 +439,10 @@ export class AutonomousEvolutionOrchestrator extends EventEmitter {
       });
 
     } catch (error) {
+      const errorMessage = error instanceof Error ? error.message : String(error);
       this.addSessionActivity({
         type: 'goal_promotion',
-        description: `Goal promotion failed: ${error.message}`,
+        description: `Goal promotion failed: ${errorMessage}`,
         component: 'goal_promoter',
         outcome: 'failure'
       });
@@ -461,7 +461,7 @@ export class AutonomousEvolutionOrchestrator extends EventEmitter {
   /**
    * Execute research mode activities
    */
-  private async executeResearchMode(session: AutonomousSession): Promise<void> {
+  private async executeResearchMode(_session: AutonomousSession): Promise<void> {
     this.log('Executing research mode');
 
     // Focus on knowledge acquisition and synthesis
@@ -479,11 +479,11 @@ export class AutonomousEvolutionOrchestrator extends EventEmitter {
   /**
    * Execute creation mode activities
    */
-  private async executeCreationMode(session: AutonomousSession): Promise<void> {
+  private async executeCreationMode(_session: AutonomousSession): Promise<void> {
     this.log('Executing creation mode');
 
     this.addSessionActivity({
-      type: 'creation',
+      type: 'discovery',
       description: 'Creation mode session started',
       component: 'orchestrator',
       outcome: 'success'
@@ -495,11 +495,11 @@ export class AutonomousEvolutionOrchestrator extends EventEmitter {
   /**
    * Execute optimization mode activities
    */
-  private async executeOptimizationMode(session: AutonomousSession): Promise<void> {
+  private async executeOptimizationMode(_session: AutonomousSession): Promise<void> {
     this.log('Executing optimization mode');
 
     this.addSessionActivity({
-      type: 'optimization',
+      type: 'validation',
       description: 'Optimization mode session started',
       component: 'orchestrator',
       outcome: 'success'
@@ -511,7 +511,7 @@ export class AutonomousEvolutionOrchestrator extends EventEmitter {
   /**
    * Perform autonomous evolution using existing AutoEvolutionManager
    */
-  private async performAutonomousEvolution(session: AutonomousSession): Promise<void> {
+  private async performAutonomousEvolution(_session: AutonomousSession): Promise<void> {
     try {
       this.log('Performing autonomous evolution');
 
@@ -530,9 +530,10 @@ export class AutonomousEvolutionOrchestrator extends EventEmitter {
       });
 
     } catch (error) {
+      const errorMessage = error instanceof Error ? error.message : String(error);
       this.addSessionActivity({
         type: 'evolution',
-        description: `Autonomous evolution failed: ${error.message}`,
+        description: `Autonomous evolution failed: ${errorMessage}`,
         component: 'auto_evolution_manager',
         outcome: 'failure'
       });

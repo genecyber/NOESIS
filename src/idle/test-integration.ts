@@ -3,8 +3,8 @@
  * This file provides testing utilities and integration examples
  */
 
-import { AutonomousIdleSystem, GlobalIdleDetector } from './index.js';
-import { IdleModeConfig, SessionMode } from './types.js';
+import { AutonomousIdleSystem } from './index.js';
+import { IdleModeConfig } from './types.js';
 
 /**
  * Test configuration for development and validation
@@ -104,7 +104,7 @@ export class MockMemorySystem {
     }
   ];
 
-  async recallMemories(query?: string, options?: any): Promise<any[]> {
+  async recallMemories(query?: string, _options?: any): Promise<any[]> {
     console.log('MockMemorySystem: Recalling memories with query:', query);
     return this.mockMemories;
   }
@@ -195,7 +195,8 @@ export class AutonomousIdleSystemTester {
         const session = await this.system.startSession('research');
         console.log('Manual session started:', session.id, session.mode);
       } catch (error) {
-        console.log('Manual session not started (expected if already active):', error.message);
+        const errorMessage = error instanceof Error ? error.message : String(error);
+        console.log('Manual session not started (expected if already active):', errorMessage);
       }
 
       console.log('\n=== Basic Integration Test Completed Successfully ===');
@@ -237,9 +238,9 @@ export class AutonomousIdleSystemTester {
     // Test invalid configuration
     try {
       const invalidConfig = { ...TEST_CONFIG, idleThreshold: -1 };
-      const system = new AutonomousIdleSystem(invalidConfig);
+      new AutonomousIdleSystem(invalidConfig);
       console.log('ERROR: Invalid config should have failed');
-    } catch (error) {
+    } catch (_error) {
       console.log('✓ Invalid configuration properly rejected');
     }
 

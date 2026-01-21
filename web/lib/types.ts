@@ -164,3 +164,11 @@ export interface EmotionContext {
   suggestedEmpathyBoost?: number;  // 0 to 20+, based on negative valence + instability
   timestamp?: string;
 }
+
+// Steering Message - User guidance during streaming/tool use
+export interface SteeringMessage {
+  id: string;
+  content: string;
+  timestamp: number;
+  processed?: boolean;
+}

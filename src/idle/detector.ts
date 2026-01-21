@@ -87,7 +87,8 @@ export class IdleDetector extends EventEmitter {
       return;
     }
 
-    const previouslyIdle = this.idleState.isIdle;
+    // Track if we were previously idle for potential future use
+    // const previouslyIdle = this.idleState.isIdle;
 
     this.idleState.lastActivity = event.timestamp;
     this.idleState.idleDuration = 0;

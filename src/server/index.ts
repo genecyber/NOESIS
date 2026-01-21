@@ -16,6 +16,7 @@ import express, { Request, Response, NextFunction } from 'express';
 import cors from 'cors';
 import { createServer } from 'http';
 import { MetamorphAgent, StreamCallbacks } from '../agent/index.js';
+import { registerSteeringProvider, formatSteeringContext } from '../agent/hooks.js';
 import { ModeConfig } from '../types/index.js';
 import { MetamorphRuntime } from '../runtime/index.js';
 import { FaceApiDetector } from '../plugins/emotion-detection/face-api-detector.js';
@@ -53,6 +54,60 @@ const embeddingService = new EmbeddingService({
 });
 let embeddingServiceInitialized = false;
 console.log(`[Server] Using ${embeddingProvider} embedding provider`);
+
+// Steering message queue - per-session storage
+interface SteeringMessage {
+  id: string;
+  content: string;
+  timestamp: number;
+  processed?: boolean;
+}
+
+const steeringMessageQueues = new Map<string, SteeringMessage[]>();
+
+/**
+ * Get or create steering message queue for a session
+ */
+function getSteeringQueue(sessionId: string): SteeringMessage[] {
+  let queue = steeringMessageQueues.get(sessionId);
+  if (!queue) {
+    queue = [];
+    steeringMessageQueues.set(sessionId, queue);
+  }
+  return queue;
+}
+
+/**
+ * Add a steering message to the queue
+ */
+function addSteeringMessage(sessionId: string, content: string): SteeringMessage {
+  const queue = getSteeringQueue(sessionId);
+  const message: SteeringMessage = {
+    id: `steer-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
+    content,
+    timestamp: Date.now(),
+    processed: false
+  };
+  queue.push(message);
+  console.log(`[Steering] Added message for session ${sessionId}: "${content.substring(0, 50)}..."`);
+  return message;
+}
+
+/**
+ * Get and clear pending steering messages for a session
+ */
+function consumeSteeringMessages(sessionId: string): SteeringMessage[] {
+  const queue = getSteeringQueue(sessionId);
+  const pending = queue.filter(m => !m.processed);
+  // Mark as processed
+  pending.forEach(m => m.processed = true);
+  return pending;
+}
+
+/**
+ * Export consumeSteeringMessages for use in hooks
+ */
+export { consumeSteeringMessages };
 
 // Initialize embedding service lazily on first use
 async function initializeEmbeddingService(): Promise<boolean> {
@@ -280,6 +335,15 @@ app.post('/api/chat/stream', apiKeyAuth, async (req: Request, res: Response) => 
     },
     onToolEvent: (event) => {
       res.write(`event: tool_event\ndata: ${JSON.stringify(event)}\n\n`);
+
+      // Check for steering messages during tool events and send them
+      const steeringMessages = consumeSteeringMessages(effectiveSessionId);
+      if (steeringMessages.length > 0) {
+        res.write(`event: steering_applied\ndata: ${JSON.stringify({
+          count: steeringMessages.length,
+          messages: steeringMessages
+        })}\n\n`);
+      }
     },
     onQuestion: (question) => {
       res.write(`event: question\ndata: ${JSON.stringify(question)}\n\n`);
@@ -1305,6 +1369,74 @@ app.post('/api/embeddings', apiKeyAuth, async (req: Request, res: Response) => {
   }
 });
 
+// ============================================================================
+// Steering Endpoints - User guidance during streaming/tool use
+// ============================================================================
+
+// Send a steering message
+app.post('/api/steering', apiKeyAuth, (req: Request, res: Response) => {
+  try {
+    const { sessionId, content } = req.body;
+
+    if (!content || typeof content !== 'string') {
+      res.status(400).json({ error: 'content is required and must be a string' });
+      return;
+    }
+
+    const effectiveSessionId = sessionId || DEFAULT_SESSION;
+    const message = addSteeringMessage(effectiveSessionId, content.trim());
+
+    res.json({
+      success: true,
+      message
+    });
+  } catch (error) {
+    console.error('[Steering] Error adding message:', error);
+    res.status(500).json({
+      error: error instanceof Error ? error.message : 'Failed to add steering message'
+    });
+  }
+});
+
+// Get pending steering messages for a session
+app.get('/api/steering/:sessionId', apiKeyAuth, (req: Request, res: Response) => {
+  try {
+    const { sessionId } = req.params;
+    const queue = getSteeringQueue(sessionId);
+    const pending = queue.filter(m => !m.processed);
+
+    res.json({
+      success: true,
+      messages: pending
+    });
+  } catch (error) {
+    console.error('[Steering] Error getting messages:', error);
+    res.status(500).json({
+      error: error instanceof Error ? error.message : 'Failed to get steering messages'
+    });
+  }
+});
+
+// Clear all steering messages for a session
+app.delete('/api/steering/:sessionId', apiKeyAuth, (req: Request, res: Response) => {
+  try {
+    const { sessionId } = req.params;
+    const queue = getSteeringQueue(sessionId);
+    const clearedCount = queue.length;
+    steeringMessageQueues.set(sessionId, []);
+
+    res.json({
+      success: true,
+      cleared: clearedCount
+    });
+  } catch (error) {
+    console.error('[Steering] Error clearing messages:', error);
+    res.status(500).json({
+      error: error instanceof Error ? error.message : 'Failed to clear steering messages'
+    });
+  }
+});
+
 // Error handling middleware
 app.use((err: Error, _req: Request, res: Response, _next: NextFunction) => {
   console.error('Server error:', err);
@@ -1322,6 +1454,10 @@ export async function startServer(port: number = Number(PORT)): Promise<void> {
   // Load persisted sessions from SQLite
   console.log('[Server] Loading sessions from SQLite...');
   await runtime.sessions.loadAllSessions();
+
+  // Register the steering message provider for hooks to access
+  registerSteeringProvider(consumeSteeringMessages);
+  console.log('[Server] Steering message provider registered');
 
   // Initialize WebSocket server
   createWebSocketServer(server, streamManager);
