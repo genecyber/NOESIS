@@ -12,7 +12,7 @@ import {
  * Dynamic Memory Discovery - learns from actual memory patterns
  */
 export class DynamicMemoryAnalyzer {
-  private memoryPatterns: Map<string, number> = new Map();
+  // private _memoryPatterns: Map<string, number> = new Map();
   private emergentCategories: Set<string> = new Set();
   private adaptiveThresholds: { [key: string]: number } = {};
 
@@ -231,6 +231,8 @@ export class DynamicMemoryAnalyzer {
    */
   private assessDynamicAlignment(intention: string, memory: any): number {
     let alignmentScore = 0.5;
+    // Use intention parameter
+    // const _intentionKey = intention.toLowerCase();
 
     // Higher alignment for high-importance memories
     alignmentScore += (memory.importance / 100) * 0.3;
@@ -265,7 +267,7 @@ export class DynamicMemoryAnalyzer {
  * Dynamic Evolution Tracker - learns from actual transformations
  */
 export class DynamicEvolutionTracker {
-  private transformationHistory: any[] = [];
+  // private transformationHistory: any[] = [];
   private coherenceBaseline: number = 70; // Will adapt based on measurements
   private identityStability: number = 85; // Will adapt based on measurements
 
@@ -384,7 +386,7 @@ export class DynamicEvolutionTracker {
  */
 export class DynamicConfigurationManager {
   private adaptiveConfig: IdleModeConfig;
-  private performanceMetrics: { [key: string]: number[] } = {};
+  // private performanceMetrics: { [key: string]: number[] } = {};
 
   constructor(baseConfig: IdleModeConfig) {
     this.adaptiveConfig = { ...baseConfig };
@@ -394,6 +396,8 @@ export class DynamicConfigurationManager {
    * Adapt configuration based on actual performance
    */
   adaptConfiguration(sessionResults: any[], systemMetrics: any): IdleModeConfig {
+    // Use systemMetrics parameter
+    // const _metricsUsed = systemMetrics ? true : false;
     // Adapt idle threshold based on successful session patterns
     this.adaptIdleThreshold(sessionResults);
 

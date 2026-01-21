@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useCallback, useRef, useMemo, ComponentType } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Layers, Settings, Clock, Brain, FolderOpen, MessageSquare, Menu, X, GripVertical, ChevronDown, Plus } from 'lucide-react';
+import { Layers, Settings, Clock, Brain, FolderOpen, MessageSquare, Menu, X, GripVertical, ChevronDown, Plus, Zap } from 'lucide-react';
 import Chat from '@/components/Chat';
 import StanceViz from '@/components/StanceViz';
 import Config from '@/components/Config';
@@ -10,6 +10,7 @@ import OperatorTimeline from '@/components/OperatorTimeline';
 import EvolutionTimeline from '@/components/EvolutionTimeline';
 import SessionBrowser from '@/components/SessionBrowser';
 import MemoryBrowser from '@/components/MemoryBrowser';
+import IdleModePanel from '@/components/IdleModePanel';
 import { Button, Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui';
 import { createSession, updateConfig, getState, getTimeline, getEvolution, resumeSession } from '@/lib/api';
 import { getLastSessionId, saveLastSessionId, getPreferences, savePreferences } from '@/lib/storage';
@@ -28,6 +29,7 @@ import type { PanelDefinition, PanelProps } from '@/lib/plugins/types';
 const CORE_TABS: { id: string; label: string; icon: ComponentType<{ className?: string }> }[] = [
   { id: 'stance', label: 'Stance', icon: Layers },
   { id: 'config', label: 'Config', icon: Settings },
+  { id: 'idle', label: 'Idle Mode', icon: Zap },
   { id: 'timeline', label: 'Timeline', icon: Clock },
   { id: 'evolution', label: 'Evolution', icon: Brain },
   { id: 'sessions', label: 'Sessions', icon: FolderOpen },
@@ -380,6 +382,7 @@ export default function Home() {
       <>
         {activePanel === 'stance' && <StanceViz stance={stance} />}
         {activePanel === 'config' && <Config config={config} onUpdate={handleConfigUpdate} />}
+        {activePanel === 'idle' && <IdleModePanel sessionId={sessionId} />}
         {activePanel === 'timeline' && <OperatorTimeline entries={timelineEntries} />}
         {activePanel === 'evolution' && <EvolutionTimeline snapshots={evolutionSnapshots} currentStance={stance || undefined} />}
         {activePanel === 'sessions' && (

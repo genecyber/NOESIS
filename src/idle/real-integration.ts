@@ -167,8 +167,9 @@ export class RealMCPToolsWrapper {
     const importanceLevels = { high: 0, medium: 0, low: 0 };
 
     memories.forEach(memory => {
-      if (categories[memory.type] !== undefined) {
-        categories[memory.type]++;
+      const memoryType = memory.type as keyof typeof categories;
+      if (categories[memoryType] !== undefined) {
+        categories[memoryType]++;
       }
 
       if (memory.importance > 80) importanceLevels.high++;

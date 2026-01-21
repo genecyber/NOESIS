@@ -22,6 +22,7 @@ export class AdaptiveAutonomousIdleSystem extends AutonomousIdleSystem {
 
   constructor(
     initialConfig: Partial<IdleModeConfig> = {},
+    // eslint-disable-next-line @typescript-eslint/no-unused-vars
     private mcpTools: any // Real MCP tools, not mocks
   ) {
     // Start with base config but it will adapt

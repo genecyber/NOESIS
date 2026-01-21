@@ -984,6 +984,37 @@ export default function Chat({ sessionId, onSessionChange, onResponse, onStanceU
             </motion.div>
           )}
         </AnimatePresence>
+        {/* Steering messages inline in chat - moves into history when responded to */}
+        <AnimatePresence>
+          {isLoading && steeringQueue.length > 0 && (
+            <motion.div
+              initial={{ opacity: 0, y: 10 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: -10 }}
+              transition={{ type: "spring", stiffness: 400, damping: 25 }}
+              className="ml-auto max-w-[min(85%,48rem)] flex-shrink-0"
+            >
+              <div className="bg-emblem-secondary/10 border border-emblem-secondary/30 rounded-xl p-3">
+                <div className="flex items-center gap-2 text-xs text-emblem-secondary mb-2">
+                  <span className="font-medium">Steering guidance</span>
+                  {steeringSent > 0 && (
+                    <span className="text-emblem-accent">({steeringSent} queued)</span>
+                  )}
+                </div>
+                <div className="space-y-1.5">
+                  {steeringQueue.map((msg) => (
+                    <div
+                      key={msg.id}
+                      className="text-sm text-emblem-text bg-emblem-secondary/20 px-3 py-2 rounded-lg"
+                    >
+                      {msg.content}
+                    </div>
+                  ))}
+                </div>
+              </div>
+            </motion.div>
+          )}
+        </AnimatePresence>
         <div ref={messagesEndRef} />
       </div>
 
@@ -996,37 +1027,6 @@ export default function Chat({ sessionId, onSessionChange, onResponse, onStanceU
           selectedIndex={paletteIndex}
           onIndexChange={setPaletteIndex}
         />
-
-        {/* Steering queue indicator */}
-        <AnimatePresence>
-          {isLoading && steeringQueue.length > 0 && (
-            <motion.div
-              initial={{ opacity: 0, y: 10 }}
-              animate={{ opacity: 1, y: 0 }}
-              exit={{ opacity: 0, y: 10 }}
-              className="absolute bottom-full left-0 right-0 px-4 pb-2"
-            >
-              <div className="bg-emblem-secondary/10 border border-emblem-secondary/30 rounded-lg p-2">
-                <div className="flex items-center gap-2 text-xs text-emblem-secondary mb-1">
-                  <span className="font-medium">Steering Messages ({steeringQueue.length})</span>
-                  {steeringSent > 0 && (
-                    <span className="text-emblem-accent">{steeringSent} sent</span>
-                  )}
-                </div>
-                <div className="space-y-1 max-h-24 overflow-y-auto">
-                  {steeringQueue.map((msg) => (
-                    <div
-                      key={msg.id}
-                      className="text-xs text-emblem-muted bg-emblem-surface/50 px-2 py-1 rounded truncate"
-                    >
-                      {msg.content}
-                    </div>
-                  ))}
-                </div>
-              </div>
-            </motion.div>
-          )}
-        </AnimatePresence>
 
         <form onSubmit={isLoading ? handleSteeringSubmit : handleSubmit} className="flex gap-2 p-4 bg-emblem-surface-2 border-t border-white/5">
           <input
