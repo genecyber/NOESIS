@@ -28,8 +28,8 @@ export class AdaptiveAutonomousIdleSystem extends AutonomousIdleSystem {
     // Start with base config but it will adapt
     super(initialConfig);
 
-    this.memoryAnalyzer = new DynamicMemoryAnalyzer(mcpTools);
-    this.evolutionTracker = new DynamicEvolutionTracker(mcpTools);
+    this.memoryAnalyzer = new DynamicMemoryAnalyzer(this.mcpTools);
+    this.evolutionTracker = new DynamicEvolutionTracker(this.mcpTools);
     this.configManager = new DynamicConfigurationManager(this.getCurrentConfig());
   }
 

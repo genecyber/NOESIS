@@ -18,6 +18,7 @@ import { useInputHistory } from '@/lib/hooks/useLocalStorage';
 import { saveMessages, getMessages, saveLastSessionId } from '@/lib/storage';
 import { cn } from '@/lib/utils';
 import { Button } from '@/components/ui';
+import { X, ChevronUp, ChevronDown } from 'lucide-react';
 import type { Components } from 'react-markdown';
 
 type ConnectionStatus = 'connected' | 'disconnected' | 'streaming';
@@ -853,6 +854,26 @@ export default function Chat({ sessionId, onSessionChange, onResponse, onStanceU
     setPendingQuestion(null);
   }, []);
 
+  // Handle steering message deletion
+  const handleSteeringDelete = useCallback((id: string) => {
+    setSteeringQueue(prev => prev.filter(m => m.id !== id));
+  }, []);
+
+  // Handle steering message reorder
+  const handleSteeringReorder = useCallback((id: string, direction: 'up' | 'down') => {
+    setSteeringQueue(prev => {
+      const index = prev.findIndex(m => m.id === id);
+      if (index === -1) return prev;
+      if (direction === 'up' && index === 0) return prev;
+      if (direction === 'down' && index === prev.length - 1) return prev;
+
+      const newQueue = [...prev];
+      const swapIndex = direction === 'up' ? index - 1 : index + 1;
+      [newQueue[index], newQueue[swapIndex]] = [newQueue[swapIndex], newQueue[index]];
+      return newQueue;
+    });
+  }, []);
+
   const statusColor = connectionStatus === 'connected' ? 'bg-emblem-accent'
     : connectionStatus === 'streaming' ? 'bg-blue-500'
     : 'bg-emblem-danger';
@@ -1002,13 +1023,50 @@ export default function Chat({ sessionId, onSessionChange, onResponse, onStanceU
                   )}
                 </div>
                 <div className="space-y-1.5">
-                  {steeringQueue.map((msg) => (
-                    <div
+                  {steeringQueue.map((msg, idx) => (
+                    <motion.div
                       key={msg.id}
-                      className="text-sm text-emblem-text bg-emblem-secondary/20 px-3 py-2 rounded-lg"
+                      layout
+                      initial={{ opacity: 0, x: 20 }}
+                      animate={{ opacity: 1, x: 0 }}
+                      exit={{ opacity: 0, x: -20 }}
+                      className="flex items-center gap-2 group"
                     >
-                      {msg.content}
-                    </div>
+                      {/* Reorder controls */}
+                      <div className="flex flex-col opacity-0 group-hover:opacity-100 transition-opacity">
+                        <button
+                          onClick={() => handleSteeringReorder(msg.id, 'up')}
+                          disabled={idx === 0}
+                          className={cn(
+                            "p-0.5 rounded hover:bg-white/10 transition-colors",
+                            idx === 0 && "opacity-30 cursor-not-allowed"
+                          )}
+                        >
+                          <ChevronUp className="w-3 h-3 text-emblem-muted" />
+                        </button>
+                        <button
+                          onClick={() => handleSteeringReorder(msg.id, 'down')}
+                          disabled={idx === steeringQueue.length - 1}
+                          className={cn(
+                            "p-0.5 rounded hover:bg-white/10 transition-colors",
+                            idx === steeringQueue.length - 1 && "opacity-30 cursor-not-allowed"
+                          )}
+                        >
+                          <ChevronDown className="w-3 h-3 text-emblem-muted" />
+                        </button>
+                      </div>
+                      {/* Message content */}
+                      <div className="flex-1 text-sm text-emblem-text bg-emblem-secondary/20 px-3 py-2 rounded-lg">
+                        {msg.content}
+                      </div>
+                      {/* Delete button */}
+                      <button
+                        onClick={() => handleSteeringDelete(msg.id)}
+                        className="p-1 rounded opacity-0 group-hover:opacity-100 hover:bg-emblem-danger/20 transition-all"
+                      >
+                        <X className="w-3.5 h-3.5 text-emblem-danger" />
+                      </button>
+                    </motion.div>
                   ))}
                 </div>
               </div>

@@ -231,8 +231,11 @@ export class DynamicMemoryAnalyzer {
    */
   private assessDynamicAlignment(intention: string, memory: any): number {
     let alignmentScore = 0.5;
-    // Use intention parameter
-    // const _intentionKey = intention.toLowerCase();
+
+    // Factor in intention relevance to memory content
+    if (memory.content && memory.content.toLowerCase().includes(intention.toLowerCase())) {
+      alignmentScore += 0.2;
+    }
 
     // Higher alignment for high-importance memories
     alignmentScore += (memory.importance / 100) * 0.3;
@@ -396,8 +399,12 @@ export class DynamicConfigurationManager {
    * Adapt configuration based on actual performance
    */
   adaptConfiguration(sessionResults: any[], systemMetrics: any): IdleModeConfig {
-    // Use systemMetrics parameter
-    // const _metricsUsed = systemMetrics ? true : false;
+    // Consider system performance in adaptation
+    if (systemMetrics && systemMetrics.performance) {
+      // Adjust configuration based on system performance
+      this.adaptiveConfig.maxSessionDuration = systemMetrics.performance > 0.8 ?
+        this.adaptiveConfig.maxSessionDuration + 5 : this.adaptiveConfig.maxSessionDuration;
+    }
     // Adapt idle threshold based on successful session patterns
     this.adaptIdleThreshold(sessionResults);
 
