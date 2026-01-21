@@ -16,7 +16,7 @@ import express, { Request, Response, NextFunction } from 'express';
 import cors from 'cors';
 import { createServer } from 'http';
 import { MetamorphAgent, StreamCallbacks } from '../agent/index.js';
-import { registerSteeringProvider, formatSteeringContext } from '../agent/hooks.js';
+import { registerSteeringProvider } from '../agent/hooks.js';
 import { ModeConfig } from '../types/index.js';
 import { MetamorphRuntime } from '../runtime/index.js';
 import { FaceApiDetector } from '../plugins/emotion-detection/face-api-detector.js';

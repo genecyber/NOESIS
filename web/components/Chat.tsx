@@ -559,9 +559,98 @@ export default function Chat({ sessionId, onSessionChange, onResponse, onStanceU
         accumulatedTextRef.current = '';
         setActiveTools([]);
         toolsRef.current.clear();
-        // Clear steering queue on completion
-        setSteeringQueue([]);
-        setSteeringSent(0);
+
+        // Check if there are queued steering messages to send as follow-up
+        if (steeringQueue.length > 0) {
+          // Combine steering messages into a follow-up message
+          const steeringContent = steeringQueue
+            .map(m => m.content)
+            .join('\n\n');
+          const followUpMessage = `[Steering guidance from user during processing]\n\n${steeringContent}`;
+
+          // Clear the queue
+          setSteeringQueue([]);
+          setSteeringSent(0);
+
+          // Auto-send the steering as a follow-up message
+          setTimeout(() => {
+            if (sessionId) {
+              // Add as user message
+              const steerUserMessage: ChatMessage = {
+                role: 'user',
+                content: followUpMessage,
+                timestamp: Date.now(),
+                type: 'message',
+              };
+              setMessages(prev => [...prev, steerUserMessage]);
+              setIsLoading(true);
+              setStreamingText('');
+              setConnectionStatus('streaming');
+              accumulatedTextRef.current = '';
+              toolsRef.current.clear();
+              setActiveTools([]);
+
+              // Send the steering follow-up
+              abortRef.current = chatStream(sessionId, followUpMessage, emotionContext, {
+                onText: (text) => {
+                  accumulatedTextRef.current += text;
+                  setStreamingText(accumulatedTextRef.current);
+                },
+                onToolEvent: (event) => {
+                  toolsRef.current.set(event.id, event);
+                  setActiveTools(Array.from(toolsRef.current.values()));
+                },
+                onQuestion: (event) => {
+                  setPendingQuestion(event);
+                },
+                onComplete: (followUpData) => {
+                  setIsLoading(false);
+                  setConnectionStatus('connected');
+                  const followUpContent = accumulatedTextRef.current || followUpData.response;
+                  const followUpTools = Array.from(toolsRef.current.values());
+                  setMessages(prev => [
+                    ...prev,
+                    {
+                      role: 'assistant',
+                      content: followUpContent,
+                      timestamp: Date.now(),
+                      tools: followUpTools.length > 0 ? followUpTools : undefined,
+                      injectedMemories: followUpData.injectedMemories,
+                    },
+                  ]);
+                  setStreamingText('');
+                  accumulatedTextRef.current = '';
+                  setActiveTools([]);
+                  toolsRef.current.clear();
+                  onResponse?.(followUpData);
+                  if (followUpData.stanceAfter && onStanceUpdate) {
+                    onStanceUpdate(followUpData.stanceAfter);
+                  }
+                },
+                onError: (error) => {
+                  setIsLoading(false);
+                  setConnectionStatus('disconnected');
+                  setStreamingText('');
+                  accumulatedTextRef.current = '';
+                  setMessages(prev => [
+                    ...prev,
+                    {
+                      role: 'assistant',
+                      content: `Error processing steering: ${error.message}`,
+                      timestamp: Date.now(),
+                    },
+                  ]);
+                  setTimeout(() => setConnectionStatus('connected'), 3000);
+                },
+              });
+            }
+          }, 100);
+        } else {
+          // No steering messages - clear normally
+          setSteeringQueue([]);
+          setSteeringSent(0);
+        }
+
         onResponse?.(data);
 
         // Dispatch event for injected memories to trigger mini preview pulse
@@ -907,26 +996,67 @@ export default function Chat({ sessionId, onSessionChange, onResponse, onStanceU
           selectedIndex={paletteIndex}
           onIndexChange={setPaletteIndex}
         />
-        <form onSubmit={handleSubmit} className="flex gap-2 p-4 bg-emblem-surface-2 border-t border-white/5">
+
+        {/* Steering queue indicator */}
+        <AnimatePresence>
+          {isLoading && steeringQueue.length > 0 && (
+            <motion.div
+              initial={{ opacity: 0, y: 10 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: 10 }}
+              className="absolute bottom-full left-0 right-0 px-4 pb-2"
+            >
+              <div className="bg-emblem-secondary/10 border border-emblem-secondary/30 rounded-lg p-2">
+                <div className="flex items-center gap-2 text-xs text-emblem-secondary mb-1">
+                  <span className="font-medium">Steering Messages ({steeringQueue.length})</span>
+                  {steeringSent > 0 && (
+                    <span className="text-emblem-accent">{steeringSent} sent</span>
+                  )}
+                </div>
+                <div className="space-y-1 max-h-24 overflow-y-auto">
+                  {steeringQueue.map((msg) => (
+                    <div
+                      key={msg.id}
+                      className="text-xs text-emblem-muted bg-emblem-surface/50 px-2 py-1 rounded truncate"
+                    >
+                      {msg.content}
+                    </div>
+                  ))}
+                </div>
+              </div>
+            </motion.div>
+          )}
+        </AnimatePresence>
+
+        <form onSubmit={isLoading ? handleSteeringSubmit : handleSubmit} className="flex gap-2 p-4 bg-emblem-surface-2 border-t border-white/5">
           <input
             ref={inputRef}
             type="text"
             value={input}
             onChange={(e) => setInput(e.target.value)}
             onKeyDown={handleKeyDown}
-            placeholder="Type a message or / for commands..."
-            disabled={isLoading}
+            placeholder={isLoading ? "Type to steer Claude's response..." : "Type a message or / for commands..."}
             className={cn(
               'flex-1 px-4 py-3 bg-emblem-surface border border-white/10 rounded-lg text-emblem-text text-base outline-none transition-colors',
               'focus:border-emblem-secondary',
-              'disabled:opacity-50',
-              input.startsWith('/') && 'font-mono border-emblem-secondary bg-emblem-secondary/5'
+              input.startsWith('/') && !isLoading && 'font-mono border-emblem-secondary bg-emblem-secondary/5',
+              isLoading && 'border-emblem-accent/50 bg-emblem-accent/5 placeholder:text-emblem-accent/70'
             )}
           />
           {isLoading ? (
-            <Button variant="destructive" type="button" onClick={handleStop} className="px-6">
-              Stop
-            </Button>
+            <div className="flex gap-2">
+              <Button
+                type="submit"
+                disabled={!input.trim()}
+                variant="secondary"
+                className="px-4 border-emblem-accent text-emblem-accent hover:bg-emblem-accent/10"
+              >
+                Steer
+              </Button>
+              <Button variant="destructive" type="button" onClick={handleStop} className="px-4">
+                Stop
+              </Button>
+            </div>
           ) : (
             <Button type="submit" disabled={!input.trim()} className="px-6">
               Send

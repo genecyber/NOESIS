@@ -99,8 +99,8 @@ export class AdaptiveAutonomousIdleSystem extends AutonomousIdleSystem {
 
     try {
       // Gather current performance data
-      const sessionHistory = this.getSessionHistory();
-      const currentStatus = this.getStatus();
+      const sessionHistory = this.getStatus().sessionHistory || [];
+      // Note: currentStatus not used but available if needed in future
 
       // Analyze what's working and what isn't
       const performanceAnalysis = this.analyzePerformance(sessionHistory);
@@ -233,7 +233,8 @@ export class AdaptiveAutonomousIdleSystem extends AutonomousIdleSystem {
    * Get current configuration (mock implementation)
    */
   private getCurrentConfig(): IdleModeConfig {
-    return this.getStatus().configuration || {
+    // Get configuration from config manager or use defaults
+    return this.configManager?.getAdaptiveConfig() || {
       enabled: true,
       idleThreshold: 30,
       maxSessionDuration: 120,
