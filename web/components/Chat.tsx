@@ -8,7 +8,7 @@ import { chatStream, getState, getHistory, exportState, getSubagents, updateConf
 import type { SteeringMessage } from '@/lib/types';
 import CommandPalette, { CommandHelp } from './CommandPalette';
 import CommandOutput from './CommandOutput';
-import ToolUsage, { ActiveToolsBar } from './ToolUsage';
+import ToolUsage from './ToolUsage';
 import InjectedMemories from './InjectedMemories';
 import QuestionPrompt from './QuestionPrompt';
 import { dispatchInjectedMemoriesEvent } from '@/plugins/memory-explorer/MiniMemoryPreview';
@@ -945,9 +945,9 @@ export default function Chat({ sessionId, onSessionChange, onResponse, onStanceU
           </motion.div>
           ))}
         </AnimatePresence>
-        {/* Show active tools during streaming */}
+        {/* Show tools and streaming text in a unified bubble */}
         <AnimatePresence>
-          {activeTools.length > 0 && (
+          {(activeTools.length > 0 || streamingText) && (
             <motion.div
               initial={{ opacity: 0, y: 10 }}
               animate={{ opacity: 1, y: 0 }}
@@ -956,22 +956,14 @@ export default function Chat({ sessionId, onSessionChange, onResponse, onStanceU
               className="self-start glass-card max-w-[min(85%,48rem)] p-3 rounded-xl leading-relaxed min-w-0 flex-shrink-0"
             >
               <div className="break-words w-full overflow-hidden">
-                <ActiveToolsBar tools={activeTools} />
-              </div>
-            </motion.div>
-          )}
-        </AnimatePresence>
-        <AnimatePresence>
-          {streamingText && (
-            <motion.div
-              initial={{ opacity: 0, y: 10 }}
-              animate={{ opacity: 1, y: 0 }}
-              exit={{ opacity: 0 }}
-              transition={{ type: "spring", stiffness: 400, damping: 25 }}
-              className="self-start glass-card max-w-[min(85%,48rem)] p-3 rounded-xl leading-relaxed min-w-0 flex-shrink-0"
-            >
-              <div className="break-words prose-chat w-full overflow-hidden">
-                <ReactMarkdown components={markdownComponents}>{streamingText}</ReactMarkdown>
+                {activeTools.length > 0 && (
+                  <ToolUsage tools={activeTools} />
+                )}
+                {streamingText && (
+                  <div className="prose-chat">
+                    <ReactMarkdown components={markdownComponents}>{streamingText}</ReactMarkdown>
+                  </div>
+                )}
               </div>
             </motion.div>
           )}
