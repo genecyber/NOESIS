@@ -89,14 +89,33 @@ const DEFAULT_CONFIG: IdentityConfig = {
 
 /**
  * Identity Persistence Manager
+ *
+ * Manages identity checkpoints, core values, and timeline for a specific vault.
+ * In multitenancy mode, each vault has its own isolated IdentityPersistenceManager.
  */
-class IdentityPersistenceManager {
+export class IdentityPersistenceManager {
   private config: IdentityConfig = DEFAULT_CONFIG;
   private checkpoints: Map<string, IdentityCheckpoint> = new Map();
   private coreValues: CoreValue[] = [];
   private currentFingerprint: string = '';
   private turnsSinceCheckpoint: number = 0;
   private timeline: TimelineEntry[] = [];
+  private vaultId: string;
+
+  /**
+   * Create an IdentityPersistenceManager instance
+   * @param vaultId - Optional vault ID for multitenancy. Defaults to 'default-vault'.
+   */
+  constructor(vaultId: string = 'default-vault') {
+    this.vaultId = vaultId;
+  }
+
+  /**
+   * Get the vault ID this manager is associated with
+   */
+  getVaultId(): string {
+    return this.vaultId;
+  }
 
   /**
    * Set configuration
@@ -459,5 +478,86 @@ class IdentityPersistenceManager {
   }
 }
 
-// Singleton instance
+/**
+ * Factory for creating vault-scoped IdentityPersistenceManager instances.
+ *
+ * In a multitenancy environment, each vault should have its own isolated
+ * identity persistence manager. This factory provides a way to get or create
+ * instances per vault, with LRU-style caching to manage memory.
+ *
+ * Usage:
+ * ```typescript
+ * // Get manager for a specific vault
+ * const manager = identityPersistenceFactory.forVault('vault-123');
+ * manager.createCheckpoint(stance, 'my-checkpoint');
+ *
+ * // For backward compatibility (uses default vault)
+ * identityPersistence.createCheckpoint(stance, 'my-checkpoint');
+ * ```
+ */
+class IdentityPersistenceFactory {
+  private instances: Map<string, IdentityPersistenceManager> = new Map();
+  private maxInstances: number = 100; // Limit memory usage
+
+  /**
+   * Get or create an IdentityPersistenceManager for a specific vault.
+   *
+   * @param vaultId - The unique identifier for the vault
+   * @returns An IdentityPersistenceManager instance scoped to the vault
+   */
+  forVault(vaultId: string): IdentityPersistenceManager {
+    let instance = this.instances.get(vaultId);
+    if (!instance) {
+      // Evict oldest instance if at capacity
+      if (this.instances.size >= this.maxInstances) {
+        const oldestKey = this.instances.keys().next().value;
+        if (oldestKey) {
+          this.instances.delete(oldestKey);
+        }
+      }
+
+      instance = new IdentityPersistenceManager(vaultId);
+      this.instances.set(vaultId, instance);
+    }
+    return instance;
+  }
+
+  /**
+   * Check if a vault has an existing manager instance.
+   *
+   * @param vaultId - The vault ID to check
+   * @returns True if the vault has an instance
+   */
+  hasVault(vaultId: string): boolean {
+    return this.instances.has(vaultId);
+  }
+
+  /**
+   * Remove a vault's manager instance (useful for cleanup).
+   *
+   * @param vaultId - The vault ID to remove
+   */
+  removeVault(vaultId: string): void {
+    this.instances.delete(vaultId);
+  }
+
+  /**
+   * Get the count of active vault instances.
+   */
+  getActiveVaultCount(): number {
+    return this.instances.size;
+  }
+
+  /**
+   * Clear all vault instances (useful for testing).
+   */
+  clear(): void {
+    this.instances.clear();
+  }
+}
+
+// Factory instance for multitenancy support
+export const identityPersistenceFactory = new IdentityPersistenceFactory();
+
+// Singleton instance for backward compatibility (uses default vault)
 export const identityPersistence = new IdentityPersistenceManager();

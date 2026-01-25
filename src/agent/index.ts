@@ -41,7 +41,7 @@ import { setMemoryProvider } from '../tools/memory.js';
 import { createMetamorphMcpServer } from '../tools/mcp-server.js';
 import type { McpSdkServerConfigWithInstance } from '@anthropic-ai/claude-agent-sdk';
 import { autoEvolutionManager } from '../core/auto-evolution.js';
-import { identityPersistence } from '../core/identity-persistence.js';
+import { identityPersistence, identityPersistenceFactory } from '../core/identity-persistence.js';
 import { memoryInjector } from '../memory/proactive-injection.js';
 import { pluginEventBus } from '../plugins/event-bus.js';
 import { DecayModelingEngine, type DecayModel, type DecayAnalysis } from '../decay/modeling.js';
@@ -847,10 +847,14 @@ export class MetamorphAgent {
     }
 
     // Identity Persistence Manager integration (Ralph Iteration 5 - Feature 2)
+    // Use factory pattern for multitenancy - falls back to default singleton if no vaultId
     if (this.config.enableIdentityPersistence !== false) {
-      identityPersistence.recordTurn();
-      if (identityPersistence.shouldAutoCheckpoint()) {
-        identityPersistence.createCheckpoint(stanceAfter, `auto-turn-${stanceAfter.version}`);
+      const idPersistence = this.vaultId
+        ? identityPersistenceFactory.forVault(this.vaultId)
+        : identityPersistence;
+      idPersistence.recordTurn();
+      if (idPersistence.shouldAutoCheckpoint()) {
+        idPersistence.createCheckpoint(stanceAfter, `auto-turn-${stanceAfter.version}`);
         if (this.verbose) {
           console.log(`[METAMORPH] Identity checkpoint created at version ${stanceAfter.version}`);
         }
@@ -1241,10 +1245,14 @@ export class MetamorphAgent {
       }
 
       // Identity Persistence Manager integration (Ralph Iteration 5 - Feature 2)
+      // Use factory pattern for multitenancy - falls back to default singleton if no vaultId
       if (this.config.enableIdentityPersistence !== false) {
-        identityPersistence.recordTurn();
-        if (identityPersistence.shouldAutoCheckpoint()) {
-          identityPersistence.createCheckpoint(stanceAfter, `auto-turn-${stanceAfter.version}`);
+        const idPersistence = this.vaultId
+          ? identityPersistenceFactory.forVault(this.vaultId)
+          : identityPersistence;
+        idPersistence.recordTurn();
+        if (idPersistence.shouldAutoCheckpoint()) {
+          idPersistence.createCheckpoint(stanceAfter, `auto-turn-${stanceAfter.version}`);
           if (this.verbose) {
             console.log(`[METAMORPH] Identity checkpoint created at version ${stanceAfter.version}`);
           }

@@ -6,7 +6,18 @@
 import { CommandHandler, CommandResult } from '../handler.js';
 import { CommandContext } from '../context.js';
 import { Frame, SelfModel, Objective } from '../../../types/index.js';
-import { identityPersistence } from '../../../core/identity-persistence.js';
+import { identityPersistence, identityPersistenceFactory } from '../../../core/identity-persistence.js';
+
+/**
+ * Helper to get the appropriate identity persistence manager based on vault context.
+ * Uses factory pattern for multitenancy - falls back to default singleton if no vaultId.
+ */
+function getIdentityPersistence(ctx: CommandContext) {
+  const vaultId = ctx.session.agent.getVaultId();
+  return vaultId
+    ? identityPersistenceFactory.forVault(vaultId)
+    : identityPersistence;
+}
 
 /**
  * Identity command - Show or manage identity persistence (checkpoints, values, diff)
@@ -21,10 +32,11 @@ const identityCommand: CommandHandler = {
   execute(ctx: CommandContext, args: string[]): CommandResult {
     const subcommand = args[0] || 'status';
     const stance = ctx.session.agent.getCurrentStance();
+    const idPersistence = getIdentityPersistence(ctx);
 
     switch (subcommand) {
       case 'status': {
-        const status = identityPersistence.getStatus();
+        const status = idPersistence.getStatus();
         const lines: string[] = [
           '=== Identity Persistence ===',
           `Checkpoints:          ${status.checkpointCount}`,
@@ -42,7 +54,7 @@ const identityCommand: CommandHandler = {
 
       case 'save': {
         const name = args[1] || `checkpoint-${Date.now()}`;
-        const checkpoint = identityPersistence.createCheckpoint(stance, name);
+        const checkpoint = idPersistence.createCheckpoint(stance, name);
         const lines: string[] = [
           `Identity checkpoint saved: ${checkpoint.name}`,
           `  ID: ${checkpoint.id}`,
@@ -56,9 +68,9 @@ const identityCommand: CommandHandler = {
         if (!restoreTarget) {
           return { error: 'Usage: /identity restore <name|id>' };
         }
-        let restored = identityPersistence.getCheckpointByName(restoreTarget);
+        let restored = idPersistence.getCheckpointByName(restoreTarget);
         if (!restored) {
-          restored = identityPersistence.getCheckpoint(restoreTarget);
+          restored = idPersistence.getCheckpoint(restoreTarget);
         }
         if (restored) {
           const lines: string[] = [
@@ -75,7 +87,7 @@ const identityCommand: CommandHandler = {
       }
 
       case 'list': {
-        const checkpoints = identityPersistence.listCheckpoints();
+        const checkpoints = idPersistence.listCheckpoints();
         const lines: string[] = ['=== Identity Checkpoints ==='];
         if (checkpoints.length === 0) {
           lines.push('No checkpoints saved yet.');
@@ -90,7 +102,7 @@ const identityCommand: CommandHandler = {
       }
 
       case 'diff': {
-        const diff = identityPersistence.getDiffFromLast(stance);
+        const diff = idPersistence.getDiffFromLast(stance);
         if (!diff) {
           return { output: 'No previous checkpoint to compare.' };
         }
@@ -119,7 +131,7 @@ const identityCommand: CommandHandler = {
       }
 
       case 'values': {
-        const coreValues = identityPersistence.getCoreValues();
+        const coreValues = idPersistence.getCoreValues();
         const lines: string[] = ['=== Core Values ==='];
         if (coreValues.length === 0) {
           lines.push('No core values established yet.');
