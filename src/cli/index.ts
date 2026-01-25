@@ -788,6 +788,10 @@ async function handleCommand(
       handleAutoEvolution(agent, args);
       break;
 
+    case 'idle':
+      handleIdleMode(agent, args);
+      break;
+
     case 'visualize':
     case 'viz':
     case 'graph':
@@ -2133,6 +2137,100 @@ function handleAutoEvolution(agent: MetamorphAgent, args: string[]): void {
     default:
       console.log(chalk.yellow(`  Unknown evolution command: ${subcommand}`));
       console.log(chalk.gray('  Commands: status | enable | disable | check | config | set | clear | timeline | snapshot'));
+  }
+}
+
+/**
+ * Handle idle mode commands
+ */
+function handleIdleMode(agent: MetamorphAgent, args: string[]): void {
+  const subcommand = args[0] || 'status';
+
+  switch (subcommand) {
+    case 'status':
+      const idleStatus = agent.getIdleStatus();
+      console.log(chalk.cyan('\n  ═══ Idle Mode Status ═══'));
+      console.log(`  Enabled:              ${idleStatus.enabled ? chalk.green('YES') : chalk.red('NO')}`);
+      console.log(`  Currently Idle:       ${idleStatus.isIdle ? chalk.yellow('YES') : chalk.green('NO')}`);
+      console.log(`  Idle Threshold:       ${idleStatus.thresholdMinutes} minutes`);
+      console.log(`  Last Interaction:     ${idleStatus.lastInteractionTime.toLocaleString()}`);
+
+      if (idleStatus.timeSinceLastInteraction > 0) {
+        const minutes = Math.floor(idleStatus.timeSinceLastInteraction / 60000);
+        const seconds = Math.floor((idleStatus.timeSinceLastInteraction % 60000) / 1000);
+        console.log(`  Time Since Last:      ${minutes}m ${seconds}s ago`);
+
+        if (idleStatus.enabled && !idleStatus.isIdle) {
+          const remaining = idleStatus.thresholdMinutes * 60000 - idleStatus.timeSinceLastInteraction;
+          const remainingMinutes = Math.floor(remaining / 60000);
+          const remainingSeconds = Math.floor((remaining % 60000) / 1000);
+          if (remaining > 0) {
+            console.log(`  Time to Idle:         ${remainingMinutes}m ${remainingSeconds}s`);
+          }
+        }
+      }
+
+      if (idleStatus.isIdle && idleStatus.enabled) {
+        console.log(chalk.yellow('\n  🧠 Autonomous evolution could be active!'));
+        console.log(chalk.gray('     Use /idle autonomous to check autonomous session status'));
+      }
+      break;
+
+    case 'enable':
+      const threshold = parseInt(args[1]) || 30;
+      agent.enableIdleDetection(threshold);
+      console.log(chalk.green('  Idle detection enabled.'));
+      console.log(chalk.gray(`  Will enter idle state after ${threshold} minutes of inactivity.`));
+      console.log(chalk.gray('  Use "/idle status" to monitor idle state.'));
+      break;
+
+    case 'disable':
+      agent.disableIdleDetection();
+      console.log(chalk.yellow('  Idle detection disabled.'));
+      console.log(chalk.gray('  No autonomous evolution will occur during inactivity.'));
+      break;
+
+    case 'threshold':
+      const newThreshold = parseInt(args[1]);
+      if (!newThreshold || newThreshold <= 0) {
+        console.log(chalk.red('  Invalid threshold. Please provide a positive number of minutes.'));
+        console.log(chalk.gray('  Example: /idle threshold 45'));
+        break;
+      }
+      agent.setIdleThreshold(newThreshold);
+      console.log(chalk.green(`  Idle threshold updated to ${newThreshold} minutes.`));
+      break;
+
+    case 'autonomous':
+      // TODO: Add autonomous session tracking
+      console.log(chalk.cyan('\n  ═══ Autonomous Sessions ═══'));
+      console.log(chalk.gray('  Autonomous session tracking not yet implemented.'));
+      console.log(chalk.gray('  This will show active/recent autonomous evolution sessions.'));
+      break;
+
+    case 'test':
+      // Force a check for testing
+      const testStatus = agent.getIdleStatus();
+      console.log(chalk.cyan('\n  ═══ Idle Detection Test ═══'));
+      console.log(`  Enabled:              ${testStatus.enabled ? chalk.green('YES') : chalk.red('NO')}`);
+      if (testStatus.enabled) {
+        console.log(`  Time since last:      ${Math.floor(testStatus.timeSinceLastInteraction / 60000)}m ${Math.floor((testStatus.timeSinceLastInteraction % 60000) / 1000)}s`);
+        console.log(`  Threshold:            ${testStatus.thresholdMinutes}m`);
+        console.log(`  Would be idle:        ${testStatus.timeSinceLastInteraction >= (testStatus.thresholdMinutes * 60000) ? chalk.yellow('YES') : chalk.green('NO')}`);
+      } else {
+        console.log(chalk.gray('  Enable idle detection first with: /idle enable'));
+      }
+      break;
+
+    default:
+      console.log(chalk.yellow(`  Unknown idle command: ${subcommand}`));
+      console.log(chalk.gray('  Commands:'));
+      console.log(chalk.gray('    status      - Show current idle status and timing'));
+      console.log(chalk.gray('    enable [N]  - Enable idle detection (N minutes threshold, default 30)'));
+      console.log(chalk.gray('    disable     - Disable idle detection'));
+      console.log(chalk.gray('    threshold N - Set idle threshold to N minutes'));
+      console.log(chalk.gray('    autonomous  - Show autonomous session status (future)'));
+      console.log(chalk.gray('    test        - Test idle detection logic'));
   }
 }
 

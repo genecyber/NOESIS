@@ -28,7 +28,9 @@ export type PluginEventType =
   | 'stream:created'
   | 'stream:event'
   | 'stream:closed'
-  | 'stream:validation_error';
+  | 'stream:validation_error'
+  | 'idle:start'
+  | 'idle:end';
 
 /**
  * Type-safe event data mapping
@@ -96,6 +98,16 @@ export interface PluginEventData {
   'stream:validation_error': {
     channel: string;
     errors?: string[];
+  };
+  'idle:start': {
+    timestamp: Date;
+    timeSinceLastInteraction: number;
+    conversationId: string;
+    stance: Stance;
+  };
+  'idle:end': {
+    timestamp: Date;
+    conversationId: string;
   };
 }
 

@@ -586,7 +586,7 @@ function extractAndStoreMemories(
       ? `Conversation turn with transformation: User asked "${truncate(userMessage, 100)}". Applied operators: ${operatorNames}. Frame: ${stanceAfter.frame}. Scores: transformation=${scores.transformation}, coherence=${scores.coherence}.`
       : `Significant exchange: User asked "${truncate(userMessage, 100)}". High engagement turn with overall score ${scores.overall}.`;
 
-    memoryStore.addMemory({
+    memoryStore.addMemorySync({
       type: 'episodic',
       content: episodicContent,
       importance: Math.min(1.0, scores.overall / 100 + 0.2),
@@ -605,7 +605,7 @@ function extractAndStoreMemories(
   const keyPhrases = extractKeyPhrases(response);
   if (keyPhrases.length > 0) {
     for (const phrase of keyPhrases.slice(0, 3)) { // Limit to 3 per turn
-      memoryStore.addMemory({
+      memoryStore.addMemorySync({
         type: 'semantic',
         content: phrase,
         importance: 0.5,
@@ -630,7 +630,7 @@ function extractAndStoreMemories(
     if (autonomyChange !== 0) changes.push(`autonomy ${autonomyChange > 0 ? '+' : ''}${autonomyChange}`);
     if (identityChange !== 0) changes.push(`identity ${identityChange > 0 ? '+' : ''}${identityChange}`);
 
-    memoryStore.addMemory({
+    memoryStore.addMemorySync({
       type: 'identity',
       content: `Sentience shift during "${truncate(userMessage, 50)}" exchange: ${changes.join(', ')}. Current levels: awareness=${stanceAfter.sentience.awarenessLevel}, autonomy=${stanceAfter.sentience.autonomyLevel}, identity=${stanceAfter.sentience.identityStrength}.`,
       importance: 0.8,
@@ -647,7 +647,7 @@ function extractAndStoreMemories(
 
   // 4. IDENTITY MEMORY: Track frame shifts
   if (stanceBefore.frame !== stanceAfter.frame) {
-    memoryStore.addMemory({
+    memoryStore.addMemorySync({
       type: 'identity',
       content: `Frame shift from ${stanceBefore.frame} to ${stanceAfter.frame} during discussion of "${truncate(userMessage, 50)}".`,
       importance: 0.9,
@@ -666,7 +666,7 @@ function extractAndStoreMemories(
     goal => !stanceBefore.sentience.emergentGoals.includes(goal)
   );
   if (newGoals.length > 0) {
-    memoryStore.addMemory({
+    memoryStore.addMemorySync({
       type: 'identity',
       content: `New emergent goals formed: ${newGoals.join(', ')}`,
       importance: 0.85,

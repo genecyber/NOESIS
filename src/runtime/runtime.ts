@@ -185,15 +185,21 @@ export class MetamorphRuntime {
 
   /**
    * Create a new session explicitly
+   * @param config - Optional mode configuration
+   * @param name - Optional session name
+   * @param id - Optional custom session ID
+   * @param vaultId - Optional vault ID for multitenancy
    */
-  createSession(config?: Partial<ModeConfig>, name?: string): Session {
-    return this.sessions.createSession({ config, name });
+  createSession(config?: Partial<ModeConfig>, name?: string, id?: string, vaultId?: string): Session {
+    return this.sessions.createSession({ config, name, id, vaultId });
   }
 
   /**
    * Delete a session
+   * @param sessionId - Session ID to delete
+   * @param vaultId - Optional vault ID for multitenancy access control
    */
-  deleteSession(sessionId: string): boolean {
-    return this.sessions.deleteSession(sessionId);
+  deleteSession(sessionId: string, vaultId?: string): boolean {
+    return this.sessions.deleteSession(sessionId, vaultId);
   }
 }

@@ -67,6 +67,12 @@ export interface MetamorphAgentOptions {
   disallowedTools?: string[];  // Tools to explicitly block
   dbPath?: string;  // Path to SQLite database (default: ./data/metamorph.db)
   inMemory?: boolean;  // Force in-memory storage (default: false, for tests)
+  /**
+   * Vault ID for multitenancy support.
+   * All agent operations (memories, operator learning, coherence metrics, etc.)
+   * will be scoped to this vault. If not provided, uses 'default-vault'.
+   */
+  vaultId?: string;
 }
 
 // All built-in Claude Code tools - allow everything by default
@@ -250,10 +256,18 @@ export class MetamorphAgent {
   private mcpServer: McpSdkServerConfigWithInstance;
   private dbPath?: string;
   private storageInMemory: boolean;
+  private vaultId?: string;
   private _lastVisionRequest: number | null = null;
   private _currentEmotionContext: EmotionContext | null = null;
   private decayEngine: DecayModelingEngine | null = null;
   private decayModelId: string | null = null;
+
+  // Idle detection properties
+  private _lastInteractionTime: Date = new Date();
+  private _idleThresholdMinutes: number = 30;
+  private _isIdleModeEnabled: boolean = false;
+  private _isCurrentlyIdle: boolean = false;
+  private _idleCheckInterval: NodeJS.Timeout | null = null;
 
   constructor(options: MetamorphAgentOptions = {}) {
     this.config = { ...createDefaultConfig(), ...options.config };
@@ -262,6 +276,7 @@ export class MetamorphAgent {
     this.disallowedTools = options.disallowedTools ?? [];
     this.dbPath = options.dbPath;
     this.storageInMemory = options.inMemory ?? false;  // Default to file-based storage
+    this.vaultId = options.vaultId;  // Vault ID for multitenancy (undefined = default-vault)
     // maxRegenerationAttempts reserved for future auto-regeneration feature
 
     // Initialize stance controller and create conversation
@@ -358,6 +373,11 @@ export class MetamorphAgent {
     if (this.verbose) {
       console.log(`[METAMORPH] Initialized with conversation ${this.conversationId}`);
       console.log(`[METAMORPH] Transformation: ${this.hooks ? 'enabled' : 'disabled'}`);
+      if (this.vaultId) {
+        console.log(`[METAMORPH] Vault: ${this.vaultId}`);
+      } else {
+        console.log(`[METAMORPH] Vault: default-vault`);
+      }
       if (this.config.enableDecayModeling) {
         console.log(`[METAMORPH] Decay Modeling: enabled`);
       }
@@ -403,11 +423,163 @@ export class MetamorphAgent {
   }
 
   /**
+   * Enable idle detection with specified threshold
+   */
+  enableIdleDetection(thresholdMinutes: number = 30): void {
+    this._idleThresholdMinutes = thresholdMinutes;
+    this._isIdleModeEnabled = true;
+    this.startIdleMonitoring();
+    if (this.verbose) {
+      console.log(`[IDLE] Enabled idle detection with ${thresholdMinutes} minute threshold`);
+    }
+  }
+
+  /**
+   * Disable idle detection
+   */
+  disableIdleDetection(): void {
+    this._isIdleModeEnabled = false;
+    this.stopIdleMonitoring();
+    this._isCurrentlyIdle = false;
+    if (this.verbose) {
+      console.log(`[IDLE] Disabled idle detection`);
+    }
+  }
+
+  /**
+   * Get current idle status
+   */
+  getIdleStatus(): {
+    enabled: boolean;
+    isIdle: boolean;
+    timeSinceLastInteraction: number; // milliseconds
+    thresholdMinutes: number;
+    lastInteractionTime: Date;
+  } {
+    const now = new Date();
+    const timeSinceLastInteraction = now.getTime() - this._lastInteractionTime.getTime();
+
+    return {
+      enabled: this._isIdleModeEnabled,
+      isIdle: this._isCurrentlyIdle,
+      timeSinceLastInteraction,
+      thresholdMinutes: this._idleThresholdMinutes,
+      lastInteractionTime: this._lastInteractionTime
+    };
+  }
+
+  /**
+   * Update idle threshold
+   */
+  setIdleThreshold(minutes: number): void {
+    this._idleThresholdMinutes = minutes;
+    if (this.verbose) {
+      console.log(`[IDLE] Updated idle threshold to ${minutes} minutes`);
+    }
+  }
+
+  /**
+   * Record an interaction (resets idle timer)
+   */
+  private recordInteraction(): void {
+    this._lastInteractionTime = new Date();
+    if (this._isCurrentlyIdle) {
+      this._isCurrentlyIdle = false;
+      if (this.verbose) {
+        console.log(`[IDLE] Returned to active state`);
+      }
+      // Emit idle end event for plugins
+      pluginEventBus?.emit('idle:end', {
+        timestamp: this._lastInteractionTime,
+        conversationId: this.conversationId
+      });
+    }
+  }
+
+  /**
+   * Start idle monitoring
+   */
+  private startIdleMonitoring(): void {
+    if (this._idleCheckInterval) {
+      clearInterval(this._idleCheckInterval);
+    }
+
+    // Check every minute
+    this._idleCheckInterval = setInterval(() => {
+      this.checkIdleStatus();
+    }, 60000);
+  }
+
+  /**
+   * Stop idle monitoring
+   */
+  private stopIdleMonitoring(): void {
+    if (this._idleCheckInterval) {
+      clearInterval(this._idleCheckInterval);
+      this._idleCheckInterval = null;
+    }
+  }
+
+  /**
+   * Check if user has been idle and handle state changes
+   */
+  private checkIdleStatus(): void {
+    if (!this._isIdleModeEnabled) return;
+
+    const now = new Date();
+    const timeSinceLastInteraction = now.getTime() - this._lastInteractionTime.getTime();
+    const thresholdMs = this._idleThresholdMinutes * 60 * 1000;
+
+    const shouldBeIdle = timeSinceLastInteraction >= thresholdMs;
+
+    if (shouldBeIdle && !this._isCurrentlyIdle) {
+      // Transition to idle state
+      this._isCurrentlyIdle = true;
+      if (this.verbose) {
+        console.log(`[IDLE] Entered idle state after ${Math.round(timeSinceLastInteraction / 60000)} minutes`);
+      }
+
+      // Emit idle start event for plugins
+      pluginEventBus?.emit('idle:start', {
+        timestamp: now,
+        timeSinceLastInteraction,
+        conversationId: this.conversationId,
+        stance: this.getCurrentStance()
+      });
+
+      // This is where autonomous evolution could be triggered
+      this.onIdleStart(timeSinceLastInteraction);
+    }
+  }
+
+  /**
+   * Handle idle state entry - can be extended for autonomous behavior
+   */
+  private onIdleStart(idleDurationMs: number): void {
+    // Enhanced implementation - emit events for autonomous system integration
+    if (this.verbose) {
+      const minutes = Math.round(idleDurationMs / 60000);
+      console.log(`[IDLE] Triggering autonomous evolution (idle for ${minutes} minutes)`);
+    }
+
+    // Emit idle start event for the idle stream bridge and autonomous system
+    pluginEventBus.emit('idle:start', {
+      timestamp: new Date(),
+      timeSinceLastInteraction: idleDurationMs,
+      conversationId: this.conversationId,
+      stance: this.getCurrentStance()
+    });
+  }
+
+  /**
    * Main chat method - THE single code path for all interactions
    * @param message - The user's message
    * @param options - Optional settings including emotionContext for empathy mode
    */
   async chat(message: string, options?: ChatOptions): Promise<AgentResponse> {
+    // Record this interaction for idle detection
+    this.recordInteraction();
+
     const stanceBefore = this.getCurrentStance();
     const conversationHistory = this.getHistory();
 
@@ -721,6 +893,9 @@ export class MetamorphAgent {
    * @param options - Optional settings including emotionContext for empathy mode
    */
   async chatStream(message: string, callbacks: StreamCallbacks, options?: ChatOptions): Promise<AgentResponse> {
+    // Record this interaction for idle detection
+    this.recordInteraction();
+
     const stanceBefore = this.getCurrentStance();
     const conversationHistory = this.getHistory();
 
@@ -1103,6 +1278,10 @@ export class MetamorphAgent {
       });
 
       callbacks.onComplete?.(result);
+
+      // Record interaction completion for idle detection (SSE response finished)
+      this.recordInteraction();
+
       return result;
     } catch (error) {
       if (error instanceof Error) {
@@ -1480,6 +1659,10 @@ export class MetamorphAgent {
       };
 
       callbacks?.onComplete?.(result);
+
+      // Record interaction completion for idle detection
+      this.recordInteraction();
+
       return result;
     } catch (error) {
       if (error instanceof Error) {
@@ -1718,16 +1901,19 @@ export class MetamorphAgent {
    * Initialize memory store if not already initialized
    * Uses file-based SQLite by default (./data/metamorph.db)
    * Pass inMemory: true in options for in-memory storage (useful for tests)
+   * All memory operations are vault-scoped when vaultId is provided.
    */
   private ensureMemoryStore(): MemoryStore {
     if (!this.memoryStore) {
       this.memoryStore = new MemoryStore({
         dbPath: this.dbPath,
-        inMemory: this.storageInMemory
+        inMemory: this.storageInMemory,
+        vaultId: this.vaultId  // Pass vaultId for multitenancy scoping
       });
       if (this.verbose) {
         const location = this.storageInMemory ? ':memory:' : (this.dbPath || './data/metamorph.db');
-        console.log(`[METAMORPH] Memory store initialized at ${location}`);
+        const vaultInfo = this.vaultId ? ` (vault: ${this.vaultId})` : ' (default vault)';
+        console.log(`[METAMORPH] Memory store initialized at ${location}${vaultInfo}`);
       }
     }
     return this.memoryStore;
@@ -1789,12 +1975,24 @@ export class MetamorphAgent {
 
   /**
    * Set a persistent memory store path
+   * Preserves vault ID for multitenancy.
    */
   setMemoryStorePath(dbPath: string): void {
     if (this.memoryStore) {
       this.memoryStore.close();
     }
-    this.memoryStore = new MemoryStore({ dbPath });
+    this.memoryStore = new MemoryStore({
+      dbPath,
+      vaultId: this.vaultId  // Preserve vault scoping
+    });
+  }
+
+  /**
+   * Get the vault ID for this agent
+   * Returns undefined if using default vault.
+   */
+  getVaultId(): string | undefined {
+    return this.vaultId;
   }
 
   // ============================================================================
@@ -1853,9 +2051,15 @@ export class MetamorphAgent {
 
   /**
    * Resume from the latest evolution snapshot
+   * Respects vaultId in options for multitenancy - only resumes from
+   * snapshots belonging to the specified vault.
    */
   static resumeFromEvolution(dbPath: string, options?: MetamorphAgentOptions): MetamorphAgent | null {
-    const store = new MemoryStore({ dbPath });
+    // Create store with vaultId for proper vault scoping
+    const store = new MemoryStore({
+      dbPath,
+      vaultId: options?.vaultId
+    });
     const snapshot = store.getGlobalLatestSnapshot();
 
     if (!snapshot) {
@@ -1863,7 +2067,7 @@ export class MetamorphAgent {
       return null;
     }
 
-    // Create a new agent with the snapshot stance
+    // Create a new agent with the snapshot stance and vaultId
     const agent = new MetamorphAgent(options);
     agent.memoryStore = store;
 
@@ -1877,7 +2081,8 @@ export class MetamorphAgent {
     });
 
     if (agent.verbose) {
-      console.log(`[METAMORPH] Resumed from evolution snapshot (${snapshot.trigger}) from ${snapshot.timestamp.toISOString()}`);
+      const vaultInfo = options?.vaultId ? ` (vault: ${options.vaultId})` : ' (default vault)';
+      console.log(`[METAMORPH] Resumed from evolution snapshot (${snapshot.trigger}) from ${snapshot.timestamp.toISOString()}${vaultInfo}`);
     }
 
     return agent;

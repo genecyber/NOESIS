@@ -15,6 +15,8 @@ export interface Session {
   lastActivity: Date;
   name?: string;
   metadata?: Record<string, unknown>;
+  /** Vault ID for multi-tenant isolation */
+  vaultId?: string;
 }
 
 /**
@@ -29,6 +31,8 @@ export interface SessionInfo {
   currentFrame?: string;
   currentDrift?: number;
   metadata?: Record<string, unknown>;
+  /** Vault ID for multi-tenant isolation */
+  vaultId?: string;
 }
 
 /**
@@ -39,6 +43,8 @@ export interface CreateSessionOptions {
   name?: string;
   config?: Partial<ModeConfig>;
   metadata?: Record<string, unknown>;
+  /** Vault ID for multi-tenant isolation */
+  vaultId?: string;
 }
 
 /**
@@ -53,6 +59,8 @@ export interface SessionState {
   config: ModeConfig;
   messageCount: number;
   metadata?: Record<string, unknown>;
+  /** Vault ID for multi-tenant isolation */
+  vaultId?: string;
 }
 
 // Re-export for convenience

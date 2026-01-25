@@ -11,7 +11,8 @@ describe('MemoryStore', () => {
   let store: MemoryStore;
 
   beforeEach(() => {
-    store = new MemoryStore({ inMemory: true });
+    // Use explicit vaultId for consistent test isolation
+    store = new MemoryStore({ inMemory: true, vaultId: 'test-vault' });
   });
 
   afterEach(() => {

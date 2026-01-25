@@ -25,7 +25,8 @@ describe('Automatic Memory Extraction', () => {
   let config: ReturnType<typeof createDefaultConfig>;
 
   beforeEach(() => {
-    memoryStore = new MemoryStore({ inMemory: true });
+    // Use explicit vaultId for consistent test isolation
+    memoryStore = new MemoryStore({ inMemory: true, vaultId: 'test-vault' });
     hooks = createTransformationHooks(memoryStore);
     stance = createDefaultStance();
     config = createDefaultConfig();

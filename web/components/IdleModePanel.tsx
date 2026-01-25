@@ -69,6 +69,7 @@ export default function IdleModePanel({ sessionId }: IdleModePanelProps) {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [configMode, setConfigMode] = useState(false);
+  const [currentTime, setCurrentTime] = useState(new Date());
 
   // WebSocket connection for real-time updates
   const { connected: wsConnected, subscribe, unsubscribe } = useStreamSubscription({
@@ -88,6 +89,15 @@ export default function IdleModePanel({ sessionId }: IdleModePanelProps) {
       };
     }
   }, [wsConnected, sessionId, subscribe, unsubscribe]);
+
+  // Update current time every second for real-time idle duration
+  useEffect(() => {
+    const interval = setInterval(() => {
+      setCurrentTime(new Date());
+    }, 1000);
+
+    return () => clearInterval(interval);
+  }, []);
 
   // Load initial status
   useEffect(() => {
@@ -205,12 +215,34 @@ export default function IdleModePanel({ sessionId }: IdleModePanelProps) {
 
   const formatDuration = (ms: number) => {
     const minutes = Math.floor(ms / 60000);
+    const seconds = Math.floor((ms % 60000) / 1000);
     const hours = Math.floor(minutes / 60);
 
     if (hours > 0) {
       return `${hours}h ${minutes % 60}m`;
     }
-    return `${minutes}m`;
+    if (minutes > 0) {
+      return `${minutes}m ${seconds}s`;
+    }
+    return `${seconds}s`;
+  };
+
+  // Calculate real-time idle duration since last activity
+  const getCurrentIdleDuration = () => {
+    if (!status?.lastActivity) return 0;
+    const lastActivityTime = new Date(status.lastActivity);
+    return currentTime.getTime() - lastActivityTime.getTime();
+  };
+
+  // Get real-time idle status
+  const getCurrentIdleStatus = () => {
+    if (!status || !status.config) return { isIdle: false, timeSinceLastInteraction: 0 };
+
+    const timeSinceLastInteraction = getCurrentIdleDuration();
+    const thresholdMs = (status.config.idleThreshold || 30) * 60 * 1000;
+    const isIdle = timeSinceLastInteraction >= thresholdMs;
+
+    return { isIdle, timeSinceLastInteraction };
   };
 
   const getStatusColor = (session?: IdleSession) => {
@@ -273,13 +305,28 @@ export default function IdleModePanel({ sessionId }: IdleModePanelProps) {
     );
   }
 
+  if (!status.config) {
+    return (
+      <div className="p-6 text-center text-emblem-muted">
+        <p>Idle mode configuration not available</p>
+        <Button
+          variant="outline"
+          onClick={() => window.location.reload()}
+          className="mt-4"
+        >
+          Retry
+        </Button>
+      </div>
+    );
+  }
+
   return (
     <div className="space-y-6">
       {/* Header with main toggle */}
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-3">
-          <div className={`p-2 rounded-lg ${status.config.enabled ? 'bg-emblem-success/20' : 'bg-emblem-muted/20'}`}>
-            {status.config.enabled ? (
+          <div className={`p-2 rounded-lg ${status.config?.enabled ? 'bg-emblem-success/20' : 'bg-emblem-muted/20'}`}>
+            {status.config?.enabled ? (
               <Power className="w-5 h-5 text-emblem-success" />
             ) : (
               <PowerOff className="w-5 h-5 text-emblem-muted" />
@@ -290,7 +337,7 @@ export default function IdleModePanel({ sessionId }: IdleModePanelProps) {
               Autonomous Idle Evolution
             </h2>
             <p className="text-sm text-emblem-muted">
-              {status.config.enabled ? 'Active' : 'Disabled'} • {status.isIdle ? 'Currently Idle' : 'User Active'}
+              {status.config?.enabled ? 'Active' : 'Disabled'} • {status.isIdle ? 'Currently Idle' : 'User Active'}
             </p>
           </div>
         </div>
@@ -304,7 +351,7 @@ export default function IdleModePanel({ sessionId }: IdleModePanelProps) {
             <Settings className="w-4 h-4" />
           </Button>
           <Switch
-            checked={status.config.enabled}
+            checked={status.config?.enabled ?? false}
             onCheckedChange={toggleIdleMode}
           />
         </div>
@@ -316,19 +363,52 @@ export default function IdleModePanel({ sessionId }: IdleModePanelProps) {
           <div>
             <div className="text-sm text-emblem-muted mb-1">Idle Status</div>
             <div className="flex items-center gap-2">
-              {status.isIdle ? (
-                <>
-                  <Clock className="w-4 h-4 text-emblem-warning" />
-                  <span className="text-emblem-text">
-                    Idle {formatDuration(status.idleDuration)}
-                  </span>
-                </>
-              ) : (
-                <>
-                  <Activity className="w-4 h-4 text-emblem-success" />
-                  <span className="text-emblem-text">Active</span>
-                </>
-              )}
+              {(() => {
+                const realTimeStatus = getCurrentIdleStatus();
+                const isCurrentlyIdle = realTimeStatus.isIdle && status.config?.enabled;
+
+                return isCurrentlyIdle ? (
+                  <>
+                    <Clock className="w-4 h-4 text-emblem-warning" />
+                    <span className="text-emblem-text">
+                      Idle {formatDuration(realTimeStatus.timeSinceLastInteraction)}
+                    </span>
+                  </>
+                ) : (
+                  <>
+                    <Activity className="w-4 h-4 text-emblem-success" />
+                    <div className="flex flex-col">
+                      <span className="text-emblem-text">Active</span>
+                      {status.config?.enabled && (
+                        <div className="flex flex-col">
+                          <span className="text-xs text-emblem-muted">
+                            {formatDuration(realTimeStatus.timeSinceLastInteraction)} since last
+                          </span>
+                          {(() => {
+                            const thresholdMs = (status.config?.idleThreshold || 30) * 60 * 1000;
+                            const progress = Math.min(realTimeStatus.timeSinceLastInteraction / thresholdMs, 1);
+                            const remaining = thresholdMs - realTimeStatus.timeSinceLastInteraction;
+
+                            return remaining > 0 ? (
+                              <div className="flex items-center gap-1 mt-1">
+                                <div className="w-20 h-1 bg-emblem-surface rounded-full overflow-hidden">
+                                  <div
+                                    className="h-full bg-emblem-warning transition-all duration-1000"
+                                    style={{ width: `${progress * 100}%` }}
+                                  />
+                                </div>
+                                <span className="text-xs text-emblem-muted">
+                                  {formatDuration(remaining)} to idle
+                                </span>
+                              </div>
+                            ) : null;
+                          })()}
+                        </div>
+                      )}
+                    </div>
+                  </>
+                );
+              })()}
             </div>
           </div>
 
@@ -453,7 +533,7 @@ export default function IdleModePanel({ sessionId }: IdleModePanelProps) {
       </AnimatePresence>
 
       {/* Manual Session Start */}
-      {!status.currentSession && status.config.enabled && (
+      {!status.currentSession && status.config?.enabled && (
         <Card className="p-4">
           <h3 className="font-medium text-emblem-text mb-3">Start Manual Session</h3>
           <div className="grid grid-cols-2 gap-2">

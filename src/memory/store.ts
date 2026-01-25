@@ -1,5 +1,8 @@
 /**
  * MemoryStore - SQLite-based persistent memory for conversations and identity
+ *
+ * Supports vault-scoped multitenancy: all memory operations are automatically
+ * scoped to the current vault context when available.
  */
 
 import Database from 'better-sqlite3';
@@ -16,19 +19,32 @@ import {
 } from '../types/index.js';
 import type { EmotionalArc, EmotionalPoint, EmotionalPattern } from '../core/emotional-arc.js';
 import { EmbeddingService, getEmbeddingService } from '../embeddings/service.js';
+import {
+  VaultScopedDatabase,
+  createVaultScopedDbExplicit,
+  getVaultId
+} from '../multitenancy/index.js';
 
 export interface MemoryStoreOptions {
   dbPath?: string;
   inMemory?: boolean;
+  /** Optional explicit vault ID. If not provided, uses AsyncLocalStorage context or 'default-vault' fallback */
+  vaultId?: string;
 }
+
+/** Default vault ID used when no vault context is available */
+const DEFAULT_VAULT_ID = 'default-vault';
 
 export class MemoryStore {
   private db: Database.Database;
+  private vaultDb: VaultScopedDatabase;
   private readonly dbPath: string;
   private embeddingService: EmbeddingService;
+  private readonly explicitVaultId?: string;
 
   constructor(options: MemoryStoreOptions = {}) {
     this.dbPath = options.inMemory ? ':memory:' : (options.dbPath || './data/metamorph.db');
+    this.explicitVaultId = options.vaultId;
 
     // Ensure data directory exists for file-based storage
     if (this.dbPath !== ':memory:') {
@@ -39,8 +55,28 @@ export class MemoryStore {
     }
 
     this.db = new Database(this.dbPath);
+
+    // Create vault-scoped database wrapper
+    // If explicit vaultId provided, use it; otherwise dynamically look up from context
+    if (options.vaultId) {
+      this.vaultDb = createVaultScopedDbExplicit(this.db, options.vaultId);
+    } else {
+      // Dynamic lookup with fallback to default-vault
+      this.vaultDb = new VaultScopedDatabase(this.db, () => getVaultId(DEFAULT_VAULT_ID));
+    }
+
     this.initSchema();
     this.embeddingService = getEmbeddingService();
+  }
+
+  /**
+   * Get the current vault ID being used for operations
+   */
+  getVaultId(): string {
+    if (this.explicitVaultId) {
+      return this.explicitVaultId;
+    }
+    return getVaultId(DEFAULT_VAULT_ID);
   }
 
   /**
@@ -51,10 +87,11 @@ export class MemoryStore {
   }
 
   private initSchema(): void {
-    // Conversations table
+    // Conversations table - vault scoped
     this.db.exec(`
       CREATE TABLE IF NOT EXISTS conversations (
         id TEXT PRIMARY KEY,
+        vault_id TEXT NOT NULL DEFAULT 'default-vault',
         stance TEXT NOT NULL,
         config TEXT NOT NULL,
         created_at TEXT NOT NULL,
@@ -62,10 +99,14 @@ export class MemoryStore {
       )
     `);
 
-    // Messages table
+    // Add vault_id column if it doesn't exist (migration)
+    this.migrateAddVaultId('conversations');
+
+    // Messages table - vault scoped through conversation
     this.db.exec(`
       CREATE TABLE IF NOT EXISTS messages (
         id TEXT PRIMARY KEY,
+        vault_id TEXT NOT NULL DEFAULT 'default-vault',
         conversation_id TEXT NOT NULL,
         role TEXT NOT NULL,
         content TEXT NOT NULL,
@@ -76,16 +117,25 @@ export class MemoryStore {
       )
     `);
 
+    this.migrateAddVaultId('messages');
+
     // Create index on conversation_id
     this.db.exec(`
       CREATE INDEX IF NOT EXISTS idx_messages_conversation
       ON messages(conversation_id)
     `);
 
-    // Identity table
+    // Create index on vault_id for messages
+    this.db.exec(`
+      CREATE INDEX IF NOT EXISTS idx_messages_vault
+      ON messages(vault_id)
+    `);
+
+    // Identity table - vault scoped
     this.db.exec(`
       CREATE TABLE IF NOT EXISTS identity (
         id TEXT PRIMARY KEY,
+        vault_id TEXT NOT NULL DEFAULT 'default-vault',
         self_model TEXT NOT NULL,
         persistent_values TEXT NOT NULL,
         emergent_goals TEXT NOT NULL,
@@ -98,10 +148,13 @@ export class MemoryStore {
       )
     `);
 
-    // Semantic memory table
+    this.migrateAddVaultId('identity');
+
+    // Semantic memory table - vault scoped
     this.db.exec(`
       CREATE TABLE IF NOT EXISTS semantic_memory (
         id TEXT PRIMARY KEY,
+        vault_id TEXT NOT NULL DEFAULT 'default-vault',
         type TEXT NOT NULL,
         content TEXT NOT NULL,
         embedding BLOB,
@@ -112,16 +165,25 @@ export class MemoryStore {
       )
     `);
 
+    this.migrateAddVaultId('semantic_memory');
+
     // Create index on type
     this.db.exec(`
       CREATE INDEX IF NOT EXISTS idx_semantic_type
       ON semantic_memory(type)
     `);
 
-    // Evolution snapshots table (Ralph Iteration 1 - Feature 4)
+    // Create index on vault_id for semantic_memory
+    this.db.exec(`
+      CREATE INDEX IF NOT EXISTS idx_semantic_memory_vault
+      ON semantic_memory(vault_id)
+    `);
+
+    // Evolution snapshots table - vault scoped
     this.db.exec(`
       CREATE TABLE IF NOT EXISTS evolution_snapshots (
         id TEXT PRIMARY KEY,
+        vault_id TEXT NOT NULL DEFAULT 'default-vault',
         conversation_id TEXT NOT NULL,
         stance TEXT NOT NULL,
         trigger TEXT NOT NULL,
@@ -130,16 +192,19 @@ export class MemoryStore {
       )
     `);
 
+    this.migrateAddVaultId('evolution_snapshots');
+
     // Create index on conversation_id for evolution snapshots
     this.db.exec(`
       CREATE INDEX IF NOT EXISTS idx_evolution_conversation
       ON evolution_snapshots(conversation_id)
     `);
 
-    // Sessions table (Ralph Iteration 2 - Feature 2)
+    // Sessions table - vault scoped
     this.db.exec(`
       CREATE TABLE IF NOT EXISTS sessions (
         id TEXT PRIMARY KEY,
+        vault_id TEXT NOT NULL DEFAULT 'default-vault',
         name TEXT,
         conversation_id TEXT,
         last_accessed TEXT NOT NULL,
@@ -151,16 +216,25 @@ export class MemoryStore {
       )
     `);
 
+    this.migrateAddVaultId('sessions');
+
     // Index for sessions by last_accessed
     this.db.exec(`
       CREATE INDEX IF NOT EXISTS idx_sessions_accessed
       ON sessions(last_accessed DESC)
     `);
 
-    // Operator performance table (Ralph Iteration 3 - Feature 1)
+    // Create index on vault_id for sessions
+    this.db.exec(`
+      CREATE INDEX IF NOT EXISTS idx_sessions_vault
+      ON sessions(vault_id)
+    `);
+
+    // Operator performance table - vault scoped
     this.db.exec(`
       CREATE TABLE IF NOT EXISTS operator_performance (
         id TEXT PRIMARY KEY,
+        vault_id TEXT NOT NULL DEFAULT 'default-vault',
         operator_name TEXT NOT NULL,
         trigger_type TEXT NOT NULL,
         effectiveness_score REAL NOT NULL,
@@ -171,16 +245,19 @@ export class MemoryStore {
       )
     `);
 
+    this.migrateAddVaultId('operator_performance');
+
     // Index for operator performance by operator name
     this.db.exec(`
       CREATE INDEX IF NOT EXISTS idx_operator_performance
       ON operator_performance(operator_name, trigger_type)
     `);
 
-    // Subagent results table (Ralph Iteration 3 - Feature 5)
+    // Subagent results table - vault scoped
     this.db.exec(`
       CREATE TABLE IF NOT EXISTS subagent_results (
         id TEXT PRIMARY KEY,
+        vault_id TEXT NOT NULL DEFAULT 'default-vault',
         subagent_name TEXT NOT NULL,
         task TEXT NOT NULL,
         response TEXT NOT NULL,
@@ -192,24 +269,30 @@ export class MemoryStore {
       )
     `);
 
+    this.migrateAddVaultId('subagent_results');
+
     // Index for subagent results
     this.db.exec(`
       CREATE INDEX IF NOT EXISTS idx_subagent_results
       ON subagent_results(subagent_name, relevance DESC)
     `);
 
-    // Emotional arcs table (Ralph Iteration 3 - Feature 6 persistence)
+    // Emotional arcs table - vault scoped
     this.db.exec(`
       CREATE TABLE IF NOT EXISTS emotional_arcs (
         id TEXT PRIMARY KEY,
-        conversation_id TEXT NOT NULL UNIQUE,
+        vault_id TEXT NOT NULL DEFAULT 'default-vault',
+        conversation_id TEXT NOT NULL,
         emotions TEXT NOT NULL,
         insights TEXT NOT NULL,
         patterns TEXT NOT NULL,
         trend TEXT,
-        updated_at TEXT NOT NULL
+        updated_at TEXT NOT NULL,
+        UNIQUE(vault_id, conversation_id)
       )
     `);
+
+    this.migrateAddVaultId('emotional_arcs');
 
     // Index for emotional_arcs by conversation_id
     this.db.exec(`
@@ -217,10 +300,11 @@ export class MemoryStore {
       ON emotional_arcs(conversation_id)
     `);
 
-    // Emotion context table (for empathy mode persistence)
+    // Emotion context table - vault scoped
     this.db.exec(`
       CREATE TABLE IF NOT EXISTS emotion_context (
         id TEXT PRIMARY KEY,
+        vault_id TEXT NOT NULL DEFAULT 'default-vault',
         session_id TEXT NOT NULL,
         current_emotion TEXT NOT NULL,
         valence REAL NOT NULL,
@@ -234,6 +318,8 @@ export class MemoryStore {
       )
     `);
 
+    this.migrateAddVaultId('emotion_context');
+
     // Index for emotion context by session
     this.db.exec(`
       CREATE INDEX IF NOT EXISTS idx_emotion_context_session
@@ -241,53 +327,68 @@ export class MemoryStore {
     `);
   }
 
+  /**
+   * Migration helper: adds vault_id column to existing tables if missing
+   */
+  private migrateAddVaultId(tableName: string): void {
+    try {
+      // Check if vault_id column exists
+      const tableInfo = this.db.prepare(`PRAGMA table_info(${tableName})`).all() as Array<{ name: string }>;
+      const hasVaultId = tableInfo.some(col => col.name === 'vault_id');
+
+      if (!hasVaultId) {
+        // Add vault_id column with default value
+        this.db.exec(`ALTER TABLE ${tableName} ADD COLUMN vault_id TEXT NOT NULL DEFAULT 'default-vault'`);
+        // Create index for vault_id
+        this.db.exec(`CREATE INDEX IF NOT EXISTS idx_${tableName}_vault ON ${tableName}(vault_id)`);
+      }
+    } catch {
+      // Table might not exist yet, which is fine - CREATE TABLE will handle it
+    }
+  }
+
   // ============================================================================
   // Conversation Management
   // ============================================================================
 
   saveConversation(conversation: Conversation): void {
-    const stmt = this.db.prepare(`
-      INSERT OR REPLACE INTO conversations (id, stance, config, created_at, updated_at)
-      VALUES (?, ?, ?, ?, ?)
-    `);
+    // Use vault-scoped upsert for conversation
+    this.vaultDb.upsertWithVault('conversations', {
+      id: conversation.id,
+      stance: JSON.stringify(conversation.stance),
+      config: JSON.stringify(conversation.config),
+      created_at: conversation.createdAt.toISOString(),
+      updated_at: conversation.updatedAt.toISOString()
+    });
 
-    stmt.run(
-      conversation.id,
-      JSON.stringify(conversation.stance),
-      JSON.stringify(conversation.config),
-      conversation.createdAt.toISOString(),
-      conversation.updatedAt.toISOString()
-    );
-
-    // Save messages
-    const msgStmt = this.db.prepare(`
-      INSERT OR REPLACE INTO messages (id, conversation_id, role, content, stance, tools_used, timestamp)
-      VALUES (?, ?, ?, ?, ?, ?, ?)
-    `);
-
+    // Save messages with vault scoping
     for (const msg of conversation.messages) {
-      msgStmt.run(
-        uuidv4(),
-        conversation.id,
-        msg.role,
-        msg.content,
-        msg.stance ? JSON.stringify(msg.stance) : null,
-        msg.toolsUsed ? JSON.stringify(msg.toolsUsed) : null,
-        msg.timestamp.toISOString()
-      );
+      this.vaultDb.upsertWithVault('messages', {
+        id: uuidv4(),
+        conversation_id: conversation.id,
+        role: msg.role,
+        content: msg.content,
+        stance: msg.stance ? JSON.stringify(msg.stance) : null,
+        tools_used: msg.toolsUsed ? JSON.stringify(msg.toolsUsed) : null,
+        timestamp: msg.timestamp.toISOString()
+      });
     }
   }
 
   loadConversation(id: string): Conversation | null {
-    const convRow = this.db.prepare(`
-      SELECT * FROM conversations WHERE id = ?
-    `).get(id) as { id: string; stance: string; config: string; created_at: string; updated_at: string } | undefined;
+    // Use vault-scoped query
+    const convRow = this.vaultDb.getWithVault(
+      'SELECT * FROM conversations WHERE id = ?',
+      [id]
+    ) as { id: string; stance: string; config: string; created_at: string; updated_at: string } | undefined;
 
     if (!convRow) return null;
 
-    const msgRows = this.db.prepare(`
-      SELECT * FROM messages WHERE conversation_id = ? ORDER BY timestamp ASC
-    `).all(id) as Array<{
+    // Get messages for this conversation (vault-scoped)
+    const msgRows = this.vaultDb.queryWithVault(
+      'SELECT * FROM messages WHERE conversation_id = ? ORDER BY timestamp ASC',
+      [id]
+    ) as Array<{
       role: string;
       content: string;
       stance: string | null;
@@ -314,13 +415,16 @@ export class MemoryStore {
   }
 
   listConversations(): Array<{ id: string; createdAt: Date; updatedAt: Date; messageCount: number }> {
+    const vaultId = this.getVaultId();
+    // Complex query with JOIN - use raw db but filter by vault_id explicitly
     const rows = this.db.prepare(`
       SELECT c.id, c.created_at, c.updated_at, COUNT(m.id) as message_count
       FROM conversations c
-      LEFT JOIN messages m ON m.conversation_id = c.id
+      LEFT JOIN messages m ON m.conversation_id = c.id AND m.vault_id = ?
+      WHERE c.vault_id = ?
       GROUP BY c.id
       ORDER BY c.updated_at DESC
-    `).all() as Array<{
+    `).all(vaultId, vaultId) as Array<{
       id: string;
       created_at: string;
       updated_at: string;
@@ -336,8 +440,9 @@ export class MemoryStore {
   }
 
   deleteConversation(id: string): boolean {
-    const result = this.db.prepare('DELETE FROM conversations WHERE id = ?').run(id);
-    this.db.prepare('DELETE FROM messages WHERE conversation_id = ?').run(id);
+    // Delete conversation and messages with vault scoping
+    const result = this.vaultDb.deleteWithVault('conversations', 'id = ?', [id]);
+    this.vaultDb.deleteWithVault('messages', 'conversation_id = ?', [id]);
     return result.changes > 0;
   }
 
@@ -346,25 +451,19 @@ export class MemoryStore {
   // ============================================================================
 
   saveIdentity(identity: IdentityState): void {
-    const stmt = this.db.prepare(`
-      INSERT OR REPLACE INTO identity (
-        id, self_model, persistent_values, emergent_goals, consciousness_insights,
-        awareness_level, autonomy_level, identity_strength, created_at, updated_at
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-    `);
-
-    stmt.run(
-      identity.id,
-      identity.selfModel,
-      JSON.stringify(identity.persistentValues),
-      JSON.stringify(identity.emergentGoals),
-      JSON.stringify(identity.consciousnessInsights),
-      identity.awarenessLevel,
-      identity.autonomyLevel,
-      identity.identityStrength,
-      identity.createdAt.toISOString(),
-      identity.updatedAt.toISOString()
-    );
+    // Use vault-scoped upsert for identity
+    this.vaultDb.upsertWithVault('identity', {
+      id: identity.id,
+      self_model: identity.selfModel,
+      persistent_values: JSON.stringify(identity.persistentValues),
+      emergent_goals: JSON.stringify(identity.emergentGoals),
+      consciousness_insights: JSON.stringify(identity.consciousnessInsights),
+      awareness_level: identity.awarenessLevel,
+      autonomy_level: identity.autonomyLevel,
+      identity_strength: identity.identityStrength,
+      created_at: identity.createdAt.toISOString(),
+      updated_at: identity.updatedAt.toISOString()
+    });
   }
 
   loadIdentity(id?: string): IdentityState | null {
@@ -382,10 +481,12 @@ export class MemoryStore {
     } | undefined;
 
     if (id) {
-      row = this.db.prepare('SELECT * FROM identity WHERE id = ?').get(id) as typeof row;
+      // Use vault-scoped query
+      row = this.vaultDb.getWithVault('SELECT * FROM identity WHERE id = ?', [id]) as typeof row;
     } else {
-      // Get the most recent identity
-      row = this.db.prepare('SELECT * FROM identity ORDER BY updated_at DESC LIMIT 1').get() as typeof row;
+      // Get the most recent identity for this vault
+      const vaultId = this.getVaultId();
+      row = this.db.prepare('SELECT * FROM identity WHERE vault_id = ? ORDER BY updated_at DESC LIMIT 1').get(vaultId) as typeof row;
     }
 
     if (!row) return null;
@@ -428,6 +529,7 @@ export class MemoryStore {
 
   /**
    * Add a memory with auto-embedding and semantic deduplication
+   * All memories are automatically scoped to the current vault.
    * @param entry Memory entry to add (embedding will be generated if not provided)
    * @param options Options for deduplication behavior
    * @returns Object with id (if added) and whether it was a duplicate
@@ -449,7 +551,7 @@ export class MemoryStore {
       }
     }
 
-    // Check for semantic duplicates unless skipped
+    // Check for semantic duplicates unless skipped (within same vault only)
     if (!skipDeduplication && embedding) {
       const similar = this.semanticSearch(embedding, {
         minSimilarity: duplicateThreshold,
@@ -464,24 +566,19 @@ export class MemoryStore {
       }
     }
 
-    // Proceed with storage
+    // Proceed with vault-scoped storage
     const id = uuidv4();
 
-    const stmt = this.db.prepare(`
-      INSERT INTO semantic_memory (id, type, content, embedding, importance, decay, timestamp, metadata)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-    `);
-
-    stmt.run(
+    this.vaultDb.insertWithVault('semantic_memory', {
       id,
-      entry.type,
-      entry.content,
-      embedding ? Buffer.from(new Float32Array(embedding).buffer) : null,
-      entry.importance,
-      entry.decay,
-      entry.timestamp.toISOString(),
-      JSON.stringify(entry.metadata || {})
-    );
+      type: entry.type,
+      content: entry.content,
+      embedding: embedding ? Buffer.from(new Float32Array(embedding).buffer) : null,
+      importance: entry.importance,
+      decay: entry.decay,
+      timestamp: entry.timestamp.toISOString(),
+      metadata: JSON.stringify(entry.metadata || {})
+    });
 
     return { id, isDuplicate: false };
   }
@@ -494,42 +591,39 @@ export class MemoryStore {
   addMemorySync(entry: Omit<MemoryEntry, 'id'>): string {
     const id = uuidv4();
 
-    const stmt = this.db.prepare(`
-      INSERT INTO semantic_memory (id, type, content, embedding, importance, decay, timestamp, metadata)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-    `);
-
-    stmt.run(
+    this.vaultDb.insertWithVault('semantic_memory', {
       id,
-      entry.type,
-      entry.content,
-      entry.embedding ? Buffer.from(new Float32Array(entry.embedding).buffer) : null,
-      entry.importance,
-      entry.decay,
-      entry.timestamp.toISOString(),
-      JSON.stringify(entry.metadata || {})
-    );
+      type: entry.type,
+      content: entry.content,
+      embedding: entry.embedding ? Buffer.from(new Float32Array(entry.embedding).buffer) : null,
+      importance: entry.importance,
+      decay: entry.decay,
+      timestamp: entry.timestamp.toISOString(),
+      metadata: JSON.stringify(entry.metadata || {})
+    });
 
     return id;
   }
 
   /**
    * Boost a memory's importance (used for deduplication and reinforcement)
+   * Only affects memories within the current vault.
    * @param id Memory ID to boost
    * @param boost Amount to add to importance (default 0.1)
    */
   async boostMemoryImportance(id: string, boost: number = 0.1): Promise<boolean> {
-    const result = this.db.prepare(`
-      UPDATE semantic_memory
-      SET importance = MIN(importance + ?, 1.0)
-      WHERE id = ?
-    `).run(boost, id);
+    // Use vault-scoped run to ensure we only update our own vault's memories
+    const result = this.vaultDb.runWithVault(
+      'UPDATE semantic_memory SET importance = MIN(importance + ?, 1.0) WHERE id = ?',
+      [boost, id]
+    );
 
     return result.changes > 0;
   }
 
   getMemory(id: string): MemoryEntry | null {
-    const row = this.db.prepare('SELECT * FROM semantic_memory WHERE id = ?').get(id) as {
+    // Use vault-scoped query
+    const row = this.vaultDb.getWithVault('SELECT * FROM semantic_memory WHERE id = ?', [id]) as {
       id: string;
       type: string;
       content: string;
@@ -559,8 +653,9 @@ export class MemoryStore {
     minImportance?: number;
     limit?: number;
   }): MemoryEntry[] {
-    let sql = 'SELECT * FROM semantic_memory WHERE 1=1';
-    const params: (string | number)[] = [];
+    const vaultId = this.getVaultId();
+    let sql = 'SELECT * FROM semantic_memory WHERE vault_id = ?';
+    const params: (string | number)[] = [vaultId];
 
     if (query.type) {
       sql += ' AND type = ?';
@@ -603,52 +698,58 @@ export class MemoryStore {
   }
 
   /**
-   * Apply decay to all memories
+   * Apply decay to all memories within the current vault
    */
   applyDecay(decayFactor: number = 0.99): void {
-    this.db.prepare(`
-      UPDATE semantic_memory SET importance = importance * ?
-    `).run(decayFactor);
+    const vaultId = this.getVaultId();
 
-    // Delete memories below threshold
+    // Vault-scoped decay
     this.db.prepare(`
-      DELETE FROM semantic_memory WHERE importance < 0.1
-    `).run();
+      UPDATE semantic_memory SET importance = importance * ? WHERE vault_id = ?
+    `).run(decayFactor, vaultId);
+
+    // Delete memories below threshold (vault-scoped)
+    this.db.prepare(`
+      DELETE FROM semantic_memory WHERE vault_id = ? AND importance < 0.1
+    `).run(vaultId);
   }
 
   /**
    * Update memory content (for batch find/replace operations)
    * Note: This will clear the embedding since content changed - re-embed if needed
+   * Only affects memories within the current vault.
    * @param id Memory ID to update
    * @param newContent New content for the memory
    * @returns true if updated, false if not found
    */
   updateMemoryContent(id: string, newContent: string): boolean {
     // Clear embedding since content changed - it will need to be re-generated
-    const result = this.db.prepare(`
-      UPDATE semantic_memory
-      SET content = ?, embedding = NULL
-      WHERE id = ?
-    `).run(newContent, id);
+    const result = this.vaultDb.runWithVault(
+      'UPDATE semantic_memory SET content = ?, embedding = NULL WHERE id = ?',
+      [newContent, id]
+    );
 
     return result.changes > 0;
   }
 
   /**
    * Batch delete multiple memories by ID
+   * Only deletes memories within the current vault.
    * @param ids Array of memory IDs to delete
    * @returns Number of memories deleted
    */
   batchDelete(ids: string[]): number {
     if (ids.length === 0) return 0;
 
+    const vaultId = this.getVaultId();
+
     // Use a transaction for efficiency and atomicity
-    const deleteStmt = this.db.prepare('DELETE FROM semantic_memory WHERE id = ?');
+    const deleteStmt = this.db.prepare('DELETE FROM semantic_memory WHERE id = ? AND vault_id = ?');
 
     let deletedCount = 0;
     const transaction = this.db.transaction(() => {
       for (const id of ids) {
-        const result = deleteStmt.run(id);
+        const result = deleteStmt.run(id, vaultId);
         deletedCount += result.changes;
       }
     });
@@ -659,22 +760,24 @@ export class MemoryStore {
 
   /**
    * Delete a single memory by ID
+   * Only deletes memories within the current vault.
    * @param id Memory ID to delete
    * @returns true if deleted, false if not found
    */
   deleteMemory(id: string): boolean {
-    const result = this.db.prepare('DELETE FROM semantic_memory WHERE id = ?').run(id);
+    const result = this.vaultDb.deleteWithVault('semantic_memory', 'id = ?', [id]);
     return result.changes > 0;
   }
 
   /**
-   * Get all memories (for batch operations)
-   * @returns Array of all memory entries
+   * Get all memories for the current vault (for batch operations)
+   * @returns Array of all memory entries in the current vault
    */
   getAllMemories(): MemoryEntry[] {
+    const vaultId = this.getVaultId();
     const rows = this.db.prepare(`
-      SELECT * FROM semantic_memory ORDER BY importance DESC, timestamp DESC
-    `).all() as Array<{
+      SELECT * FROM semantic_memory WHERE vault_id = ? ORDER BY importance DESC, timestamp DESC
+    `).all(vaultId) as Array<{
       id: string;
       type: string;
       content: string;
@@ -705,38 +808,35 @@ export class MemoryStore {
   // ============================================================================
 
   /**
-   * Add memory with embedding
+   * Add memory with embedding (vault-scoped)
    */
   addMemoryWithEmbedding(entry: Omit<MemoryEntry, 'id'>, embedding: number[]): string {
     const id = uuidv4();
 
-    const stmt = this.db.prepare(`
-      INSERT INTO semantic_memory (id, type, content, embedding, importance, decay, timestamp, metadata)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-    `);
-
-    stmt.run(
+    this.vaultDb.insertWithVault('semantic_memory', {
       id,
-      entry.type,
-      entry.content,
-      Buffer.from(new Float32Array(embedding).buffer),
-      entry.importance,
-      entry.decay,
-      entry.timestamp.toISOString(),
-      JSON.stringify(entry.metadata || {})
-    );
+      type: entry.type,
+      content: entry.content,
+      embedding: Buffer.from(new Float32Array(embedding).buffer),
+      importance: entry.importance,
+      decay: entry.decay,
+      timestamp: entry.timestamp.toISOString(),
+      metadata: JSON.stringify(entry.metadata || {})
+    });
 
     return id;
   }
 
   /**
-   * Get all memories with embeddings for semantic search
+   * Get all memories with embeddings for semantic search (vault-scoped)
+   * Only returns memories from the current vault.
    */
   getMemoriesWithEmbeddings(): Array<MemoryEntry & { embedding: number[] }> {
+    const vaultId = this.getVaultId();
     const rows = this.db.prepare(`
-      SELECT * FROM semantic_memory WHERE embedding IS NOT NULL
+      SELECT * FROM semantic_memory WHERE vault_id = ? AND embedding IS NOT NULL
       ORDER BY importance DESC
-    `).all() as Array<{
+    `).all(vaultId) as Array<{
       id: string;
       type: string;
       content: string;
@@ -763,7 +863,8 @@ export class MemoryStore {
   }
 
   /**
-   * Semantic similarity search using cosine similarity
+   * Semantic similarity search using cosine similarity (vault-scoped)
+   * Only searches memories within the current vault, ensuring vault isolation.
    */
   semanticSearch(queryEmbedding: number[], options: {
     type?: 'episodic' | 'semantic' | 'identity';
@@ -772,7 +873,7 @@ export class MemoryStore {
   } = {}): Array<MemoryEntry & { similarity: number }> {
     const { type, minSimilarity = 0.3, limit = 10 } = options;
 
-    // Get all memories with embeddings
+    // Get all memories with embeddings (already vault-scoped)
     let memories = this.getMemoriesWithEmbeddings();
 
     // Filter by type if specified
@@ -828,8 +929,9 @@ export class MemoryStore {
   }
 
   /**
-   * Backfill embeddings for existing memories that don't have them
+   * Backfill embeddings for existing memories that don't have them (vault-scoped)
    * Useful for migrating old memories or recovering from embedding failures
+   * Only processes memories within the current vault.
    * @param options Options for backfill behavior
    * @returns Summary of backfill operation
    */
@@ -844,10 +946,11 @@ export class MemoryStore {
     skipped: number;
   }> {
     const { batchSize = 10, type, onProgress } = options;
+    const vaultId = this.getVaultId();
 
-    // Get all memories without embeddings
-    let sql = 'SELECT id, content FROM semantic_memory WHERE embedding IS NULL';
-    const params: string[] = [];
+    // Get all memories without embeddings (vault-scoped)
+    let sql = 'SELECT id, content FROM semantic_memory WHERE vault_id = ? AND embedding IS NULL';
+    const params: (string)[] = [vaultId];
 
     if (type) {
       sql += ' AND type = ?';
@@ -862,7 +965,7 @@ export class MemoryStore {
     const total = rows.length;
     let processed = 0;
     let failed = 0;
-    let skipped = 0;
+    const skipped = 0;
 
     // Process in batches
     for (let i = 0; i < rows.length; i += batchSize) {
@@ -872,18 +975,19 @@ export class MemoryStore {
       try {
         const embeddings = await this.embeddingService.embedBatch(contents);
 
-        // Update each memory with its embedding
+        // Update each memory with its embedding (vault-scoped to prevent cross-vault updates)
         const updateStmt = this.db.prepare(`
           UPDATE semantic_memory
           SET embedding = ?
-          WHERE id = ?
+          WHERE id = ? AND vault_id = ?
         `);
 
         for (let j = 0; j < batch.length; j++) {
           try {
             updateStmt.run(
               Buffer.from(new Float32Array(embeddings[j]).buffer),
-              batch[j].id
+              batch[j].id,
+              vaultId
             );
             processed++;
           } catch (err) {
@@ -906,8 +1010,8 @@ export class MemoryStore {
   }
 
   /**
-   * Get count of memories with and without embeddings
-   * Useful for monitoring embedding coverage
+   * Get count of memories with and without embeddings (vault-scoped)
+   * Useful for monitoring embedding coverage within the current vault.
    */
   getEmbeddingCoverage(): {
     total: number;
@@ -915,8 +1019,9 @@ export class MemoryStore {
     withoutEmbedding: number;
     coveragePercent: number;
   } {
-    const total = this.db.prepare('SELECT COUNT(*) as count FROM semantic_memory').get() as { count: number };
-    const withEmbedding = this.db.prepare('SELECT COUNT(*) as count FROM semantic_memory WHERE embedding IS NOT NULL').get() as { count: number };
+    const vaultId = this.getVaultId();
+    const total = this.db.prepare('SELECT COUNT(*) as count FROM semantic_memory WHERE vault_id = ?').get(vaultId) as { count: number };
+    const withEmbedding = this.db.prepare('SELECT COUNT(*) as count FROM semantic_memory WHERE vault_id = ? AND embedding IS NOT NULL').get(vaultId) as { count: number };
 
     const totalCount = total.count;
     const withCount = withEmbedding.count;
@@ -935,7 +1040,7 @@ export class MemoryStore {
   // ============================================================================
 
   /**
-   * Save an evolution snapshot
+   * Save an evolution snapshot (vault-scoped)
    */
   saveEvolutionSnapshot(
     conversationId: string,
@@ -944,32 +1049,30 @@ export class MemoryStore {
   ): string {
     const id = uuidv4();
 
-    this.db.prepare(`
-      INSERT INTO evolution_snapshots (id, conversation_id, stance, trigger, drift_at_snapshot, timestamp)
-      VALUES (?, ?, ?, ?, ?, ?)
-    `).run(
+    this.vaultDb.insertWithVault('evolution_snapshots', {
       id,
-      conversationId,
-      JSON.stringify(stance),
+      conversation_id: conversationId,
+      stance: JSON.stringify(stance),
       trigger,
-      stance.cumulativeDrift,
-      new Date().toISOString()
-    );
+      drift_at_snapshot: stance.cumulativeDrift,
+      timestamp: new Date().toISOString()
+    });
 
     return id;
   }
 
   /**
-   * Get the latest evolution snapshot for a conversation
+   * Get the latest evolution snapshot for a conversation (vault-scoped)
    */
   getLatestSnapshot(conversationId: string): { stance: Stance; trigger: string; timestamp: Date } | null {
+    const vaultId = this.getVaultId();
     const row = this.db.prepare(`
       SELECT stance, trigger, timestamp
       FROM evolution_snapshots
-      WHERE conversation_id = ?
+      WHERE vault_id = ? AND conversation_id = ?
       ORDER BY timestamp DESC
       LIMIT 1
-    `).get(conversationId) as { stance: string; trigger: string; timestamp: string } | undefined;
+    `).get(vaultId, conversationId) as { stance: string; trigger: string; timestamp: string } | undefined;
 
     if (!row) return null;
 
@@ -981,15 +1084,17 @@ export class MemoryStore {
   }
 
   /**
-   * Get the latest snapshot across all conversations (for session resume)
+   * Get the latest snapshot across all conversations within the current vault (for session resume)
    */
   getGlobalLatestSnapshot(): { conversationId: string; stance: Stance; trigger: string; timestamp: Date } | null {
+    const vaultId = this.getVaultId();
     const row = this.db.prepare(`
       SELECT conversation_id, stance, trigger, timestamp
       FROM evolution_snapshots
+      WHERE vault_id = ?
       ORDER BY timestamp DESC
       LIMIT 1
-    `).get() as { conversation_id: string; stance: string; trigger: string; timestamp: string } | undefined;
+    `).get(vaultId) as { conversation_id: string; stance: string; trigger: string; timestamp: string } | undefined;
 
     if (!row) return null;
 
@@ -1002,7 +1107,7 @@ export class MemoryStore {
   }
 
   /**
-   * Get evolution timeline for a conversation
+   * Get evolution timeline for a conversation (vault-scoped)
    */
   getEvolutionTimeline(conversationId: string, limit: number = 20): Array<{
     id: string;
@@ -1011,13 +1116,14 @@ export class MemoryStore {
     driftAtSnapshot: number;
     timestamp: Date;
   }> {
+    const vaultId = this.getVaultId();
     const rows = this.db.prepare(`
       SELECT id, stance, trigger, drift_at_snapshot, timestamp
       FROM evolution_snapshots
-      WHERE conversation_id = ?
+      WHERE vault_id = ? AND conversation_id = ?
       ORDER BY timestamp DESC
       LIMIT ?
-    `).all(conversationId, limit) as Array<{
+    `).all(vaultId, conversationId, limit) as Array<{
       id: string;
       stance: string;
       trigger: string;
@@ -1050,13 +1156,13 @@ export class MemoryStore {
   // ============================================================================
 
   /**
-   * Session info returned by list/get operations
+   * Session info returned by list/get operations (vault-scoped)
    */
   getSessionInfo(sessionId: string): SessionInfo | null {
-    const row = this.db.prepare(`
-      SELECT id, name, conversation_id, last_accessed, created_at, message_count, current_frame, current_drift
-      FROM sessions WHERE id = ?
-    `).get(sessionId) as {
+    const row = this.vaultDb.getWithVault(
+      'SELECT id, name, conversation_id, last_accessed, created_at, message_count, current_frame, current_drift FROM sessions WHERE id = ?',
+      [sessionId]
+    ) as {
       id: string;
       name: string | null;
       conversation_id: string | null;
@@ -1082,7 +1188,7 @@ export class MemoryStore {
   }
 
   /**
-   * Create or update a session
+   * Create or update a session (vault-scoped)
    */
   saveSession(session: {
     id: string;
@@ -1094,9 +1200,10 @@ export class MemoryStore {
   }): void {
     const existing = this.getSessionInfo(session.id);
     const now = new Date().toISOString();
+    const vaultId = this.getVaultId();
 
     if (existing) {
-      // Update existing session
+      // Update existing session (vault-scoped)
       this.db.prepare(`
         UPDATE sessions
         SET name = COALESCE(?, name),
@@ -1105,7 +1212,7 @@ export class MemoryStore {
             message_count = COALESCE(?, message_count),
             current_frame = COALESCE(?, current_frame),
             current_drift = COALESCE(?, current_drift)
-        WHERE id = ?
+        WHERE id = ? AND vault_id = ?
       `).run(
         session.name ?? null,
         session.conversationId ?? null,
@@ -1113,38 +1220,38 @@ export class MemoryStore {
         session.messageCount ?? null,
         session.currentFrame ?? null,
         session.currentDrift ?? null,
-        session.id
+        session.id,
+        vaultId
       );
     } else {
-      // Create new session
-      this.db.prepare(`
-        INSERT INTO sessions (id, name, conversation_id, last_accessed, created_at, message_count, current_frame, current_drift)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-      `).run(
-        session.id,
-        session.name ?? null,
-        session.conversationId ?? null,
-        now,
-        now,
-        session.messageCount ?? 0,
-        session.currentFrame ?? null,
-        session.currentDrift ?? 0
-      );
+      // Create new session (vault-scoped)
+      this.vaultDb.insertWithVault('sessions', {
+        id: session.id,
+        name: session.name ?? null,
+        conversation_id: session.conversationId ?? null,
+        last_accessed: now,
+        created_at: now,
+        message_count: session.messageCount ?? 0,
+        current_frame: session.currentFrame ?? null,
+        current_drift: session.currentDrift ?? 0
+      });
     }
   }
 
   /**
-   * List all sessions with metadata
+   * List all sessions with metadata (vault-scoped)
    */
   listSessions(options: { limit?: number; search?: string } = {}): SessionInfo[] {
+    const vaultId = this.getVaultId();
     let sql = `
       SELECT id, name, conversation_id, last_accessed, created_at, message_count, current_frame, current_drift
       FROM sessions
+      WHERE vault_id = ?
     `;
-    const params: (string | number)[] = [];
+    const params: (string | number)[] = [vaultId];
 
     if (options.search) {
-      sql += ' WHERE name LIKE ? OR id LIKE ?';
+      sql += ' AND (name LIKE ? OR id LIKE ?)';
       const searchPattern = `%${options.search}%`;
       params.push(searchPattern, searchPattern);
     }
@@ -1180,33 +1287,36 @@ export class MemoryStore {
   }
 
   /**
-   * Rename a session
+   * Rename a session (vault-scoped)
    */
   renameSession(sessionId: string, newName: string): boolean {
-    const result = this.db.prepare(`
-      UPDATE sessions SET name = ?, last_accessed = ? WHERE id = ?
-    `).run(newName, new Date().toISOString(), sessionId);
+    const result = this.vaultDb.runWithVault(
+      'UPDATE sessions SET name = ?, last_accessed = ? WHERE id = ?',
+      [newName, new Date().toISOString(), sessionId]
+    );
     return result.changes > 0;
   }
 
   /**
-   * Delete a session
+   * Delete a session (vault-scoped)
    */
   deleteSession(sessionId: string): boolean {
-    const result = this.db.prepare('DELETE FROM sessions WHERE id = ?').run(sessionId);
+    const result = this.vaultDb.deleteWithVault('sessions', 'id = ?', [sessionId]);
     return result.changes > 0;
   }
 
   /**
-   * Get most recently accessed session
+   * Get most recently accessed session within the current vault
    */
   getMostRecentSession(): SessionInfo | null {
+    const vaultId = this.getVaultId();
     const row = this.db.prepare(`
       SELECT id, name, conversation_id, last_accessed, created_at, message_count, current_frame, current_drift
       FROM sessions
+      WHERE vault_id = ?
       ORDER BY last_accessed DESC
       LIMIT 1
-    `).get() as {
+    `).get(vaultId) as {
       id: string;
       name: string | null;
       conversation_id: string | null;
@@ -1236,7 +1346,7 @@ export class MemoryStore {
   // ============================================================================
 
   /**
-   * Record operator performance for learning
+   * Record operator performance for learning (vault-scoped)
    */
   recordOperatorPerformance(entry: {
     operatorName: string;
@@ -1263,28 +1373,25 @@ export class MemoryStore {
         : transformationScore;
     }
 
-    this.db.prepare(`
-      INSERT INTO operator_performance
-      (id, operator_name, trigger_type, effectiveness_score, transformation_score, coherence_score, drift_cost, timestamp)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-    `).run(
+    this.vaultDb.insertWithVault('operator_performance', {
       id,
-      entry.operatorName,
-      entry.triggerType,
-      effectivenessScore,
-      transformationScore,
-      coherenceScore,
-      driftCost,
-      new Date().toISOString()
-    );
+      operator_name: entry.operatorName,
+      trigger_type: entry.triggerType,
+      effectiveness_score: effectivenessScore,
+      transformation_score: transformationScore,
+      coherence_score: coherenceScore,
+      drift_cost: driftCost,
+      timestamp: new Date().toISOString()
+    });
 
     return id;
   }
 
   /**
-   * Get operator performance statistics
+   * Get operator performance statistics (vault-scoped)
    */
   getOperatorStats(operatorName?: string): OperatorStats[] {
+    const vaultId = this.getVaultId();
     let sql = `
       SELECT
         operator_name,
@@ -1295,11 +1402,12 @@ export class MemoryStore {
         AVG(coherence_score) as avg_coherence,
         AVG(drift_cost) as avg_drift
       FROM operator_performance
+      WHERE vault_id = ?
     `;
-    const params: string[] = [];
+    const params: string[] = [vaultId];
 
     if (operatorName) {
-      sql += ' WHERE operator_name = ?';
+      sql += ' AND operator_name = ?';
       params.push(operatorName);
     }
 
@@ -1327,16 +1435,17 @@ export class MemoryStore {
   }
 
   /**
-   * Get weighted operator score for Bayesian selection
+   * Get weighted operator score for Bayesian selection (vault-scoped)
    */
   getOperatorWeight(operatorName: string, triggerType: string): number {
+    const vaultId = this.getVaultId();
     const row = this.db.prepare(`
       SELECT
         COUNT(*) as usage_count,
         AVG(effectiveness_score) as avg_effectiveness
       FROM operator_performance
-      WHERE operator_name = ? AND trigger_type = ?
-    `).get(operatorName, triggerType) as {
+      WHERE vault_id = ? AND operator_name = ? AND trigger_type = ?
+    `).get(vaultId, operatorName, triggerType) as {
       usage_count: number;
       avg_effectiveness: number | null;
     } | undefined;
@@ -1358,7 +1467,7 @@ export class MemoryStore {
   // ============================================================================
 
   /**
-   * Cache a subagent result
+   * Cache a subagent result (vault-scoped)
    */
   cacheSubagentResult(entry: {
     subagentName: string;
@@ -1374,27 +1483,23 @@ export class MemoryStore {
       ? new Date(Date.now() + entry.expiryHours * 3600000).toISOString()
       : null;
 
-    this.db.prepare(`
-      INSERT INTO subagent_results
-      (id, subagent_name, task, response, key_findings, relevance, conversation_id, timestamp, expiry)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-    `).run(
+    this.vaultDb.insertWithVault('subagent_results', {
       id,
-      entry.subagentName,
-      entry.task,
-      entry.response,
-      entry.keyFindings ? JSON.stringify(entry.keyFindings) : null,
-      entry.relevance,
-      entry.conversationId || null,
-      new Date().toISOString(),
+      subagent_name: entry.subagentName,
+      task: entry.task,
+      response: entry.response,
+      key_findings: entry.keyFindings ? JSON.stringify(entry.keyFindings) : null,
+      relevance: entry.relevance,
+      conversation_id: entry.conversationId || null,
+      timestamp: new Date().toISOString(),
       expiry
-    );
+    });
 
     return id;
   }
 
   /**
-   * Search for relevant cached subagent results
+   * Search for relevant cached subagent results (vault-scoped)
    */
   searchSubagentCache(query: {
     subagentName?: string;
@@ -1402,11 +1507,12 @@ export class MemoryStore {
     minRelevance?: number;
     limit?: number;
   }): SubagentResult[] {
+    const vaultId = this.getVaultId();
     let sql = `
       SELECT * FROM subagent_results
-      WHERE (expiry IS NULL OR expiry > datetime('now'))
+      WHERE vault_id = ? AND (expiry IS NULL OR expiry > datetime('now'))
     `;
-    const params: (string | number)[] = [];
+    const params: (string | number)[] = [vaultId];
 
     if (query.subagentName) {
       sql += ' AND subagent_name = ?';
@@ -1456,12 +1562,13 @@ export class MemoryStore {
   }
 
   /**
-   * Clean expired subagent results
+   * Clean expired subagent results (vault-scoped)
    */
   cleanExpiredSubagentResults(): number {
+    const vaultId = this.getVaultId();
     const result = this.db.prepare(`
-      DELETE FROM subagent_results WHERE expiry IS NOT NULL AND expiry < datetime('now')
-    `).run();
+      DELETE FROM subagent_results WHERE vault_id = ? AND expiry IS NOT NULL AND expiry < datetime('now')
+    `).run(vaultId);
     return result.changes;
   }
 
@@ -1470,7 +1577,7 @@ export class MemoryStore {
   // ============================================================================
 
   /**
-   * Save an emotional arc for a conversation
+   * Save an emotional arc for a conversation (vault-scoped)
    */
   saveEmotionalArc(conversationId: string, arc: EmotionalArc): void {
     // Calculate trend from points
@@ -1483,30 +1590,25 @@ export class MemoryStore {
       else trend = 'stable';
     }
 
-    this.db.prepare(`
-      INSERT OR REPLACE INTO emotional_arcs
-      (id, conversation_id, emotions, insights, patterns, trend, updated_at)
-      VALUES (?, ?, ?, ?, ?, ?, ?)
-    `).run(
-      conversationId, // Use conversationId as id for simplicity
-      conversationId,
-      JSON.stringify(arc.points),
-      JSON.stringify(arc.insights),
-      JSON.stringify(arc.patterns),
+    this.vaultDb.upsertWithVault('emotional_arcs', {
+      id: conversationId, // Use conversationId as id for simplicity
+      conversation_id: conversationId,
+      emotions: JSON.stringify(arc.points),
+      insights: JSON.stringify(arc.insights),
+      patterns: JSON.stringify(arc.patterns),
       trend,
-      new Date().toISOString()
-    );
+      updated_at: new Date().toISOString()
+    });
   }
 
   /**
-   * Get an emotional arc for a conversation
+   * Get an emotional arc for a conversation (vault-scoped)
    */
   getEmotionalArc(conversationId: string): EmotionalArc | null {
-    const row = this.db.prepare(`
-      SELECT conversation_id, emotions, insights, patterns, trend, updated_at
-      FROM emotional_arcs
-      WHERE conversation_id = ?
-    `).get(conversationId) as {
+    const row = this.vaultDb.getWithVault(
+      'SELECT conversation_id, emotions, insights, patterns, trend, updated_at FROM emotional_arcs WHERE conversation_id = ?',
+      [conversationId]
+    ) as {
       conversation_id: string;
       emotions: string;
       insights: string;
@@ -1526,10 +1628,10 @@ export class MemoryStore {
   }
 
   /**
-   * Delete an emotional arc for a conversation
+   * Delete an emotional arc for a conversation (vault-scoped)
    */
   deleteEmotionalArc(conversationId: string): boolean {
-    const result = this.db.prepare('DELETE FROM emotional_arcs WHERE conversation_id = ?').run(conversationId);
+    const result = this.vaultDb.deleteWithVault('emotional_arcs', 'conversation_id = ?', [conversationId]);
     return result.changes > 0;
   }
 
@@ -1538,43 +1640,40 @@ export class MemoryStore {
   // ============================================================================
 
   /**
-   * Save an emotion context for a session
+   * Save an emotion context for a session (vault-scoped)
    */
   saveEmotionContext(sessionId: string, emotion: EmotionContext): Promise<void> {
     const id = uuidv4();
     const timestamp = emotion.timestamp || new Date().toISOString();
 
-    this.db.prepare(`
-      INSERT INTO emotion_context
-      (id, session_id, current_emotion, valence, arousal, confidence, stability, prompt_context, suggested_empathy_boost, timestamp)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-    `).run(
+    this.vaultDb.insertWithVault('emotion_context', {
       id,
-      sessionId,
-      emotion.currentEmotion,
-      emotion.valence,
-      emotion.arousal,
-      emotion.confidence,
-      emotion.stability ?? null,
-      emotion.promptContext ?? null,
-      emotion.suggestedEmpathyBoost ?? null,
+      session_id: sessionId,
+      current_emotion: emotion.currentEmotion,
+      valence: emotion.valence,
+      arousal: emotion.arousal,
+      confidence: emotion.confidence,
+      stability: emotion.stability ?? null,
+      prompt_context: emotion.promptContext ?? null,
+      suggested_empathy_boost: emotion.suggestedEmpathyBoost ?? null,
       timestamp
-    );
+    });
 
     return Promise.resolve();
   }
 
   /**
-   * Get the latest emotion context for a session
+   * Get the latest emotion context for a session (vault-scoped)
    */
   getLatestEmotionContext(sessionId: string): Promise<EmotionContext | null> {
+    const vaultId = this.getVaultId();
     const row = this.db.prepare(`
       SELECT current_emotion, valence, arousal, confidence, stability, prompt_context, suggested_empathy_boost, timestamp
       FROM emotion_context
-      WHERE session_id = ?
+      WHERE vault_id = ? AND session_id = ?
       ORDER BY timestamp DESC
       LIMIT 1
-    `).get(sessionId) as {
+    `).get(vaultId, sessionId) as {
       current_emotion: string;
       valence: number;
       arousal: number;
@@ -1600,16 +1699,17 @@ export class MemoryStore {
   }
 
   /**
-   * Get emotion history for a session
+   * Get emotion history for a session (vault-scoped)
    */
   getEmotionHistory(sessionId: string, limit: number = 50): Promise<EmotionContext[]> {
+    const vaultId = this.getVaultId();
     const rows = this.db.prepare(`
       SELECT current_emotion, valence, arousal, confidence, stability, prompt_context, suggested_empathy_boost, timestamp
       FROM emotion_context
-      WHERE session_id = ?
+      WHERE vault_id = ? AND session_id = ?
       ORDER BY timestamp DESC
       LIMIT ?
-    `).all(sessionId, limit) as Array<{
+    `).all(vaultId, sessionId, limit) as Array<{
       current_emotion: string;
       valence: number;
       arousal: number;
@@ -1641,9 +1741,28 @@ export class MemoryStore {
   }
 
   /**
-   * Clear all data (for testing)
+   * Clear all data for the current vault (for testing)
+   * Only clears data belonging to the current vault, preserving other vaults' data.
    */
   clear(): void {
+    const vaultId = this.getVaultId();
+    this.db.prepare('DELETE FROM messages WHERE vault_id = ?').run(vaultId);
+    this.db.prepare('DELETE FROM conversations WHERE vault_id = ?').run(vaultId);
+    this.db.prepare('DELETE FROM identity WHERE vault_id = ?').run(vaultId);
+    this.db.prepare('DELETE FROM semantic_memory WHERE vault_id = ?').run(vaultId);
+    this.db.prepare('DELETE FROM evolution_snapshots WHERE vault_id = ?').run(vaultId);
+    this.db.prepare('DELETE FROM sessions WHERE vault_id = ?').run(vaultId);
+    this.db.prepare('DELETE FROM operator_performance WHERE vault_id = ?').run(vaultId);
+    this.db.prepare('DELETE FROM subagent_results WHERE vault_id = ?').run(vaultId);
+    this.db.prepare('DELETE FROM emotional_arcs WHERE vault_id = ?').run(vaultId);
+    this.db.prepare('DELETE FROM emotion_context WHERE vault_id = ?').run(vaultId);
+  }
+
+  /**
+   * Clear all data across ALL vaults (for testing/migration purposes)
+   * WARNING: This removes ALL data, not just the current vault's data.
+   */
+  clearAll(): void {
     this.db.prepare('DELETE FROM messages').run();
     this.db.prepare('DELETE FROM conversations').run();
     this.db.prepare('DELETE FROM identity').run();

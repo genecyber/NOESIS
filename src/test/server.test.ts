@@ -8,6 +8,18 @@ import request from 'supertest';
 
 // Note: These are unit tests for route definitions
 // Full integration tests would require running the server
+// EMBLEM_DEV_MODE=true is set in vitest.config.ts for auth bypass
+
+// Test vault ID for multitenancy testing
+const TEST_VAULT_ID = 'test-vault';
+
+/**
+ * Helper to add auth headers to requests
+ * In dev mode, uses X-Vault-Id header for vault identification
+ */
+function withAuth(req: request.Test): request.Test {
+  return req.set('X-Vault-Id', TEST_VAULT_ID);
+}
 
 describe('Server', () => {
   describe('Health Check', () => {
@@ -21,7 +33,7 @@ describe('Server', () => {
 
   describe('API Info', () => {
     it('returns API documentation', async () => {
-      const response = await request(app).get('/api');
+      const response = await withAuth(request(app).get('/api'));
       expect(response.status).toBe(200);
       expect(response.body.name).toBe('METAMORPH API');
       expect(response.body.endpoints).toBeDefined();
@@ -30,9 +42,9 @@ describe('Server', () => {
 
   describe('Session Management', () => {
     it('creates a new session', async () => {
-      const response = await request(app)
+      const response = await withAuth(request(app)
         .post('/api/session')
-        .send({});
+        .send({}));
 
       expect(response.status).toBe(200);
       expect(response.body.sessionId).toBeDefined();
@@ -41,14 +53,14 @@ describe('Server', () => {
     });
 
     it('creates session with custom config', async () => {
-      const response = await request(app)
+      const response = await withAuth(request(app)
         .post('/api/session')
         .send({
           config: {
             intensity: 80,
             coherenceFloor: 40
           }
-        });
+        }));
 
       expect(response.status).toBe(200);
       expect(response.body.config.intensity).toBe(80);
@@ -59,12 +71,12 @@ describe('Server', () => {
   describe('State Endpoint', () => {
     it('returns current state', async () => {
       // First create a session
-      const session = await request(app).post('/api/session').send({});
+      const session = await withAuth(request(app).post('/api/session').send({}));
       const sessionId = session.body.sessionId;
 
       // Then get state
-      const response = await request(app)
-        .get(`/api/state?sessionId=${sessionId}`);
+      const response = await withAuth(request(app)
+        .get(`/api/state?sessionId=${sessionId}`));
 
       expect(response.status).toBe(200);
       expect(response.body.stance).toBeDefined();
@@ -75,16 +87,16 @@ describe('Server', () => {
   describe('Config Endpoint', () => {
     it('updates configuration', async () => {
       // First create a session
-      const session = await request(app).post('/api/session').send({});
+      const session = await withAuth(request(app).post('/api/session').send({}));
       const sessionId = session.body.sessionId;
 
       // Update config
-      const response = await request(app)
+      const response = await withAuth(request(app)
         .put('/api/config')
         .send({
           sessionId,
           config: { intensity: 90 }
-        });
+        }));
 
       expect(response.status).toBe(200);
       expect(response.body.success).toBe(true);
@@ -92,9 +104,9 @@ describe('Server', () => {
     });
 
     it('returns error without config', async () => {
-      const response = await request(app)
+      const response = await withAuth(request(app)
         .put('/api/config')
-        .send({});
+        .send({}));
 
       expect(response.status).toBe(400);
       expect(response.body.error).toBe('Config is required');
@@ -103,11 +115,11 @@ describe('Server', () => {
 
   describe('Identity Endpoint', () => {
     it('returns identity information', async () => {
-      const session = await request(app).post('/api/session').send({});
+      const session = await withAuth(request(app).post('/api/session').send({}));
       const sessionId = session.body.sessionId;
 
-      const response = await request(app)
-        .get(`/api/identity?sessionId=${sessionId}`);
+      const response = await withAuth(request(app)
+        .get(`/api/identity?sessionId=${sessionId}`));
 
       expect(response.status).toBe(200);
       expect(response.body.frame).toBeDefined();
@@ -118,11 +130,11 @@ describe('Server', () => {
 
   describe('Subagents Endpoint', () => {
     it('lists available subagents', async () => {
-      const session = await request(app).post('/api/session').send({});
+      const session = await withAuth(request(app).post('/api/session').send({}));
       const sessionId = session.body.sessionId;
 
-      const response = await request(app)
-        .get(`/api/subagents?sessionId=${sessionId}`);
+      const response = await withAuth(request(app)
+        .get(`/api/subagents?sessionId=${sessionId}`));
 
       expect(response.status).toBe(200);
       expect(response.body.subagents).toHaveLength(4);
@@ -133,11 +145,11 @@ describe('Server', () => {
 
   describe('History Endpoint', () => {
     it('returns empty history for new session', async () => {
-      const session = await request(app).post('/api/session').send({});
+      const session = await withAuth(request(app).post('/api/session').send({}));
       const sessionId = session.body.sessionId;
 
-      const response = await request(app)
-        .get(`/api/history?sessionId=${sessionId}`);
+      const response = await withAuth(request(app)
+        .get(`/api/history?sessionId=${sessionId}`));
 
       expect(response.status).toBe(200);
       expect(response.body.total).toBe(0);
@@ -147,9 +159,9 @@ describe('Server', () => {
 
   describe('Chat Endpoint', () => {
     it('returns error without message', async () => {
-      const response = await request(app)
+      const response = await withAuth(request(app)
         .post('/api/chat')
-        .send({});
+        .send({}));
 
       expect(response.status).toBe(400);
       expect(response.body.error).toBe('Message is required');
@@ -158,11 +170,11 @@ describe('Server', () => {
 
   describe('Export/Import', () => {
     it('exports session state', async () => {
-      const session = await request(app).post('/api/session').send({});
+      const session = await withAuth(request(app).post('/api/session').send({}));
       const sessionId = session.body.sessionId;
 
-      const response = await request(app)
-        .get(`/api/export?sessionId=${sessionId}`);
+      const response = await withAuth(request(app)
+        .get(`/api/export?sessionId=${sessionId}`));
 
       expect(response.status).toBe(200);
       expect(response.body.state).toBeDefined();
@@ -172,11 +184,11 @@ describe('Server', () => {
   // New tests for v0.5.0 features
   describe('Timeline Endpoint', () => {
     it('returns empty timeline for new session', async () => {
-      const session = await request(app).post('/api/session').send({});
+      const session = await withAuth(request(app).post('/api/session').send({}));
       const sessionId = session.body.sessionId;
 
-      const response = await request(app)
-        .get(`/api/timeline?sessionId=${sessionId}`);
+      const response = await withAuth(request(app)
+        .get(`/api/timeline?sessionId=${sessionId}`));
 
       expect(response.status).toBe(200);
       expect(response.body.entries).toBeDefined();
@@ -184,11 +196,11 @@ describe('Server', () => {
     });
 
     it('respects limit parameter', async () => {
-      const session = await request(app).post('/api/session').send({});
+      const session = await withAuth(request(app).post('/api/session').send({}));
       const sessionId = session.body.sessionId;
 
-      const response = await request(app)
-        .get(`/api/timeline?sessionId=${sessionId}&limit=5`);
+      const response = await withAuth(request(app)
+        .get(`/api/timeline?sessionId=${sessionId}&limit=5`));
 
       expect(response.status).toBe(200);
       expect(response.body.entries).toBeDefined();
@@ -197,11 +209,11 @@ describe('Server', () => {
 
   describe('Evolution Endpoint', () => {
     it('returns evolution snapshots for session', async () => {
-      const session = await request(app).post('/api/session').send({});
+      const session = await withAuth(request(app).post('/api/session').send({}));
       const sessionId = session.body.sessionId;
 
-      const response = await request(app)
-        .get(`/api/evolution?sessionId=${sessionId}`);
+      const response = await withAuth(request(app)
+        .get(`/api/evolution?sessionId=${sessionId}`));
 
       expect(response.status).toBe(200);
       expect(response.body.snapshots).toBeDefined();
@@ -209,11 +221,11 @@ describe('Server', () => {
     });
 
     it('respects limit parameter', async () => {
-      const session = await request(app).post('/api/session').send({});
+      const session = await withAuth(request(app).post('/api/session').send({}));
       const sessionId = session.body.sessionId;
 
-      const response = await request(app)
-        .get(`/api/evolution?sessionId=${sessionId}&limit=10`);
+      const response = await withAuth(request(app)
+        .get(`/api/evolution?sessionId=${sessionId}&limit=10`));
 
       expect(response.status).toBe(200);
       expect(response.body.snapshots).toBeDefined();
@@ -222,11 +234,11 @@ describe('Server', () => {
 
   describe('Memories Endpoint', () => {
     it('returns memories for session', async () => {
-      const session = await request(app).post('/api/session').send({});
+      const session = await withAuth(request(app).post('/api/session').send({}));
       const sessionId = session.body.sessionId;
 
-      const response = await request(app)
-        .get(`/api/memories?sessionId=${sessionId}`);
+      const response = await withAuth(request(app)
+        .get(`/api/memories?sessionId=${sessionId}`));
 
       expect(response.status).toBe(200);
       expect(response.body.memories).toBeDefined();
@@ -234,11 +246,11 @@ describe('Server', () => {
     });
 
     it('filters by memory type', async () => {
-      const session = await request(app).post('/api/session').send({});
+      const session = await withAuth(request(app).post('/api/session').send({}));
       const sessionId = session.body.sessionId;
 
-      const response = await request(app)
-        .get(`/api/memories?sessionId=${sessionId}&type=episodic`);
+      const response = await withAuth(request(app)
+        .get(`/api/memories?sessionId=${sessionId}&type=episodic`));
 
       expect(response.status).toBe(200);
       expect(response.body.memories).toBeDefined();
@@ -248,9 +260,9 @@ describe('Server', () => {
   describe('Sessions List Endpoint', () => {
     it('returns list of all sessions', async () => {
       // Create a session first
-      await request(app).post('/api/session').send({});
+      await withAuth(request(app).post('/api/session').send({}));
 
-      const response = await request(app).get('/api/sessions');
+      const response = await withAuth(request(app).get('/api/sessions'));
 
       expect(response.status).toBe(200);
       expect(response.body.sessions).toBeDefined();
@@ -259,35 +271,36 @@ describe('Server', () => {
     });
 
     it('includes session metadata', async () => {
-      const session = await request(app).post('/api/session').send({});
+      const session = await withAuth(request(app).post('/api/session').send({}));
 
-      const response = await request(app).get('/api/sessions');
+      const response = await withAuth(request(app).get('/api/sessions'));
 
       expect(response.status).toBe(200);
       const createdSession = response.body.sessions.find(
         (s: { id: string }) => s.id === session.body.sessionId
       );
       expect(createdSession).toBeDefined();
-      expect(createdSession.stance).toBeDefined();
+      // SessionInfo has currentFrame and currentDrift instead of full stance
+      expect(createdSession.currentFrame).toBeDefined();
       expect(createdSession.messageCount).toBeDefined();
     });
   });
 
   describe('Session Deletion Endpoint', () => {
     it('deletes existing session', async () => {
-      const session = await request(app).post('/api/session').send({});
+      const session = await withAuth(request(app).post('/api/session').send({}));
       const sessionId = session.body.sessionId;
 
-      const response = await request(app)
-        .delete(`/api/session/${sessionId}`);
+      const response = await withAuth(request(app)
+        .delete(`/api/session/${sessionId}`));
 
       expect(response.status).toBe(200);
       expect(response.body.success).toBe(true);
     });
 
     it('returns 404 for non-existent session', async () => {
-      const response = await request(app)
-        .delete('/api/session/non-existent-id');
+      const response = await withAuth(request(app)
+        .delete('/api/session/non-existent-id'));
 
       expect(response.status).toBe(404);
       expect(response.body.error).toBe('Session not found');
@@ -296,17 +309,17 @@ describe('Server', () => {
 
   describe('Streaming Endpoint Validation', () => {
     it('returns error without message for GET stream', async () => {
-      const response = await request(app)
-        .get('/api/chat/stream');
+      const response = await withAuth(request(app)
+        .get('/api/chat/stream'));
 
       expect(response.status).toBe(400);
       expect(response.body.error).toBe('Message query parameter is required');
     });
 
     it('returns error without message for POST stream', async () => {
-      const response = await request(app)
+      const response = await withAuth(request(app)
         .post('/api/chat/stream')
-        .send({});
+        .send({}));
 
       expect(response.status).toBe(400);
       expect(response.body.error).toBe('Message is required');

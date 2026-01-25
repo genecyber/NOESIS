@@ -25,14 +25,41 @@ import { pluginEventBus } from '../plugins/event-bus.js';
 import { createWebSocketServer } from './websocket.js';
 import { streamManager } from '../plugins/streams/stream-manager.js';
 import { EmbeddingService } from '../embeddings/service.js';
+import { IdleStreamBridge } from './idle-bridge.js';
+import { requireAuth, getVaultIdFromRequest } from './middleware/emblem-auth.js';
+import { vaultContextMiddleware } from '../multitenancy/index.js';
 
 const app = express();
 
 // Create HTTP server for WebSocket support
 const server = createServer(app);
 
-// Middleware
-app.use(cors());
+// CORS configuration for Emblem origins
+const EMBLEM_DEV_MODE = process.env.EMBLEM_DEV_MODE === 'true';
+const allowedOrigins = [
+  'http://localhost:3000',
+  'http://localhost:3001',
+  process.env.EMBLEM_ORIGIN,
+  process.env.EMBLEM_PRODUCTION_ORIGIN,
+  // Add production origins as needed
+].filter(Boolean) as string[];
+
+app.use(cors({
+  origin: EMBLEM_DEV_MODE
+    ? true  // Allow all origins in dev mode
+    : (origin, callback) => {
+        // Allow requests with no origin (like mobile apps or curl)
+        if (!origin) return callback(null, true);
+        if (allowedOrigins.includes(origin)) {
+          return callback(null, true);
+        }
+        callback(new Error('Not allowed by CORS'));
+      },
+  credentials: true,
+  methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
+  allowedHeaders: ['Content-Type', 'Authorization', 'X-API-Key', 'X-Vault-Id']
+}));
+
 // Increase JSON body limit for base64 images (webcam frames can be 1-2MB)
 app.use(express.json({ limit: '10mb' }));
 
@@ -54,6 +81,9 @@ const embeddingService = new EmbeddingService({
 });
 let embeddingServiceInitialized = false;
 console.log(`[Server] Using ${embeddingProvider} embedding provider`);
+
+// Idle stream bridge (singleton instance)
+let idleStreamBridge: IdleStreamBridge | null = null;
 
 // Steering message queue - per-session storage
 interface SteeringMessage {
@@ -164,23 +194,19 @@ function getOrCreateAgent(sessionId?: string, config?: Partial<ModeConfig>): Met
   return session.agent;
 }
 
-// API Key authentication middleware (optional)
-const apiKeyAuth = (req: Request, res: Response, next: NextFunction) => {
-  const apiKey = req.headers['x-api-key'] as string;
-  const expectedKey = process.env.METAMORPH_API_KEY;
-
-  if (expectedKey && apiKey !== expectedKey) {
-    res.status(401).json({ error: 'Invalid API key' });
-    return;
-  }
-
-  next();
-};
-
-// Health check
+// Health check - unauthenticated
 app.get('/health', (_req: Request, res: Response) => {
   res.json({ status: 'ok', version: '0.1.0' });
 });
+
+// Health check API endpoint - unauthenticated
+app.get('/api/health', (_req: Request, res: Response) => {
+  res.json({ status: 'ok', timestamp: new Date().toISOString() });
+});
+
+// Apply authentication and vault context to all /api routes except health
+// Note: This runs AFTER /api/health route is defined (unauthenticated)
+app.use('/api', requireAuth(), vaultContextMiddleware());
 
 // Get API info
 app.get('/api', (_req: Request, res: Response) => {
@@ -211,17 +237,18 @@ app.get('/api', (_req: Request, res: Response) => {
 });
 
 // Chat endpoint (non-streaming)
-app.post('/api/chat', apiKeyAuth, async (req: Request, res: Response) => {
+app.post('/api/chat', async (req: Request, res: Response) => {
   try {
     const { message, sessionId, config } = req.body;
+    const vaultId = getVaultIdFromRequest(req, 'default');
 
     if (!message) {
       res.status(400).json({ error: 'Message is required' });
       return;
     }
 
-    // Create session with config if needed
-    const effectiveSessionId = sessionId || DEFAULT_SESSION;
+    // Create vault-scoped session with config if needed
+    const effectiveSessionId = sessionId || `${vaultId}:${DEFAULT_SESSION}`;
     if (config) {
       runtime.sessions.getOrCreate(effectiveSessionId, { config });
     }
@@ -241,15 +268,16 @@ app.post('/api/chat', apiKeyAuth, async (req: Request, res: Response) => {
   } catch (error) {
     console.error('Chat error:', error);
     res.status(500).json({
-      error: error instanceof Error ? error.message : 'Unknown error'
+      error: 'An error occurred processing your request'
     });
   }
 });
 
 // Streaming chat endpoint (Server-Sent Events)
-app.get('/api/chat/stream', apiKeyAuth, async (req: Request, res: Response) => {
+app.get('/api/chat/stream', async (req: Request, res: Response) => {
   const message = req.query.message as string;
   const sessionId = req.query.sessionId as string;
+  const vaultId = getVaultIdFromRequest(req, 'default');
 
   if (!message) {
     res.status(400).json({ error: 'Message query parameter is required' });
@@ -263,7 +291,7 @@ app.get('/api/chat/stream', apiKeyAuth, async (req: Request, res: Response) => {
   res.setHeader('X-Accel-Buffering', 'no');
   res.flushHeaders(); // Send headers immediately to start streaming
 
-  const effectiveSessionId = sessionId || DEFAULT_SESSION;
+  const effectiveSessionId = sessionId || `${vaultId}:${DEFAULT_SESSION}`;
 
   const callbacks: StreamCallbacks = {
     onText: (text) => {
@@ -309,8 +337,9 @@ app.get('/api/chat/stream', apiKeyAuth, async (req: Request, res: Response) => {
 });
 
 // POST version of streaming for better compatibility
-app.post('/api/chat/stream', apiKeyAuth, async (req: Request, res: Response) => {
+app.post('/api/chat/stream', async (req: Request, res: Response) => {
   const { message, sessionId, emotionContext } = req.body;
+  const vaultId = getVaultIdFromRequest(req, 'default');
 
   if (!message) {
     res.status(400).json({ error: 'Message is required' });
@@ -324,7 +353,7 @@ app.post('/api/chat/stream', apiKeyAuth, async (req: Request, res: Response) => 
   res.setHeader('X-Accel-Buffering', 'no');
   res.flushHeaders(); // Send headers immediately to start streaming
 
-  const effectiveSessionId = sessionId || DEFAULT_SESSION;
+  const effectiveSessionId = sessionId || `${vaultId}:${DEFAULT_SESSION}`;
 
   const callbacks: StreamCallbacks = {
     onText: (text) => {
@@ -380,9 +409,11 @@ app.post('/api/chat/stream', apiKeyAuth, async (req: Request, res: Response) => 
 });
 
 // Get current state
-app.get('/api/state', apiKeyAuth, (req: Request, res: Response) => {
+app.get('/api/state', (req: Request, res: Response) => {
   const sessionId = req.query.sessionId as string;
-  const agent = getOrCreateAgent(sessionId);
+  const vaultId = getVaultIdFromRequest(req, 'default');
+  const effectiveSessionId = sessionId || `${vaultId}:${DEFAULT_SESSION}`;
+  const agent = getOrCreateAgent(effectiveSessionId);
 
   res.json({
     stance: agent.getCurrentStance(),
@@ -393,15 +424,17 @@ app.get('/api/state', apiKeyAuth, (req: Request, res: Response) => {
 });
 
 // Update configuration
-app.put('/api/config', apiKeyAuth, (req: Request, res: Response) => {
+app.put('/api/config', (req: Request, res: Response) => {
   const { sessionId, config } = req.body;
+  const vaultId = getVaultIdFromRequest(req, 'default');
 
   if (!config) {
     res.status(400).json({ error: 'Config is required' });
     return;
   }
 
-  const agent = getOrCreateAgent(sessionId);
+  const effectiveSessionId = sessionId || `${vaultId}:${DEFAULT_SESSION}`;
+  const agent = getOrCreateAgent(effectiveSessionId);
   agent.updateConfig(config);
 
   res.json({
@@ -411,9 +444,11 @@ app.put('/api/config', apiKeyAuth, (req: Request, res: Response) => {
 });
 
 // Get identity information
-app.get('/api/identity', apiKeyAuth, (req: Request, res: Response) => {
+app.get('/api/identity', (req: Request, res: Response) => {
   const sessionId = req.query.sessionId as string;
-  const agent = getOrCreateAgent(sessionId);
+  const vaultId = getVaultIdFromRequest(req, 'default');
+  const effectiveSessionId = sessionId || `${vaultId}:${DEFAULT_SESSION}`;
+  const agent = getOrCreateAgent(effectiveSessionId);
   const stance = agent.getCurrentStance();
 
   res.json({
@@ -429,9 +464,11 @@ app.get('/api/identity', apiKeyAuth, (req: Request, res: Response) => {
 });
 
 // List available subagents
-app.get('/api/subagents', apiKeyAuth, (req: Request, res: Response) => {
+app.get('/api/subagents', (req: Request, res: Response) => {
   const sessionId = req.query.sessionId as string;
-  const agent = getOrCreateAgent(sessionId);
+  const vaultId = getVaultIdFromRequest(req, 'default');
+  const effectiveSessionId = sessionId || `${vaultId}:${DEFAULT_SESSION}`;
+  const agent = getOrCreateAgent(effectiveSessionId);
   const definitions = agent.getSubagentDefinitions();
 
   res.json({
@@ -444,16 +481,18 @@ app.get('/api/subagents', apiKeyAuth, (req: Request, res: Response) => {
 });
 
 // Invoke a specific subagent
-app.post('/api/subagents/:name', apiKeyAuth, async (req: Request, res: Response) => {
+app.post('/api/subagents/:name', async (req: Request, res: Response) => {
   const { name } = req.params;
   const { task, sessionId } = req.body;
+  const vaultId = getVaultIdFromRequest(req, 'default');
 
   if (!task) {
     res.status(400).json({ error: 'Task is required' });
     return;
   }
 
-  const agent = getOrCreateAgent(sessionId);
+  const effectiveSessionId = sessionId || `${vaultId}:${DEFAULT_SESSION}`;
+  const agent = getOrCreateAgent(effectiveSessionId);
 
   try {
     const result = await agent.invokeSubagent(name, task);
@@ -464,18 +503,20 @@ app.post('/api/subagents/:name', apiKeyAuth, async (req: Request, res: Response)
     });
   } catch (error) {
     res.status(400).json({
-      error: error instanceof Error ? error.message : 'Unknown error'
+      error: 'Failed to invoke subagent'
     });
   }
 });
 
 // Get conversation history
-app.get('/api/history', apiKeyAuth, (req: Request, res: Response) => {
+app.get('/api/history', (req: Request, res: Response) => {
   const sessionId = req.query.sessionId as string;
+  const vaultId = getVaultIdFromRequest(req, 'default');
   const limit = parseInt(req.query.limit as string) || 50;
   const offset = parseInt(req.query.offset as string) || 0;
 
-  const agent = getOrCreateAgent(sessionId);
+  const effectiveSessionId = sessionId || `${vaultId}:${DEFAULT_SESSION}`;
+  const agent = getOrCreateAgent(effectiveSessionId);
   const history = agent.getHistory();
 
   res.json({
@@ -492,11 +533,13 @@ app.get('/api/history', apiKeyAuth, (req: Request, res: Response) => {
 });
 
 // Get operator timeline (Ralph Iteration 2 - Feature 3)
-app.get('/api/timeline', apiKeyAuth, (req: Request, res: Response) => {
+app.get('/api/timeline', (req: Request, res: Response) => {
   const sessionId = req.query.sessionId as string;
+  const vaultId = getVaultIdFromRequest(req, 'default');
   const limit = parseInt(req.query.limit as string) || 20;
 
-  const agent = getOrCreateAgent(sessionId);
+  const effectiveSessionId = sessionId || `${vaultId}:${DEFAULT_SESSION}`;
+  const agent = getOrCreateAgent(effectiveSessionId);
   const history = agent.getTransformationHistory();
 
   // Transform to timeline entries format
@@ -518,23 +561,27 @@ app.get('/api/timeline', apiKeyAuth, (req: Request, res: Response) => {
 });
 
 // Get evolution snapshots (Ralph Iteration 2 - Feature 5)
-app.get('/api/evolution', apiKeyAuth, (req: Request, res: Response) => {
+app.get('/api/evolution', (req: Request, res: Response) => {
   const sessionId = req.query.sessionId as string;
+  const vaultId = getVaultIdFromRequest(req, 'default');
   const limit = parseInt(req.query.limit as string) || 20;
 
-  const agent = getOrCreateAgent(sessionId);
+  const effectiveSessionId = sessionId || `${vaultId}:${DEFAULT_SESSION}`;
+  const agent = getOrCreateAgent(effectiveSessionId);
   const snapshots = agent.getEvolutionTimeline(limit);
 
   res.json({ snapshots });
 });
 
 // Search memories (INCEPTION Phase 7 - Memory browser)
-app.get('/api/memories', apiKeyAuth, (req: Request, res: Response) => {
+app.get('/api/memories', (req: Request, res: Response) => {
   const sessionId = req.query.sessionId as string;
+  const vaultId = getVaultIdFromRequest(req, 'default');
   const type = req.query.type as string | undefined;
   const limit = parseInt(req.query.limit as string) || 500;
 
-  const agent = getOrCreateAgent(sessionId);
+  const effectiveSessionId = sessionId || `${vaultId}:${DEFAULT_SESSION}`;
+  const agent = getOrCreateAgent(effectiveSessionId);
   const memories = agent.searchMemories({
     type: type as 'episodic' | 'semantic' | 'identity' | undefined,
     limit
@@ -544,9 +591,11 @@ app.get('/api/memories', apiKeyAuth, (req: Request, res: Response) => {
 });
 
 // Export conversation state
-app.get('/api/export', apiKeyAuth, (req: Request, res: Response) => {
+app.get('/api/export', (req: Request, res: Response) => {
   const sessionId = req.query.sessionId as string;
-  const agent = getOrCreateAgent(sessionId);
+  const vaultId = getVaultIdFromRequest(req, 'default');
+  const effectiveSessionId = sessionId || `${vaultId}:${DEFAULT_SESSION}`;
+  const agent = getOrCreateAgent(effectiveSessionId);
 
   res.json({
     state: JSON.parse(agent.exportState())
@@ -554,8 +603,9 @@ app.get('/api/export', apiKeyAuth, (req: Request, res: Response) => {
 });
 
 // Import conversation state
-app.post('/api/import', apiKeyAuth, (req: Request, res: Response) => {
+app.post('/api/import', (req: Request, res: Response) => {
   const { state } = req.body;
+  const vaultId = getVaultIdFromRequest(req, 'default');
 
   if (!state) {
     res.status(400).json({ error: 'State is required' });
@@ -564,7 +614,9 @@ app.post('/api/import', apiKeyAuth, (req: Request, res: Response) => {
 
   try {
     const agent = MetamorphAgent.fromState(JSON.stringify(state));
-    const sessionId = agent.getConversationId();
+    const agentSessionId = agent.getConversationId();
+    // Create vault-scoped session ID
+    const sessionId = `${vaultId}:${agentSessionId}`;
     // Create a new session with this agent by first creating and then replacing
     const session = runtime.sessions.createSession({ id: sessionId });
     // Note: This is a workaround since we can't directly set the agent
@@ -577,15 +629,17 @@ app.post('/api/import', apiKeyAuth, (req: Request, res: Response) => {
     });
   } catch (error) {
     res.status(400).json({
-      error: error instanceof Error ? error.message : 'Invalid state format'
+      error: 'Failed to import state'
     });
   }
 });
 
 // Create a new session
-app.post('/api/session', apiKeyAuth, (req: Request, res: Response) => {
-  const { config, name } = req.body;
-  const session = runtime.createSession(config, name);
+app.post('/api/session', (req: Request, res: Response) => {
+  const { config, name, sessionId } = req.body;
+  const vaultId = getVaultIdFromRequest(req, 'default');
+  // Create vault-scoped session with proper vaultId propagation
+  const session = runtime.createSession(config, name, sessionId, vaultId);
 
   res.json({
     sessionId: session.id,
@@ -595,10 +649,11 @@ app.post('/api/session', apiKeyAuth, (req: Request, res: Response) => {
 });
 
 // Delete a session
-app.delete('/api/session/:id', apiKeyAuth, (req: Request, res: Response) => {
+app.delete('/api/session/:id', (req: Request, res: Response) => {
   const { id } = req.params;
-
-  if (runtime.deleteSession(id)) {
+  const vaultId = getVaultIdFromRequest(req, 'default');
+  // Delete session using vault-scoped method for proper isolation
+  if (runtime.deleteSession(id, vaultId)) {
     res.json({ success: true });
   } else {
     res.status(404).json({ error: 'Session not found' });
@@ -606,10 +661,12 @@ app.delete('/api/session/:id', apiKeyAuth, (req: Request, res: Response) => {
 });
 
 // List all sessions (includes persisted sessions from SQLite)
-app.get('/api/sessions', apiKeyAuth, async (_req: Request, res: Response) => {
+// Note: This returns vault-scoped sessions - filter by vaultId prefix
+app.get('/api/sessions', async (req: Request, res: Response) => {
   try {
-    // Get all sessions from persistence (includes ones not in memory)
-    const sessions = await runtime.sessions.listSessionsAsync();
+    const vaultId = getVaultIdFromRequest(req, 'default');
+    // Get sessions for this vault from persistence (already vault-scoped)
+    const sessions = await runtime.sessions.listSessionsAsync(vaultId);
     res.json({ sessions });
   } catch (error) {
     console.error('Failed to list sessions:', error);
@@ -618,16 +675,17 @@ app.get('/api/sessions', apiKeyAuth, async (_req: Request, res: Response) => {
 });
 
 // Execute a command (exposes all 50+ CLI commands via HTTP)
-app.post('/api/command', apiKeyAuth, async (req: Request, res: Response) => {
+app.post('/api/command', async (req: Request, res: Response) => {
   try {
     const { command, args, sessionId } = req.body;
+    const vaultId = getVaultIdFromRequest(req, 'default');
 
     if (!command) {
       res.status(400).json({ error: 'Command is required' });
       return;
     }
 
-    const effectiveSessionId = sessionId || DEFAULT_SESSION;
+    const effectiveSessionId = sessionId || `${vaultId}:${DEFAULT_SESSION}`;
     // Ensure session exists
     runtime.sessions.getOrCreate(effectiveSessionId);
 
@@ -651,13 +709,13 @@ app.post('/api/command', apiKeyAuth, async (req: Request, res: Response) => {
   } catch (error) {
     console.error('Command error:', error);
     res.status(500).json({
-      error: error instanceof Error ? error.message : 'Unknown error'
+      error: 'Command execution failed'
     });
   }
 });
 
 // List available commands
-app.get('/api/commands', apiKeyAuth, (_req: Request, res: Response) => {
+app.get('/api/commands', (_req: Request, res: Response) => {
   const commands = runtime.listCommands();
   res.json({ commands });
 });
@@ -777,17 +835,19 @@ function calculateEmotionAggregate(readings: Array<{
   };
 }
 
-// Sync endpoint for PWA background sync (browser → server)
-app.post('/api/sync', apiKeyAuth, async (req: Request, res: Response) => {
+// Sync endpoint for PWA background sync (browser -> server)
+app.post('/api/sync', async (req: Request, res: Response) => {
   try {
     const { type, sessionId, data } = req.body;
+    const vaultId = getVaultIdFromRequest(req, 'default');
 
     if (!type || !sessionId) {
       res.status(400).json({ error: 'type and sessionId are required' });
       return;
     }
 
-    const agent = getOrCreateAgent(sessionId);
+    const effectiveSessionId = `${vaultId}:${sessionId}`;
+    const agent = getOrCreateAgent(effectiveSessionId);
 
     switch (type) {
       case 'messages': {
@@ -991,15 +1051,17 @@ app.post('/api/sync', apiKeyAuth, async (req: Request, res: Response) => {
 });
 
 // Get emotion context for a session
-app.get('/api/sync/emotions', apiKeyAuth, (req: Request, res: Response) => {
+app.get('/api/sync/emotions', (req: Request, res: Response) => {
   const sessionId = req.query.sessionId as string;
+  const vaultId = getVaultIdFromRequest(req, 'default');
 
   if (!sessionId) {
     res.status(400).json({ error: 'sessionId is required' });
     return;
   }
 
-  const emotionData = sessionEmotionData.get(sessionId);
+  const effectiveSessionId = `${vaultId}:${sessionId}`;
+  const emotionData = sessionEmotionData.get(effectiveSessionId);
 
   if (!emotionData || !emotionData.lastAggregate) {
     res.json({
@@ -1028,7 +1090,7 @@ app.get('/api/sync/emotions', apiKeyAuth, (req: Request, res: Response) => {
 });
 
 // Emotion detection endpoint - processes webcam frames and returns emotion context
-app.post('/api/emotion/detect', apiKeyAuth, async (req: Request, res: Response) => {
+app.post('/api/emotion/detect', async (req: Request, res: Response) => {
   try {
     const { image } = req.body;
 
@@ -1099,7 +1161,7 @@ app.post('/api/emotion/detect', apiKeyAuth, async (req: Request, res: Response) 
 });
 
 // Get emotion detection status
-app.get('/api/emotion/status', apiKeyAuth, (_req: Request, res: Response) => {
+app.get('/api/emotion/status', (_req: Request, res: Response) => {
   res.json({
     initialized: emotionDetectorInitialized,
     detectorReady: faceDetector.isInitialized(),
@@ -1108,7 +1170,7 @@ app.get('/api/emotion/status', apiKeyAuth, (_req: Request, res: Response) => {
 });
 
 // Clear emotion history (for testing/reset)
-app.post('/api/emotion/reset', apiKeyAuth, (_req: Request, res: Response) => {
+app.post('/api/emotion/reset', (_req: Request, res: Response) => {
   emotionProcessor.clearHistory();
   res.json({ success: true, message: 'Emotion history cleared' });
 });
@@ -1132,9 +1194,10 @@ const VISION_COOLDOWN_MS = 60000; // 60 second minimum between vision requests (
  * 4. Returns emotion context to frontend
  * 5. Frontend calls POST /api/chat with message - emotion context is auto-injected
  */
-app.post('/api/chat/vision', apiKeyAuth, async (req: Request, res: Response) => {
+app.post('/api/chat/vision', async (req: Request, res: Response) => {
   try {
     const { sessionId, imageDataUrl } = req.body;
+    const vaultId = getVaultIdFromRequest(req, 'default');
 
     if (!imageDataUrl) {
       res.status(400).json({ error: 'imageDataUrl is required' });
@@ -1161,7 +1224,8 @@ app.post('/api/chat/vision', apiKeyAuth, async (req: Request, res: Response) => 
       return;
     }
 
-    const agent = getOrCreateAgent(sessionId);
+    const effectiveSessionId = sessionId || `${vaultId}:${DEFAULT_SESSION}`;
+    const agent = getOrCreateAgent(effectiveSessionId);
 
     visionRequestInProgress = true;
     lastVisionRequestTime = now;
@@ -1180,7 +1244,7 @@ app.post('/api/chat/vision', apiKeyAuth, async (req: Request, res: Response) => 
       res.json({
         success: true,
         emotionContext,
-        sessionId: sessionId || DEFAULT_SESSION
+        sessionId: effectiveSessionId
       });
     } finally {
       visionRequestInProgress = false;
@@ -1188,7 +1252,7 @@ app.post('/api/chat/vision', apiKeyAuth, async (req: Request, res: Response) => 
   } catch (error) {
     visionRequestInProgress = false;
     console.error('Vision analysis error:', error);
-    res.status(500).json({ error: error instanceof Error ? error.message : 'Unknown error' });
+    res.status(500).json({ error: 'Vision analysis failed' });
   }
 });
 
@@ -1197,18 +1261,28 @@ app.post('/api/chat/vision', apiKeyAuth, async (req: Request, res: Response) => 
 // ============================================================================
 
 // List streams for a session
-app.get('/api/streams', apiKeyAuth, (req, res) => {
-  // If sessionId is provided, filter by it; otherwise return ALL streams
+app.get('/api/streams', (req: Request, res: Response) => {
+  // If sessionId is provided, filter by it; otherwise return vault-scoped streams
   const sessionId = req.query.sessionId as string | undefined;
-  const streams = streamManager.listStreams(sessionId);
+  const vaultId = getVaultIdFromRequest(req, 'default');
+  const effectiveSessionId = sessionId ? `${vaultId}:${sessionId}` : undefined;
+  const allStreams = streamManager.listStreams(effectiveSessionId);
+  // Filter to only streams belonging to this vault
+  const streams = allStreams.filter(s => s.sessionId.startsWith(`${vaultId}:`));
   res.json({ streams });
 });
 
 // Get stream info
-app.get('/api/streams/:channel', apiKeyAuth, (req, res) => {
+app.get('/api/streams/:channel', (req: Request, res: Response) => {
   const channel = decodeURIComponent(req.params.channel);
+  const vaultId = getVaultIdFromRequest(req, 'default');
   const stream = streamManager.getStream(channel);
   if (!stream) {
+    res.status(404).json({ error: 'Stream not found' });
+    return;
+  }
+  // Verify stream belongs to this vault
+  if (!stream.sessionId.startsWith(`${vaultId}:`)) {
     res.status(404).json({ error: 'Stream not found' });
     return;
   }
@@ -1216,48 +1290,77 @@ app.get('/api/streams/:channel', apiKeyAuth, (req, res) => {
 });
 
 // Create a stream
-app.post('/api/streams', apiKeyAuth, (req, res) => {
+app.post('/api/streams', (req: Request, res: Response) => {
   try {
     const { channel, sessionId, schema, metadata } = req.body;
-    const effectiveSessionId = sessionId || 'default';
+    const vaultId = getVaultIdFromRequest(req, 'default');
+    const effectiveSessionId = sessionId ? `${vaultId}:${sessionId}` : `${vaultId}:default`;
     const stream = streamManager.createStream(channel, effectiveSessionId, schema, metadata);
     res.json({ stream });
   } catch (err) {
-    res.status(400).json({ error: err instanceof Error ? err.message : 'Failed to create stream' });
+    res.status(400).json({ error: 'Failed to create stream' });
   }
 });
 
 // Publish an event to a stream (for HTTP-based publishing)
-app.post('/api/streams/:channel/event', apiKeyAuth, (req, res) => {
+app.post('/api/streams/:channel/event', (req: Request, res: Response) => {
   const channel = decodeURIComponent(req.params.channel);
+  const vaultId = getVaultIdFromRequest(req, 'default');
   const { data, source } = req.body;
+  // Verify stream belongs to this vault before publishing
+  const stream = streamManager.getStream(channel);
+  if (!stream || !stream.sessionId.startsWith(`${vaultId}:`)) {
+    res.status(404).json({ error: 'Stream not found' });
+    return;
+  }
   const event = streamManager.publishEvent(channel, data, source);
   if (!event) {
-    res.status(400).json({ error: 'Failed to publish event (validation error or stream issue)' });
+    res.status(400).json({ error: 'Failed to publish event' });
     return;
   }
   res.json({ event });
 });
 
 // Get stream history
-app.get('/api/streams/:channel/history', apiKeyAuth, (req, res) => {
+app.get('/api/streams/:channel/history', (req: Request, res: Response) => {
   const channel = decodeURIComponent(req.params.channel);
+  const vaultId = getVaultIdFromRequest(req, 'default');
   const limit = req.query.limit ? parseInt(req.query.limit as string, 10) : 100;
+  // Verify stream belongs to this vault
+  const stream = streamManager.getStream(channel);
+  if (!stream || !stream.sessionId.startsWith(`${vaultId}:`)) {
+    res.status(404).json({ error: 'Stream not found' });
+    return;
+  }
   const events = streamManager.getHistory(channel, limit);
   res.json({ events });
 });
 
 // Set/update stream schema
-app.post('/api/streams/:channel/schema', apiKeyAuth, (req, res) => {
+app.post('/api/streams/:channel/schema', (req: Request, res: Response) => {
   const channel = decodeURIComponent(req.params.channel);
+  const vaultId = getVaultIdFromRequest(req, 'default');
   const { schema } = req.body;
+  // Verify stream belongs to this vault
+  const stream = streamManager.getStream(channel);
+  if (!stream || !stream.sessionId.startsWith(`${vaultId}:`)) {
+    res.status(404).json({ error: 'Stream not found' });
+    return;
+  }
   streamManager.setSchema(channel, schema);
   res.json({ success: true });
 });
 
 // Get stream schema
-app.get('/api/streams/:channel/schema', apiKeyAuth, (req, res) => {
+app.get('/api/streams/:channel/schema', (req: Request, res: Response) => {
   const channel = decodeURIComponent(req.params.channel);
+  const vaultId = getVaultIdFromRequest(req, 'default');
+  // Verify stream belongs to this vault
+  const stream = streamManager.getStream(channel);
+  if (!stream || !stream.sessionId.startsWith(`${vaultId}:`)) {
+    res.status(404).json({ error: 'Stream not found' });
+    return;
+  }
   const schema = streamManager.getSchema(channel);
   if (!schema) {
     res.status(404).json({ error: 'No schema defined for stream' });
@@ -1267,8 +1370,15 @@ app.get('/api/streams/:channel/schema', apiKeyAuth, (req, res) => {
 });
 
 // Close a stream
-app.delete('/api/streams/:channel', apiKeyAuth, (req, res) => {
+app.delete('/api/streams/:channel', (req: Request, res: Response) => {
   const channel = decodeURIComponent(req.params.channel);
+  const vaultId = getVaultIdFromRequest(req, 'default');
+  // Verify stream belongs to this vault before closing
+  const stream = streamManager.getStream(channel);
+  if (!stream || !stream.sessionId.startsWith(`${vaultId}:`)) {
+    res.status(404).json({ error: 'Stream not found' });
+    return;
+  }
   streamManager.closeStream(channel);
   res.json({ success: true });
 });
@@ -1278,7 +1388,7 @@ app.delete('/api/streams/:channel', apiKeyAuth, (req, res) => {
 // ============================================================================
 
 // Get embeddings API info
-app.get('/api/embeddings', apiKeyAuth, (_req: Request, res: Response) => {
+app.get('/api/embeddings', (_req: Request, res: Response) => {
   res.json({
     service: 'embeddings',
     version: '1.0.0',
@@ -1297,7 +1407,7 @@ app.get('/api/embeddings', apiKeyAuth, (_req: Request, res: Response) => {
 });
 
 // Embeddings operations
-app.post('/api/embeddings', apiKeyAuth, async (req: Request, res: Response) => {
+app.post('/api/embeddings', async (req: Request, res: Response) => {
   try {
     const { action, text, texts, embedding1, embedding2, query, candidates, topK } = req.body;
 
@@ -1370,20 +1480,186 @@ app.post('/api/embeddings', apiKeyAuth, async (req: Request, res: Response) => {
 });
 
 // ============================================================================
+// Idle Mode Endpoints - Control autonomous idle detection
+// ============================================================================
+
+// Get idle mode status
+app.get('/api/idle-mode/status', (req: Request, res: Response) => {
+  try {
+    const { sessionId } = req.query;
+    const vaultId = getVaultIdFromRequest(req, 'default');
+    const effectiveSessionId = sessionId ? `${vaultId}:${sessionId}` : `${vaultId}:${DEFAULT_SESSION}`;
+
+    const session = runtime.sessions.getSession(effectiveSessionId);
+    if (!session) {
+      res.status(404).json({ error: 'Session not found' });
+      return;
+    }
+
+    const agent = session.agent;
+    const idleStatus = agent.getIdleStatus();
+
+    // Get bridge status if available
+    const bridgeStatus = idleStreamBridge?.getStatus();
+
+    res.json({
+      isIdle: idleStatus.isIdle,
+      idleDuration: idleStatus.timeSinceLastInteraction,
+      lastActivity: idleStatus.lastInteractionTime.toISOString(),
+      currentSession: null, // TODO: Add autonomous session tracking
+      sessionHistory: [], // TODO: Add session history
+      config: {
+        enabled: idleStatus.enabled,
+        idleThreshold: idleStatus.thresholdMinutes,
+        maxSessionDuration: 120, // Default
+        evolutionIntensity: 'moderate' as const,
+        safetyLevel: 'high' as const,
+        coherenceFloor: 30, // Default coherence floor
+        allowedGoalTypes: [],
+        researchDomains: [],
+        externalPublishing: false,
+        subagentCoordination: true,
+      },
+      learningHistory: [],
+      emergentCategories: [],
+      // Include bridge status
+      bridgeStatus: bridgeStatus || null,
+      streamsAvailable: {
+        idleMode: streamManager.getStream(`${effectiveSessionId}:idle-mode`) ? true : false,
+        autonomousSessions: streamManager.getStream(`${effectiveSessionId}:autonomous-sessions`) ? true : false
+      }
+    });
+  } catch (error) {
+    console.error('[IdleMode] Error getting status:', error);
+    res.status(500).json({
+      error: error instanceof Error ? error.message : 'Failed to get idle mode status'
+    });
+  }
+});
+
+// Toggle idle mode
+app.post('/api/idle-mode/toggle', (req: Request, res: Response) => {
+  try {
+    const { sessionId, enabled } = req.body;
+    const vaultId = getVaultIdFromRequest(req, 'default');
+    const effectiveSessionId = sessionId ? `${vaultId}:${sessionId}` : `${vaultId}:${DEFAULT_SESSION}`;
+
+    if (typeof enabled !== 'boolean') {
+      res.status(400).json({ error: 'enabled must be a boolean' });
+      return;
+    }
+
+    const session = runtime.sessions.getSession(effectiveSessionId);
+    if (!session) {
+      res.status(404).json({ error: 'Session not found' });
+      return;
+    }
+
+    const agent = session.agent;
+
+    if (enabled) {
+      agent.enableIdleDetection();
+    } else {
+      agent.disableIdleDetection();
+    }
+
+    // Return updated status
+    const idleStatus = agent.getIdleStatus();
+
+    res.json({
+      isIdle: idleStatus.isIdle,
+      idleDuration: idleStatus.timeSinceLastInteraction,
+      lastActivity: idleStatus.lastInteractionTime.toISOString(),
+      config: {
+        enabled: idleStatus.enabled,
+        idleThreshold: idleStatus.thresholdMinutes,
+        maxSessionDuration: 120,
+        evolutionIntensity: 'moderate' as const,
+        safetyLevel: 'high' as const,
+        coherenceFloor: 30, // Default coherence floor
+        allowedGoalTypes: [],
+        researchDomains: [],
+        externalPublishing: false,
+        subagentCoordination: true,
+      }
+    });
+  } catch (error) {
+    console.error('[IdleMode] Error toggling idle mode:', error);
+    res.status(500).json({
+      error: error instanceof Error ? error.message : 'Failed to toggle idle mode'
+    });
+  }
+});
+
+// Update idle mode configuration
+app.post('/api/idle-mode/config', (req: Request, res: Response) => {
+  try {
+    const { sessionId, config } = req.body;
+    const vaultId = getVaultIdFromRequest(req, 'default');
+    const effectiveSessionId = sessionId ? `${vaultId}:${sessionId}` : `${vaultId}:${DEFAULT_SESSION}`;
+
+    if (!config || typeof config !== 'object') {
+      res.status(400).json({ error: 'config object is required' });
+      return;
+    }
+
+    const session = runtime.sessions.getSession(effectiveSessionId);
+    if (!session) {
+      res.status(404).json({ error: 'Session not found' });
+      return;
+    }
+
+    const agent = session.agent;
+
+    // Update idle threshold if provided
+    if (typeof config.idleThreshold === 'number' && config.idleThreshold > 0) {
+      agent.setIdleThreshold(config.idleThreshold);
+    }
+
+    // Return updated status
+    const idleStatus = agent.getIdleStatus();
+
+    res.json({
+      isIdle: idleStatus.isIdle,
+      idleDuration: idleStatus.timeSinceLastInteraction,
+      lastActivity: idleStatus.lastInteractionTime.toISOString(),
+      config: {
+        enabled: idleStatus.enabled,
+        idleThreshold: idleStatus.thresholdMinutes,
+        maxSessionDuration: config.maxSessionDuration || 120,
+        evolutionIntensity: config.evolutionIntensity || 'moderate' as const,
+        safetyLevel: config.safetyLevel || 'high' as const,
+        coherenceFloor: config.coherenceFloor || 30,
+        allowedGoalTypes: config.allowedGoalTypes || [],
+        researchDomains: config.researchDomains || [],
+        externalPublishing: config.externalPublishing || false,
+        subagentCoordination: config.subagentCoordination !== false,
+      }
+    });
+  } catch (error) {
+    console.error('[IdleMode] Error updating config:', error);
+    res.status(500).json({
+      error: error instanceof Error ? error.message : 'Failed to update idle mode config'
+    });
+  }
+});
+
+// ============================================================================
 // Steering Endpoints - User guidance during streaming/tool use
 // ============================================================================
 
 // Send a steering message
-app.post('/api/steering', apiKeyAuth, (req: Request, res: Response) => {
+app.post('/api/steering', (req: Request, res: Response) => {
   try {
     const { sessionId, content } = req.body;
+    const vaultId = getVaultIdFromRequest(req, 'default');
 
     if (!content || typeof content !== 'string') {
       res.status(400).json({ error: 'content is required and must be a string' });
       return;
     }
 
-    const effectiveSessionId = sessionId || DEFAULT_SESSION;
+    const effectiveSessionId = sessionId ? `${vaultId}:${sessionId}` : `${vaultId}:${DEFAULT_SESSION}`;
     const message = addSteeringMessage(effectiveSessionId, content.trim());
 
     res.json({
@@ -1399,10 +1675,12 @@ app.post('/api/steering', apiKeyAuth, (req: Request, res: Response) => {
 });
 
 // Get pending steering messages for a session
-app.get('/api/steering/:sessionId', apiKeyAuth, (req: Request, res: Response) => {
+app.get('/api/steering/:sessionId', (req: Request, res: Response) => {
   try {
     const { sessionId } = req.params;
-    const queue = getSteeringQueue(sessionId);
+    const vaultId = getVaultIdFromRequest(req, 'default');
+    const effectiveSessionId = `${vaultId}:${sessionId}`;
+    const queue = getSteeringQueue(effectiveSessionId);
     const pending = queue.filter(m => !m.processed);
 
     res.json({
@@ -1412,18 +1690,20 @@ app.get('/api/steering/:sessionId', apiKeyAuth, (req: Request, res: Response) =>
   } catch (error) {
     console.error('[Steering] Error getting messages:', error);
     res.status(500).json({
-      error: error instanceof Error ? error.message : 'Failed to get steering messages'
+      error: 'Failed to get steering messages'
     });
   }
 });
 
 // Clear all steering messages for a session
-app.delete('/api/steering/:sessionId', apiKeyAuth, (req: Request, res: Response) => {
+app.delete('/api/steering/:sessionId', (req: Request, res: Response) => {
   try {
     const { sessionId } = req.params;
-    const queue = getSteeringQueue(sessionId);
+    const vaultId = getVaultIdFromRequest(req, 'default');
+    const effectiveSessionId = `${vaultId}:${sessionId}`;
+    const queue = getSteeringQueue(effectiveSessionId);
     const clearedCount = queue.length;
-    steeringMessageQueues.set(sessionId, []);
+    steeringMessageQueues.set(effectiveSessionId, []);
 
     res.json({
       success: true,
@@ -1432,7 +1712,7 @@ app.delete('/api/steering/:sessionId', apiKeyAuth, (req: Request, res: Response)
   } catch (error) {
     console.error('[Steering] Error clearing messages:', error);
     res.status(500).json({
-      error: error instanceof Error ? error.message : 'Failed to clear steering messages'
+      error: 'Failed to clear steering messages'
     });
   }
 });
@@ -1458,6 +1738,22 @@ export async function startServer(port: number = Number(PORT)): Promise<void> {
   // Register the steering message provider for hooks to access
   registerSteeringProvider(consumeSteeringMessages);
   console.log('[Server] Steering message provider registered');
+
+  // Initialize idle stream bridge
+  try {
+    console.log('[Server] Initializing idle stream bridge...');
+    idleStreamBridge = new IdleStreamBridge(streamManager, runtime, {
+      enabled: true,
+      idleThreshold: 30, // 30 minutes
+      debugLogging: process.env.NODE_ENV === 'development'
+    });
+
+    await idleStreamBridge.initialize();
+    console.log('[Server] Idle stream bridge initialized successfully');
+  } catch (error) {
+    console.warn('[Server] Idle stream bridge initialization failed (continuing with reduced functionality):', error);
+    // Don't throw - allow server to continue
+  }
 
   // Initialize WebSocket server
   createWebSocketServer(server, streamManager);
