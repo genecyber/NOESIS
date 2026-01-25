@@ -28,6 +28,8 @@ import { EmbeddingService } from '../embeddings/service.js';
 import { IdleStreamBridge } from './idle-bridge.js';
 import { requireAuth, getVaultIdFromRequest } from './middleware/emblem-auth.js';
 import { vaultContextMiddleware } from '../multitenancy/index.js';
+import vercelAuthRoutes from './routes/vercel-auth.js';
+import sandboxRoutes from './routes/sandboxes.js';
 
 const app = express();
 
@@ -208,6 +210,10 @@ app.get('/api/health', (_req: Request, res: Response) => {
 // Note: This runs AFTER /api/health route is defined (unauthenticated)
 app.use('/api', requireAuth(), vaultContextMiddleware());
 
+// Mount Vercel OAuth and Sandbox routes
+app.use('/api/vercel/auth', vercelAuthRoutes);
+app.use('/api/sandboxes', sandboxRoutes);
+
 // Get API info
 app.get('/api', (_req: Request, res: Response) => {
   res.json({
@@ -231,7 +237,24 @@ app.get('/api', (_req: Request, res: Response) => {
       'POST /api/emotion/detect': 'Detect emotions from webcam frame (base64 image)',
       'GET /api/emotion/status': 'Get emotion detector status',
       'POST /api/emotion/reset': 'Clear emotion history',
-      'POST /api/chat/vision': 'Send message with webcam frame to Claude for vision-based analysis'
+      'POST /api/chat/vision': 'Send message with webcam frame to Claude for vision-based analysis',
+      // Vercel OAuth endpoints
+      'GET /api/vercel/auth/url': 'Get Vercel OAuth authorization URL',
+      'GET /api/vercel/auth/callback': 'OAuth callback handler',
+      'DELETE /api/vercel/auth/disconnect': 'Revoke Vercel connection',
+      'GET /api/vercel/auth/status': 'Check Vercel connection status',
+      // Sandbox endpoints
+      'POST /api/sandboxes': 'Create new sandbox',
+      'GET /api/sandboxes': 'List user sandboxes',
+      'GET /api/sandboxes/:id': 'Get sandbox details',
+      'DELETE /api/sandboxes/:id': 'Delete sandbox',
+      'POST /api/sandboxes/:id/start': 'Start sandbox',
+      'POST /api/sandboxes/:id/stop': 'Stop sandbox',
+      'POST /api/sandboxes/:id/execute': 'Run command in sandbox',
+      'POST /api/sandboxes/:id/files': 'Write files to sandbox',
+      'POST /api/sandboxes/:id/agent/attach': 'Attach Metamorph agent to sandbox',
+      'POST /api/sandboxes/:id/agent/chat': 'Chat with sandboxed agent',
+      'GET /api/sandboxes/usage': 'Get resource usage'
     }
   });
 });

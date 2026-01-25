@@ -376,7 +376,10 @@ export async function runMigrations(dbPath?: string): Promise<{
   try {
     // Import and register all migrations
     const { addVaultIdMigration } = await import('./migrations/001_add_vault_id.js');
+    const { addVercelSandboxTablesMigration } = await import('./migrations/002_add_vercel_sandbox_tables.js');
+
     migrator.register(addVaultIdMigration);
+    migrator.register(addVercelSandboxTablesMigration);
 
     // Run pending migrations
     const results = migrator.runPendingMigrations();
