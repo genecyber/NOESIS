@@ -664,7 +664,7 @@ export default function IdleModePanel({ sessionId }: IdleModePanelProps) {
       </AnimatePresence>
 
       {/* Recent History */}
-      {status.sessionHistory.length > 0 && (
+      {status.sessionHistory && status.sessionHistory.length > 0 && (
         <Card className="p-4">
           <h3 className="font-medium text-emblem-text mb-3">Recent Sessions</h3>
           <div className="space-y-2">
@@ -691,7 +691,7 @@ export default function IdleModePanel({ sessionId }: IdleModePanelProps) {
       )}
 
       {/* Learning Progress */}
-      {status.emergentCategories.length > 0 && (
+      {status.emergentCategories && status.emergentCategories.length > 0 && (
         <Card className="p-4">
           <h3 className="font-medium text-emblem-text mb-3">Discovered Categories</h3>
           <div className="flex flex-wrap gap-2">
