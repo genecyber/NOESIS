@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useCallback, useRef, useSyncExternalStore } from 'react';
 import type { StreamEvent, ServerMessage, ClientMessage, UseStreamSubscriptionReturn } from '../types';
+import { getAuthToken } from '@/lib/auth';
 
 const MAX_EVENTS_DEFAULT = 500;
 
@@ -60,7 +61,12 @@ function connectStore(sessionId: string, store: ConnectionStore) {
   // Backend API URL - use env var in production, localhost in dev
   const apiUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001';
   const wsUrl = apiUrl.replace(/^http/, 'ws');
-  const url = `${wsUrl}/ws/streams?sessionId=${encodeURIComponent(sessionId)}`;
+
+  // Include auth token in WebSocket URL (WebSocket API doesn't support custom headers)
+  const token = getAuthToken();
+  const params = new URLSearchParams({ sessionId });
+  if (token) params.append('token', token);
+  const url = `${wsUrl}/ws/streams?${params.toString()}`;
 
   try {
     const ws = new WebSocket(url);
