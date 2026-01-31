@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
   Power,
@@ -99,18 +99,32 @@ export default function IdleModePanel({ sessionId, onIdleResponse }: IdleModePan
   const [selectedAutonomy, setSelectedAutonomy] = useState<AutonomyLevel>('standard');
   const [heartbeatTimer, setHeartbeatTimer] = useState<NodeJS.Timeout | null>(null);
   const [isRunning, setIsRunning] = useState(false);
+  const lastResponseRef = useRef<string>('');
+  const isRunningRef = useRef(false);
+
+  // Keep refs in sync with state
+  useEffect(() => {
+    isRunningRef.current = isRunning;
+  }, [isRunning]);
 
   // Heartbeat - continue the idle session
   const sendHeartbeat = useCallback(async () => {
-    if (!sessionId || !status?.currentSession) return;
+    if (!sessionId || !status?.currentSession || !isRunningRef.current) return;
 
     try {
+      // Build continuation prompt based on last response
+      const lastResp = lastResponseRef.current;
+      const continuationPrompt = lastResp
+        ? `Continue your autonomous work. You were just working on:\n\n"${lastResp.substring(0, 500)}${lastResp.length > 500 ? '...' : ''}"\n\nKeep going. What's next?`
+        : `Continue your autonomous ${status.currentSession.mode} work.`;
+
       const response = await fetch(`/api/idle-mode/session/heartbeat`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', ...getAuthHeaders() },
         body: JSON.stringify({
           sessionId,
-          mode: status.currentSession.mode
+          mode: status.currentSession.mode,
+          context: continuationPrompt
         })
       });
 
@@ -122,10 +136,15 @@ export default function IdleModePanel({ sessionId, onIdleResponse }: IdleModePan
       const data = await response.json();
 
       // Send response to chat via custom event
-      if (data.response) {
+      if (data.response && isRunningRef.current) {
+        lastResponseRef.current = data.response;
         window.dispatchEvent(new CustomEvent('idle-response', {
           detail: { response: data.response, mode: status.currentSession.mode }
         }));
+
+        // Schedule next heartbeat after this response
+        const timer = setTimeout(sendHeartbeat, 30000);
+        setHeartbeatTimer(timer);
       }
 
       // Update status with new activity count
@@ -141,37 +160,37 @@ export default function IdleModePanel({ sessionId, onIdleResponse }: IdleModePan
     } catch (err) {
       console.error('Heartbeat error:', err);
     }
-  }, [sessionId, status, onIdleResponse]);
+  }, [sessionId, status]);
 
-  // Start/stop heartbeat when session changes
-  useEffect(() => {
-    if (isRunning && status?.currentSession?.status === 'active') {
-      // Start heartbeat every 30 seconds
-      const timer = setInterval(sendHeartbeat, 30000);
-      setHeartbeatTimer(timer);
-      return () => clearInterval(timer);
+  // Schedule next heartbeat
+  const scheduleNextHeartbeat = useCallback((delayMs: number = 30000) => {
+    if (heartbeatTimer) {
+      clearTimeout(heartbeatTimer);
     }
-    return undefined;
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [isRunning, status?.currentSession?.status]);
+    const timer = setTimeout(sendHeartbeat, delayMs);
+    setHeartbeatTimer(timer);
+  }, [heartbeatTimer, sendHeartbeat]);
 
   // Cleanup heartbeat on unmount
   useEffect(() => {
     return () => {
       if (heartbeatTimer) {
-        clearInterval(heartbeatTimer);
+        clearTimeout(heartbeatTimer);
       }
     };
   }, [heartbeatTimer]);
 
   // Stop the session
-  const stopSession = () => {
+  const stopSession = useCallback(() => {
+    console.log('[IdleMode] Stopping session');
     setIsRunning(false);
+    isRunningRef.current = false;
     if (heartbeatTimer) {
-      clearInterval(heartbeatTimer);
+      clearTimeout(heartbeatTimer);
       setHeartbeatTimer(null);
     }
-  };
+    lastResponseRef.current = '';
+  }, [heartbeatTimer]);
 
   // WebSocket connection for real-time updates
   const { connected: wsConnected, subscribe, unsubscribe } = useStreamSubscription({
@@ -349,13 +368,18 @@ export default function IdleModePanel({ sessionId, onIdleResponse }: IdleModePan
 
       const data = await response.json();
       setStatus(data);
-      setIsRunning(true); // Start heartbeat
+      setIsRunning(true);
+      isRunningRef.current = true;
 
       // Send the response to chat via custom event
       if (data.response) {
+        lastResponseRef.current = data.response;
         window.dispatchEvent(new CustomEvent('idle-response', {
           detail: { response: data.response, mode }
         }));
+
+        // Schedule first heartbeat after initial response
+        scheduleNextHeartbeat(30000);
       }
     } catch (err) {
       console.error('Failed to start session:', err);
@@ -741,8 +765,31 @@ export default function IdleModePanel({ sessionId, onIdleResponse }: IdleModePan
         )}
       </AnimatePresence>
 
+      {/* Running Session Controls */}
+      {isRunning && (
+        <Card className="p-4 border-green-500/30 bg-green-500/5">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-2">
+              <div className="w-2 h-2 rounded-full bg-green-500 animate-pulse" />
+              <span className="text-sm text-emblem-text">Autonomous session running</span>
+            </div>
+            <Button
+              variant="destructive"
+              size="sm"
+              onClick={stopSession}
+            >
+              <AlertTriangle className="w-3 h-3 mr-1" />
+              Stop
+            </Button>
+          </div>
+          <p className="text-xs text-emblem-muted mt-2">
+            Heartbeat will continue every 30 seconds. Responses appear in chat.
+          </p>
+        </Card>
+      )}
+
       {/* Manual Session Start */}
-      {!status.currentSession && status.config?.enabled && !promptEditMode && (
+      {!isRunning && !status.currentSession && status.config?.enabled && !promptEditMode && (
         <Card className="p-4">
           <h3 className="font-medium text-emblem-text mb-3">Start Manual Session</h3>
 
