@@ -108,6 +108,23 @@ export default function Chat({ sessionId, onSessionChange, onResponse, onStanceU
   const [historyIndex, setHistoryIndex] = useState(-1);
   const savedInputRef = useRef<string>('');
 
+  // Listen for idle mode responses and add them to chat
+  useEffect(() => {
+    const handleIdleResponse = (event: CustomEvent<{ response: string; mode: string }>) => {
+      const { response, mode } = event.detail;
+      const idleMessage: ChatMessage = {
+        role: 'assistant',
+        content: `**[Autonomous ${mode} mode]**\n\n${response}`,
+      };
+      setMessages(prev => [...prev, idleMessage]);
+    };
+
+    window.addEventListener('idle-response', handleIdleResponse as EventListener);
+    return () => {
+      window.removeEventListener('idle-response', handleIdleResponse as EventListener);
+    };
+  }, []);
+
   // Load messages from localStorage when session changes
   useEffect(() => {
     if (sessionId) {

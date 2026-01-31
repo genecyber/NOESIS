@@ -121,9 +121,11 @@ export default function IdleModePanel({ sessionId, onIdleResponse }: IdleModePan
 
       const data = await response.json();
 
-      // Send response to chat
-      if (data.response && onIdleResponse) {
-        onIdleResponse(data.response, status.currentSession.mode);
+      // Send response to chat via custom event
+      if (data.response) {
+        window.dispatchEvent(new CustomEvent('idle-response', {
+          detail: { response: data.response, mode: status.currentSession.mode }
+        }));
       }
 
       // Update status with new activity count
@@ -349,9 +351,11 @@ export default function IdleModePanel({ sessionId, onIdleResponse }: IdleModePan
       setStatus(data);
       setIsRunning(true); // Start heartbeat
 
-      // Send the response to chat if callback provided
-      if (data.response && onIdleResponse) {
-        onIdleResponse(data.response, mode);
+      // Send the response to chat via custom event
+      if (data.response) {
+        window.dispatchEvent(new CustomEvent('idle-response', {
+          detail: { response: data.response, mode }
+        }));
       }
     } catch (err) {
       console.error('Failed to start session:', err);
