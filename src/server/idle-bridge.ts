@@ -405,7 +405,7 @@ export class IdleStreamBridge extends EventEmitter {
     this.activeSessions.set(sessionId, sessionInfo);
 
     // Publish session start
-    this.publishAutonomousSession(sessionId, {
+    await this.publishAutonomousSession(sessionId, {
       ...sessionInfo,
       status: 'active',
       timestamp: new Date().toISOString()
@@ -425,7 +425,7 @@ export class IdleStreamBridge extends EventEmitter {
     sessionInfo.endTime = new Date();
 
     // Publish session end
-    this.publishAutonomousSession(sessionId, {
+    await this.publishAutonomousSession(sessionId, {
       ...sessionInfo,
       timestamp: new Date().toISOString()
     });
@@ -515,7 +515,10 @@ export class IdleStreamBridge extends EventEmitter {
   /**
    * Publish autonomous session data to stream
    */
-  private publishAutonomousSession(sessionId: string, data: any): void {
+  private async publishAutonomousSession(sessionId: string, data: any): Promise<void> {
+    // Ensure stream exists before publishing
+    await this.ensureStreamsForSession(sessionId);
+
     const channel = this.getAutonomousStreamChannel(sessionId);
     const event = this.streamManager.publishEvent(channel, data, 'idle-bridge');
 
@@ -672,7 +675,7 @@ export class IdleStreamBridge extends EventEmitter {
         this.activeSessions.set(sessionId, sessionInfo);
 
         // Publish session start
-        this.publishAutonomousSession(sessionId, {
+        await this.publishAutonomousSession(sessionId, {
           ...sessionInfo,
           timestamp: new Date().toISOString()
         });
