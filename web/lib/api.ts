@@ -41,6 +41,8 @@ export interface EmotionStatusResponse {
   historyLength: number;
 }
 
+import { getAuthHeaders } from './auth';
+
 const API_BASE = '/api';
 // Direct connection to backend for SSE streaming (bypasses Next.js proxy buffering)
 // In production, use NEXT_PUBLIC_API_URL; in development, use localhost
@@ -49,10 +51,13 @@ const STREAM_BASE = typeof window !== 'undefined'
   : (process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001') + '/api';
 
 async function fetchJson<T>(url: string, options?: RequestInit): Promise<T> {
+  const authHeaders = getAuthHeaders();
+
   const response = await fetch(url, {
     ...options,
     headers: {
       'Content-Type': 'application/json',
+      ...authHeaders,
       ...options?.headers,
     },
   });
@@ -149,9 +154,10 @@ export function chatStream(
 
   (async () => {
     try {
+      const authHeaders = getAuthHeaders();
       const response = await fetch(`${STREAM_BASE}/chat/stream`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 'Content-Type': 'application/json', ...authHeaders },
         body: JSON.stringify({ sessionId, message, emotionContext: emotionContext || undefined }),
         signal: controller.signal,
       });
