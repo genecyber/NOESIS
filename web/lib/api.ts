@@ -484,9 +484,10 @@ export async function analyzeVisionEmotion(
   sessionId: string,
   imageDataUrl: string
 ): Promise<VisionEmotionResponse> {
+  const authHeaders = getAuthHeaders();
   const response = await fetch(`${API_BASE}/chat/vision`, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    headers: { 'Content-Type': 'application/json', ...authHeaders },
     body: JSON.stringify({ sessionId, imageDataUrl })
   });
 

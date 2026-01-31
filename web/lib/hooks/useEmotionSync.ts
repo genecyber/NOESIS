@@ -22,6 +22,7 @@ import {
   clearEmotionReadings,
   type StoredEmotionData,
 } from '../storage';
+import { getAuthHeaders } from '../auth';
 
 // Default sync interval: 30 seconds
 const DEFAULT_SYNC_INTERVAL_MS = 30000;
@@ -89,6 +90,7 @@ async function syncEmotionsToServer(
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
+        ...getAuthHeaders(),
       },
       body: JSON.stringify({
         type: 'emotions',
@@ -133,6 +135,7 @@ async function fetchEmotionContext(
         method: 'GET',
         headers: {
           'Content-Type': 'application/json',
+          ...getAuthHeaders(),
         },
       }
     );
