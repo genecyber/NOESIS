@@ -21,12 +21,16 @@ export interface EmblemUser {
 }
 
 // JWT claims structure from Emblem tokens
+// Payload: { sub: vaultId, user: { identifier, vaultId, evmAddress }, appId, exp, iat }
 interface EmblemJwtClaims extends JWTPayload {
-  vault_id?: string;
-  vaultId?: string;
-  user_id?: string;
-  userId?: string;
-  email?: string;
+  sub?: string;  // vaultId is the JWT subject
+  user?: {
+    identifier?: string;
+    vaultId?: string;
+    evmAddress?: string;
+    email?: string;
+  };
+  appId?: string;
   permissions?: string[];
   scope?: string;
 }
@@ -42,7 +46,6 @@ declare global {
 
 // Environment configuration
 const EMBLEM_DEV_MODE = process.env.EMBLEM_DEV_MODE === 'true';
-const EMBLEM_AUTH_URL = process.env.EMBLEM_AUTH_URL || 'https://auth.emblemvault.ai';
 const EMBLEM_API_URL = process.env.EMBLEM_API_URL || 'https://api.emblemvault.ai';
 const DEV_VAULT_ID = 'dev-vault';
 const DEV_USER_ID = 'dev-user';
@@ -98,15 +101,16 @@ export async function validateEmblemToken(token: string): Promise<EmblemUser | n
 
       const decoded = payload as EmblemJwtClaims;
 
-      // Extract vaultId (support both snake_case and camelCase)
-      const vaultId = decoded.vault_id || decoded.vaultId;
+      // Extract vaultId from JWT subject (sub) or user.vaultId
+      // Emblem JWT structure: { sub: vaultId, user: { identifier, vaultId, evmAddress }, appId }
+      const vaultId = decoded.sub || decoded.user?.vaultId;
       if (!vaultId) {
-        console.warn('[EmblemAuth] Token missing vaultId claim');
+        console.warn('[EmblemAuth] Token missing vaultId (checked sub and user.vaultId)');
         return null;
       }
 
-      // Extract userId
-      const userId = decoded.user_id || decoded.userId || decoded.sub || '';
+      // Extract userId from user.identifier or sub
+      const userId = decoded.user?.identifier || decoded.sub || '';
 
       // Extract permissions (from explicit array or scope string)
       let permissions: string[] = [];
@@ -121,7 +125,7 @@ export async function validateEmblemToken(token: string): Promise<EmblemUser | n
       return {
         vaultId,
         userId,
-        email: decoded.email,
+        email: decoded.user?.email,
         permissions
       };
     } catch (jwtError: unknown) {
@@ -210,16 +214,15 @@ interface RequireAuthOptions {
  */
 export function requireAuth(options?: RequireAuthOptions) {
   return async (req: Request, res: Response, next: NextFunction): Promise<void> => {
-    // Dev mode bypass
+    // Dev mode bypass - use default dev vault (no X-Vault-Id header needed)
     if (EMBLEM_DEV_MODE) {
-      const vaultId = req.headers['x-vault-id'] as string || DEV_VAULT_ID;
       req.user = {
-        vaultId,
+        vaultId: DEV_VAULT_ID,
         userId: DEV_USER_ID,
         email: 'dev@localhost',
         permissions: ['read', 'write', 'admin']
       };
-      console.log(`[EmblemAuth] Dev mode: authenticated as vault ${vaultId}`);
+      console.log(`[EmblemAuth] Dev mode: authenticated as vault ${DEV_VAULT_ID}`);
       next();
       return;
     }
@@ -299,11 +302,10 @@ export function requireAuth(options?: RequireAuthOptions) {
  */
 export function optionalAuth() {
   return async (req: Request, _res: Response, next: NextFunction): Promise<void> => {
-    // Dev mode - always set user
+    // Dev mode - use default dev vault (no X-Vault-Id header needed)
     if (EMBLEM_DEV_MODE) {
-      const vaultId = req.headers['x-vault-id'] as string || DEV_VAULT_ID;
       req.user = {
-        vaultId,
+        vaultId: DEV_VAULT_ID,
         userId: DEV_USER_ID,
         email: 'dev@localhost',
         permissions: ['read', 'write', 'admin']

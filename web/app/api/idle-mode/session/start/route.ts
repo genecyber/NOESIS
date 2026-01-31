@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { backendFetch } from '@/lib/backend';
 
 /**
  * POST /api/idle-mode/session/start - Start manual autonomous session
@@ -17,13 +18,9 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Invalid session mode' }, { status: 400 });
     }
 
-    // Forward request to backend server
-    const backendUrl = process.env.BACKEND_URL || 'http://localhost:3001';
-    const response = await fetch(`${backendUrl}/api/idle-mode/session/start`, {
+    // Forward request to backend server with auth headers
+    const response = await backendFetch(request, '/api/idle-mode/session/start', {
       method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-      },
       body: JSON.stringify({ sessionId, mode }),
     });
 

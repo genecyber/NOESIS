@@ -2,7 +2,7 @@
 
 import { useEffect, ReactNode } from 'react';
 import { useEmblemAuth } from '@emblemvault/emblem-auth-react';
-import { setAuthToken, setVaultId, clearAuth } from '@/lib/auth';
+import { setAuthToken, clearAuth } from '@/lib/auth';
 import LoginScreen from './LoginScreen';
 import { Loader2 } from 'lucide-react';
 
@@ -14,22 +14,17 @@ interface AuthGateProps {
  * AuthGate syncs Emblem auth state to localStorage and shows login screen when not authenticated
  */
 export function AuthGate({ children }: AuthGateProps) {
-  const { isAuthenticated, isLoading, session, vaultId } = useEmblemAuth();
+  const { isAuthenticated, isLoading, session } = useEmblemAuth();
 
-  // Sync auth state to localStorage for API requests
+  // Sync auth token to localStorage for API requests
+  // VaultId is extracted from JWT payload on server - no need to store separately
   useEffect(() => {
-    if (isAuthenticated && session) {
-      // Get JWT token from session (authToken per the SDK types)
-      if (session.authToken) {
-        setAuthToken(session.authToken);
-      }
-      if (vaultId) {
-        setVaultId(vaultId);
-      }
+    if (isAuthenticated && session?.authToken) {
+      setAuthToken(session.authToken);
     } else if (!isAuthenticated && !isLoading) {
       clearAuth();
     }
-  }, [isAuthenticated, isLoading, session, vaultId]);
+  }, [isAuthenticated, isLoading, session]);
 
   // Show loading spinner during initial auth check
   if (isLoading) {

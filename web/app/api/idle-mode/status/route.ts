@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { backendFetch } from '@/lib/backend';
 
 /**
  * GET /api/idle-mode/status - Get current idle mode status
@@ -12,14 +13,12 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ error: 'Session ID required' }, { status: 400 });
     }
 
-    // Forward request to backend server
-    const backendUrl = process.env.BACKEND_URL || 'http://localhost:3001';
-    const response = await fetch(`${backendUrl}/api/idle-mode/status?sessionId=${encodeURIComponent(sessionId)}`, {
-      method: 'GET',
-      headers: {
-        'Content-Type': 'application/json',
-      },
-    });
+    // Forward request to backend server with auth headers
+    const response = await backendFetch(
+      request,
+      `/api/idle-mode/status?sessionId=${encodeURIComponent(sessionId)}`,
+      { method: 'GET' }
+    );
 
     if (!response.ok) {
       // If idle mode system isn't available yet, return mock data
