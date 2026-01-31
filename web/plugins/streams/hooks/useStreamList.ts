@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useCallback } from 'react';
 import type { StreamInfo, UseStreamListReturn, ServerMessage } from '../types';
+import { getAuthHeaders } from '@/lib/auth';
 
 interface UseStreamListOptions {
   sessionId: string;
@@ -22,7 +23,8 @@ export function useStreamList(options: UseStreamListOptions): UseStreamListRetur
       const apiBase = process.env.NEXT_PUBLIC_API_URL || `http://${window.location.hostname}:3001`;
       // Fetch ALL streams (don't filter by session) so we discover everything
       const response = await fetch(
-        `${apiBase}/api/streams`
+        `${apiBase}/api/streams`,
+        { headers: getAuthHeaders() }
       );
 
       if (!response.ok) {

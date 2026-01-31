@@ -24,6 +24,7 @@ import {
 import type { PanelProps } from '@/lib/plugins/types';
 import { cn } from '@/lib/utils';
 import { Button, Switch, Slider } from '@/components/ui';
+import { getAuthHeaders } from '@/lib/auth';
 
 // Subagent definitions
 const SUBAGENTS = [
@@ -96,7 +97,7 @@ export default function SubagentsPanel({
     try {
       const response = await fetch('/api/chat', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 'Content-Type': 'application/json', ...getAuthHeaders() },
         body: JSON.stringify({
           sessionId,
           message: `[SUBAGENT:${subagentId}] Perform your specialized analysis on the current conversation context.`,

@@ -23,6 +23,7 @@ import { Slider } from './ui/slider';
 import { Badge } from './ui/badge';
 import { Card } from './ui/card';
 import { useStreamSubscription } from '@/plugins/streams/hooks/useStreamSubscription';
+import { getAuthHeaders } from '@/lib/auth';
 
 interface IdleSession {
   id: string;
@@ -106,7 +107,9 @@ export default function IdleModePanel({ sessionId }: IdleModePanelProps) {
     const loadStatus = async () => {
       try {
         setLoading(true);
-        const response = await fetch(`/api/idle-mode/status?sessionId=${sessionId}`);
+        const response = await fetch(`/api/idle-mode/status?sessionId=${sessionId}`, {
+        headers: getAuthHeaders()
+      });
         if (!response.ok) throw new Error('Failed to load idle mode status');
 
         const data = await response.json();
@@ -130,7 +133,7 @@ export default function IdleModePanel({ sessionId }: IdleModePanelProps) {
     try {
       const response = await fetch(`/api/idle-mode/toggle`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 'Content-Type': 'application/json', ...getAuthHeaders() },
         body: JSON.stringify({ sessionId, enabled })
       });
 
@@ -151,7 +154,7 @@ export default function IdleModePanel({ sessionId }: IdleModePanelProps) {
     try {
       const response = await fetch(`/api/idle-mode/config`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 'Content-Type': 'application/json', ...getAuthHeaders() },
         body: JSON.stringify({
           sessionId,
           config: { ...status.config, ...newConfig }
@@ -175,7 +178,7 @@ export default function IdleModePanel({ sessionId }: IdleModePanelProps) {
     try {
       const response = await fetch(`/api/idle-mode/session/${action}`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 'Content-Type': 'application/json', ...getAuthHeaders() },
         body: JSON.stringify({
           sessionId,
           autonomousSessionId: status.currentSession.id
@@ -199,7 +202,7 @@ export default function IdleModePanel({ sessionId }: IdleModePanelProps) {
     try {
       const response = await fetch(`/api/idle-mode/session/start`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 'Content-Type': 'application/json', ...getAuthHeaders() },
         body: JSON.stringify({ sessionId, mode })
       });
 
