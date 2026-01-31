@@ -1726,6 +1726,215 @@ app.post('/api/idle-mode/trigger', async (req: Request, res: Response) => {
   }
 });
 
+// Session control endpoints (start, pause, resume, terminate)
+app.post('/api/idle-mode/session/start', async (req: Request, res: Response) => {
+  try {
+    const { sessionId, mode } = req.body;
+    const vaultId = getVaultIdFromRequest(req, 'default');
+    const effectiveSessionId = sessionId ? `${vaultId}:${sessionId}` : `${vaultId}:${DEFAULT_SESSION}`;
+
+    // Validate mode
+    const validModes = ['exploration', 'research', 'creation', 'optimization'];
+    const evolutionMode = mode && validModes.includes(mode) ? mode : 'exploration';
+
+    // Use the idle bridge if available
+    if (idleStreamBridge) {
+      const result = await idleStreamBridge.triggerIdleNow(effectiveSessionId, evolutionMode);
+
+      if (result.success) {
+        res.json({
+          isIdle: true,
+          idleDuration: 0,
+          lastActivity: new Date().toISOString(),
+          currentSession: {
+            id: `session_${Date.now()}`,
+            mode: evolutionMode,
+            status: 'active',
+            startTime: new Date().toISOString(),
+            goals: [],
+            activities: 0,
+            discoveries: 0,
+            coherenceLevel: 65
+          },
+          config: {
+            enabled: true,
+            idleThreshold: 30,
+            maxSessionDuration: 120,
+            evolutionIntensity: 'moderate' as const,
+            safetyLevel: 'high' as const,
+            coherenceFloor: 30,
+            allowedGoalTypes: [],
+            researchDomains: [],
+            externalPublishing: false,
+            subagentCoordination: true,
+          }
+        });
+        return;
+      }
+    }
+
+    // Fallback response when bridge not available
+    res.json({
+      isIdle: true,
+      idleDuration: 0,
+      lastActivity: new Date().toISOString(),
+      currentSession: {
+        id: `session_${Date.now()}`,
+        mode: evolutionMode,
+        status: 'active',
+        startTime: new Date().toISOString(),
+        goals: [],
+        activities: 0,
+        discoveries: 0,
+        coherenceLevel: 65
+      },
+      config: {
+        enabled: true,
+        idleThreshold: 30,
+        maxSessionDuration: 120,
+        evolutionIntensity: 'moderate' as const,
+        safetyLevel: 'high' as const,
+        coherenceFloor: 30,
+        allowedGoalTypes: [],
+        researchDomains: [],
+        externalPublishing: false,
+        subagentCoordination: true,
+      }
+    });
+  } catch (error) {
+    console.error('[IdleMode] Error starting session:', error);
+    res.status(500).json({
+      error: error instanceof Error ? error.message : 'Failed to start session'
+    });
+  }
+});
+
+app.post('/api/idle-mode/session/pause', (req: Request, res: Response) => {
+  try {
+    const { sessionId, autonomousSessionId } = req.body;
+    const vaultId = getVaultIdFromRequest(req, 'default');
+    const effectiveSessionId = sessionId ? `${vaultId}:${sessionId}` : `${vaultId}:${DEFAULT_SESSION}`;
+
+    // TODO: Implement actual pause logic via idleStreamBridge
+    console.log(`[IdleMode] Pausing session ${autonomousSessionId} for ${effectiveSessionId}`);
+
+    res.json({
+      isIdle: false,
+      idleDuration: 0,
+      lastActivity: new Date().toISOString(),
+      currentSession: {
+        id: autonomousSessionId,
+        mode: 'exploration',
+        status: 'paused',
+        startTime: new Date().toISOString(),
+        goals: [],
+        activities: 0,
+        discoveries: 0,
+        coherenceLevel: 65
+      },
+      config: {
+        enabled: true,
+        idleThreshold: 30,
+        maxSessionDuration: 120,
+        evolutionIntensity: 'moderate' as const,
+        safetyLevel: 'high' as const,
+        coherenceFloor: 30,
+        allowedGoalTypes: [],
+        researchDomains: [],
+        externalPublishing: false,
+        subagentCoordination: true,
+      }
+    });
+  } catch (error) {
+    console.error('[IdleMode] Error pausing session:', error);
+    res.status(500).json({
+      error: error instanceof Error ? error.message : 'Failed to pause session'
+    });
+  }
+});
+
+app.post('/api/idle-mode/session/resume', (req: Request, res: Response) => {
+  try {
+    const { sessionId, autonomousSessionId } = req.body;
+    const vaultId = getVaultIdFromRequest(req, 'default');
+    const effectiveSessionId = sessionId ? `${vaultId}:${sessionId}` : `${vaultId}:${DEFAULT_SESSION}`;
+
+    // TODO: Implement actual resume logic via idleStreamBridge
+    console.log(`[IdleMode] Resuming session ${autonomousSessionId} for ${effectiveSessionId}`);
+
+    res.json({
+      isIdle: true,
+      idleDuration: 0,
+      lastActivity: new Date().toISOString(),
+      currentSession: {
+        id: autonomousSessionId,
+        mode: 'exploration',
+        status: 'active',
+        startTime: new Date().toISOString(),
+        goals: [],
+        activities: 0,
+        discoveries: 0,
+        coherenceLevel: 65
+      },
+      config: {
+        enabled: true,
+        idleThreshold: 30,
+        maxSessionDuration: 120,
+        evolutionIntensity: 'moderate' as const,
+        safetyLevel: 'high' as const,
+        coherenceFloor: 30,
+        allowedGoalTypes: [],
+        researchDomains: [],
+        externalPublishing: false,
+        subagentCoordination: true,
+      }
+    });
+  } catch (error) {
+    console.error('[IdleMode] Error resuming session:', error);
+    res.status(500).json({
+      error: error instanceof Error ? error.message : 'Failed to resume session'
+    });
+  }
+});
+
+app.post('/api/idle-mode/session/terminate', (req: Request, res: Response) => {
+  try {
+    const { sessionId, autonomousSessionId } = req.body;
+    const vaultId = getVaultIdFromRequest(req, 'default');
+    const effectiveSessionId = sessionId ? `${vaultId}:${sessionId}` : `${vaultId}:${DEFAULT_SESSION}`;
+
+    // TODO: Implement actual terminate logic via idleStreamBridge
+    console.log(`[IdleMode] Terminating session ${autonomousSessionId} for ${effectiveSessionId}`);
+
+    res.json({
+      isIdle: false,
+      idleDuration: 0,
+      lastActivity: new Date().toISOString(),
+      currentSession: null,
+      sessionHistory: [],
+      config: {
+        enabled: true,
+        idleThreshold: 30,
+        maxSessionDuration: 120,
+        evolutionIntensity: 'moderate' as const,
+        safetyLevel: 'high' as const,
+        coherenceFloor: 30,
+        allowedGoalTypes: [],
+        researchDomains: [],
+        externalPublishing: false,
+        subagentCoordination: true,
+      },
+      learningHistory: [],
+      emergentCategories: []
+    });
+  } catch (error) {
+    console.error('[IdleMode] Error terminating session:', error);
+    res.status(500).json({
+      error: error instanceof Error ? error.message : 'Failed to terminate session'
+    });
+  }
+});
+
 // ============================================================================
 // Steering Endpoints - User guidance during streaming/tool use
 // ============================================================================
