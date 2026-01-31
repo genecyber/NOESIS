@@ -404,10 +404,11 @@ export class IdleStreamBridge extends EventEmitter {
 
     this.activeSessions.set(sessionId, sessionInfo);
 
-    // Publish session start
+    // Publish session start - convert Date objects to ISO strings for schema validation
     await this.publishAutonomousSession(sessionId, {
       ...sessionInfo,
       status: 'active',
+      startTime: sessionInfo.startTime.toISOString(),
       timestamp: new Date().toISOString()
     });
 
@@ -424,9 +425,11 @@ export class IdleStreamBridge extends EventEmitter {
     sessionInfo.status = 'completed';
     sessionInfo.endTime = new Date();
 
-    // Publish session end
+    // Publish session end - convert Date objects to ISO strings for schema validation
     await this.publishAutonomousSession(sessionId, {
       ...sessionInfo,
+      startTime: sessionInfo.startTime.toISOString(),
+      endTime: sessionInfo.endTime.toISOString(),
       timestamp: new Date().toISOString()
     });
 
@@ -674,9 +677,10 @@ export class IdleStreamBridge extends EventEmitter {
 
         this.activeSessions.set(sessionId, sessionInfo);
 
-        // Publish session start
+        // Publish session start - convert Date objects to ISO strings for schema validation
         await this.publishAutonomousSession(sessionId, {
           ...sessionInfo,
+          startTime: sessionInfo.startTime.toISOString(),
           timestamp: new Date().toISOString()
         });
       }
