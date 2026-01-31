@@ -3,18 +3,14 @@
  *
  * Provides flexible authentication supporting:
  * - Dev mode: Extract vaultId from X-Vault-Id header or use 'dev-vault' default
- * - Production: Validate Bearer tokens via JWT verification and Emblem API
+ * - Production: Validate Bearer tokens via JWK verification from Emblem's JWKS endpoint
  *
  * This middleware complements the existing auth.ts by providing
  * permission-based access control and flexible dev/prod modes.
  */
 
 import { Request, Response, NextFunction } from 'express';
-import jwt from 'jsonwebtoken';
-import type { JwtPayload } from 'jsonwebtoken';
-
-// Re-export error types for instanceof checks (CommonJS interop)
-const { TokenExpiredError, JsonWebTokenError } = jwt;
+import { createRemoteJWKSet, jwtVerify, JWTPayload } from 'jose';
 
 // Emblem user interface
 export interface EmblemUser {
@@ -25,7 +21,7 @@ export interface EmblemUser {
 }
 
 // JWT claims structure from Emblem tokens
-interface EmblemJwtClaims extends JwtPayload {
+interface EmblemJwtClaims extends JWTPayload {
   vault_id?: string;
   vaultId?: string;
   user_id?: string;
@@ -46,10 +42,24 @@ declare global {
 
 // Environment configuration
 const EMBLEM_DEV_MODE = process.env.EMBLEM_DEV_MODE === 'true';
-const EMBLEM_JWT_SECRET = process.env.EMBLEM_JWT_SECRET || '';
+const EMBLEM_AUTH_URL = process.env.EMBLEM_AUTH_URL || 'https://auth.emblemvault.ai';
 const EMBLEM_API_URL = process.env.EMBLEM_API_URL || 'https://api.emblemvault.ai';
 const DEV_VAULT_ID = 'dev-vault';
 const DEV_USER_ID = 'dev-user';
+
+// JWKS endpoint for token verification
+const JWKS_URL = new URL('/.well-known/jwks.json', EMBLEM_AUTH_URL);
+
+// Create remote JWK Set fetcher (caches keys automatically)
+let jwks: ReturnType<typeof createRemoteJWKSet> | null = null;
+
+function getJWKS() {
+  if (!jwks) {
+    jwks = createRemoteJWKSet(JWKS_URL);
+    console.log(`[EmblemAuth] Initialized JWKS from ${JWKS_URL.toString()}`);
+  }
+  return jwks;
+}
 
 /**
  * Validate an Emblem token
@@ -58,8 +68,8 @@ const DEV_USER_ID = 'dev-user';
  * - Returns a mock user with 'dev-vault' vaultId and full permissions
  *
  * In production:
- * - Verifies JWT signature if EMBLEM_JWT_SECRET is set
- * - Falls back to Emblem API verification if no secret is configured
+ * - Verifies JWT signature using JWK from Emblem's JWKS endpoint
+ * - Falls back to Emblem API verification if JWKS verification fails
  * - Extracts vaultId and permissions from verified claims
  *
  * @param token - Bearer token string (without 'Bearer ' prefix)
@@ -77,49 +87,54 @@ export async function validateEmblemToken(token: string): Promise<EmblemUser | n
     };
   }
 
-  // Production mode - verify JWT
+  // Production mode - verify JWT using JWKS
   try {
-    // Try local JWT verification first if secret is configured
-    if (EMBLEM_JWT_SECRET) {
-      try {
-        const decoded = jwt.verify(token, EMBLEM_JWT_SECRET) as EmblemJwtClaims;
+    // Try JWK verification first
+    try {
+      const { payload } = await jwtVerify(token, getJWKS(), {
+        // Optionally specify issuer/audience for stricter validation
+        // issuer: EMBLEM_AUTH_URL,
+      });
 
-        // Extract vaultId (support both snake_case and camelCase)
-        const vaultId = decoded.vault_id || decoded.vaultId;
-        if (!vaultId) {
-          console.warn('[EmblemAuth] Token missing vaultId claim');
-          return null;
-        }
+      const decoded = payload as EmblemJwtClaims;
 
-        // Extract userId
-        const userId = decoded.user_id || decoded.userId || decoded.sub || '';
-
-        // Extract permissions (from explicit array or scope string)
-        let permissions: string[] = [];
-        if (Array.isArray(decoded.permissions)) {
-          permissions = decoded.permissions;
-        } else if (typeof decoded.scope === 'string') {
-          permissions = decoded.scope.split(' ').filter(Boolean);
-        }
-
-        return {
-          vaultId,
-          userId,
-          email: decoded.email,
-          permissions
-        };
-      } catch (jwtError) {
-        if (jwtError instanceof TokenExpiredError) {
-          console.warn('[EmblemAuth] Token expired');
-          return null;
-        }
-        if (jwtError instanceof JsonWebTokenError) {
-          console.warn('[EmblemAuth] Invalid JWT signature, falling back to API verification');
-          // Fall through to API verification
-        } else {
-          throw jwtError;
-        }
+      // Extract vaultId (support both snake_case and camelCase)
+      const vaultId = decoded.vault_id || decoded.vaultId;
+      if (!vaultId) {
+        console.warn('[EmblemAuth] Token missing vaultId claim');
+        return null;
       }
+
+      // Extract userId
+      const userId = decoded.user_id || decoded.userId || decoded.sub || '';
+
+      // Extract permissions (from explicit array or scope string)
+      let permissions: string[] = [];
+      if (Array.isArray(decoded.permissions)) {
+        permissions = decoded.permissions;
+      } else if (typeof decoded.scope === 'string') {
+        permissions = decoded.scope.split(' ').filter(Boolean);
+      }
+
+      console.log(`[EmblemAuth] JWK verification succeeded for vault: ${vaultId}`);
+
+      return {
+        vaultId,
+        userId,
+        email: decoded.email,
+        permissions
+      };
+    } catch (jwtError: unknown) {
+      const errorMessage = jwtError instanceof Error ? jwtError.message : 'Unknown error';
+
+      if (errorMessage.includes('expired')) {
+        console.warn('[EmblemAuth] Token expired');
+        return null;
+      }
+
+      console.warn('[EmblemAuth] JWK verification failed:', errorMessage);
+      console.warn('[EmblemAuth] Falling back to API verification');
+      // Fall through to API verification
     }
 
     // Fallback: Verify via Emblem API
@@ -156,7 +171,7 @@ export async function validateEmblemToken(token: string): Promise<EmblemUser | n
     };
   } catch (error) {
     // Log error without leaking sensitive details
-    console.error('[EmblemAuth] Token validation error');
+    console.error('[EmblemAuth] Token validation error:', error instanceof Error ? error.message : 'Unknown');
     return null;
   }
 }
