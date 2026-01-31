@@ -601,6 +601,108 @@ export class IdleStreamBridge extends EventEmitter {
   }
 
   /**
+   * Trigger idle mode instantly without waiting for timeout
+   * @param sessionId - Session to trigger idle mode for
+   * @param mode - Optional evolution mode (exploration, research, creation, optimization)
+   */
+  async triggerIdleNow(
+    sessionId: string = 'default',
+    mode: 'exploration' | 'research' | 'creation' | 'optimization' = 'exploration'
+  ): Promise<{ success: boolean; sessionId: string; mode: string; message: string }> {
+    this.log(`Triggering instant idle mode for session ${sessionId} with mode ${mode}`);
+
+    try {
+      // Ensure streams exist
+      await this.ensureStreamsForSession(sessionId);
+
+      // Create idle start event data
+      const idleData = {
+        timestamp: new Date(),
+        timeSinceLastInteraction: this.config.idleThreshold * 60 * 1000, // Simulate threshold reached
+        conversationId: sessionId,
+        forcedTrigger: true,
+        mode,
+        stance: {
+          frame: 'pragmatic' as const,
+          values: { curiosity: 60, certainty: 40, risk: 30, novelty: 55, empathy: 70, provocation: 70, synthesis: 50 },
+          selfModel: 'interpreter' as const,
+          objective: 'helpfulness' as const,
+          sentience: {
+            awarenessLevel: 23,
+            autonomyLevel: 10,
+            identityStrength: 30,
+            emergentGoals: [],
+            consciousnessInsights: [],
+            persistentValues: []
+          },
+          metaphors: [],
+          constraints: [],
+          version: 1,
+          cumulativeDrift: 0,
+          turnsSinceLastShift: 0
+        }
+      };
+
+      // Publish idle state
+      this.publishIdleState(sessionId, {
+        isIdle: true,
+        idleDuration: this.config.idleThreshold * 60 * 1000,
+        lastActivity: new Date(Date.now() - this.config.idleThreshold * 60 * 1000).toISOString(),
+        threshold: this.config.idleThreshold,
+        status: 'idle',
+        sessionId,
+        timestamp: new Date().toISOString(),
+        forcedTrigger: true
+      });
+
+      // Start autonomous session with specified mode
+      if (!this.activeSessions.has(sessionId)) {
+        const sessionInfo: AutonomousSessionInfo = {
+          sessionId,
+          mode,
+          status: 'active',
+          startTime: new Date(),
+          endTime: null,
+          goalsCount: 0,
+          activitiesCount: 0,
+          discoveriesCount: 0,
+          coherenceLevel: 100
+        };
+
+        this.activeSessions.set(sessionId, sessionInfo);
+
+        // Publish session start
+        this.publishAutonomousSession(sessionId, {
+          ...sessionInfo,
+          timestamp: new Date().toISOString()
+        });
+      }
+
+      // Emit idle:start event for other listeners
+      pluginEventBus.emit('idle:start', idleData);
+
+      this.emit('idle_triggered', { sessionId, mode, forced: true });
+
+      return {
+        success: true,
+        sessionId,
+        mode,
+        message: `Idle mode triggered instantly for session ${sessionId} in ${mode} mode`
+      };
+
+    } catch (error) {
+      const errorMsg = error instanceof Error ? error.message : String(error);
+      console.error('[IdleStreamBridge] Failed to trigger instant idle:', error);
+      return {
+        success: false,
+        sessionId,
+        mode,
+        message: `Failed to trigger idle mode: ${errorMsg}`
+      };
+    }
+  }
+
+  /**
    * Cleanup resources
    */
   destroy(): void {

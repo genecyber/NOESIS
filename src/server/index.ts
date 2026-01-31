@@ -1667,6 +1667,65 @@ app.post('/api/idle-mode/config', (req: Request, res: Response) => {
   }
 });
 
+// Trigger idle mode instantly
+app.post('/api/idle-mode/trigger', async (req: Request, res: Response) => {
+  try {
+    const { sessionId, mode } = req.body;
+    const vaultId = getVaultIdFromRequest(req, 'default');
+    const effectiveSessionId = sessionId ? `${vaultId}:${sessionId}` : `${vaultId}:${DEFAULT_SESSION}`;
+
+    // Validate mode if provided
+    const validModes = ['exploration', 'research', 'creation', 'optimization'];
+    const evolutionMode = mode && validModes.includes(mode) ? mode : 'exploration';
+
+    // Use the idle bridge if available
+    if (idleStreamBridge) {
+      const result = await idleStreamBridge.triggerIdleNow(effectiveSessionId, evolutionMode);
+
+      if (result.success) {
+        res.json({
+          success: true,
+          sessionId: effectiveSessionId,
+          mode: evolutionMode,
+          message: result.message,
+          status: 'idle',
+          triggeredAt: new Date().toISOString()
+        });
+      } else {
+        res.status(500).json({
+          success: false,
+          error: result.message
+        });
+      }
+      return;
+    }
+
+    // Fallback: directly emit the idle:start event
+    const { pluginEventBus } = await import('../plugins/event-bus.js');
+
+    pluginEventBus.emit('idle:start', {
+      timestamp: new Date(),
+      timeSinceLastInteraction: 30 * 60 * 1000, // 30 minutes
+      conversationId: effectiveSessionId
+    } as any); // Use any to allow additional metadata
+
+    res.json({
+      success: true,
+      sessionId: effectiveSessionId,
+      mode: evolutionMode,
+      message: `Idle mode triggered instantly for session ${effectiveSessionId} in ${evolutionMode} mode`,
+      status: 'idle',
+      triggeredAt: new Date().toISOString()
+    });
+  } catch (error) {
+    console.error('[IdleMode] Error triggering instant idle mode:', error);
+    res.status(500).json({
+      success: false,
+      error: error instanceof Error ? error.message : 'Failed to trigger idle mode'
+    });
+  }
+});
+
 // ============================================================================
 // Steering Endpoints - User guidance during streaming/tool use
 // ============================================================================
