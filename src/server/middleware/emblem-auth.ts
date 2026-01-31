@@ -47,8 +47,8 @@ const EMBLEM_API_URL = process.env.EMBLEM_API_URL || 'https://api.emblemvault.ai
 const DEV_VAULT_ID = 'dev-vault';
 const DEV_USER_ID = 'dev-user';
 
-// JWKS endpoint for token verification
-const JWKS_URL = new URL('/.well-known/jwks.json', EMBLEM_AUTH_URL);
+// JWKS endpoint for token verification (on API server)
+const JWKS_URL = new URL('/.well-known/jwks.json', EMBLEM_API_URL);
 
 // Create remote JWK Set fetcher (caches keys automatically)
 let jwks: ReturnType<typeof createRemoteJWKSet> | null = null;
