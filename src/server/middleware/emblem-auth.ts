@@ -10,8 +10,11 @@
  */
 
 import { Request, Response, NextFunction } from 'express';
-import * as jwt from 'jsonwebtoken';
-import { JwtPayload, TokenExpiredError, JsonWebTokenError } from 'jsonwebtoken';
+import jwt from 'jsonwebtoken';
+import type { JwtPayload } from 'jsonwebtoken';
+
+// Re-export error types for instanceof checks (CommonJS interop)
+const { TokenExpiredError, JsonWebTokenError } = jwt;
 
 // Emblem user interface
 export interface EmblemUser {
