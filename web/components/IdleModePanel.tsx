@@ -15,8 +15,11 @@ import {
   Loader,
   Pause,
   Play,
-  RotateCcw
+  RotateCcw,
+  Edit3,
+  Zap
 } from 'lucide-react';
+import PromptEditor from './PromptEditor';
 import { Button } from './ui/button';
 import { Switch } from './ui/switch';
 import { Slider } from './ui/slider';
@@ -61,6 +64,25 @@ interface IdleModeStatus {
   emergentCategories: string[];
 }
 
+interface PromptChunk {
+  id: string;
+  type: 'system' | 'context' | 'goal' | 'instruction' | 'constraint';
+  content: string;
+  editable: boolean;
+  required: boolean;
+  order: number;
+}
+
+type AutonomyLevel = 'restricted' | 'standard' | 'relaxed' | 'full';
+
+interface PromptEditState {
+  mode: IdleSession['mode'];
+  autonomyLevel: AutonomyLevel;
+  chunks: PromptChunk[];
+  status: 'preparing' | 'awaiting_approval' | 'executing' | 'idle';
+  autonomousSessionId?: string; // The session ID returned from prepare endpoint
+}
+
 interface IdleModePanelProps {
   sessionId?: string;
 }
@@ -71,6 +93,9 @@ export default function IdleModePanel({ sessionId }: IdleModePanelProps) {
   const [error, setError] = useState<string | null>(null);
   const [configMode, setConfigMode] = useState(false);
   const [currentTime, setCurrentTime] = useState(new Date());
+  const [promptEditMode, setPromptEditMode] = useState(false);
+  const [promptState, setPromptState] = useState<PromptEditState | null>(null);
+  const [selectedAutonomy, setSelectedAutonomy] = useState<AutonomyLevel>('standard');
 
   // WebSocket connection for real-time updates
   const { connected: wsConnected, subscribe, unsubscribe } = useStreamSubscription({
@@ -195,7 +220,45 @@ export default function IdleModePanel({ sessionId }: IdleModePanelProps) {
     }
   };
 
-  // Force start session
+  // Prepare session with prompt editing
+  const prepareSession = async (mode: IdleSession['mode']) => {
+    if (!sessionId) return;
+
+    try {
+      setPromptState({
+        mode,
+        autonomyLevel: selectedAutonomy,
+        chunks: [],
+        status: 'preparing'
+      });
+      setPromptEditMode(true);
+
+      const response = await fetch(`/api/idle-mode/session/prepare`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', ...getAuthHeaders() },
+        body: JSON.stringify({ sessionId, mode, autonomyLevel: selectedAutonomy })
+      });
+
+      if (!response.ok) throw new Error('Failed to prepare session');
+
+      const data = await response.json();
+      console.log('[IdleModePanel] Prepare response:', data);
+      setPromptState({
+        mode,
+        autonomyLevel: selectedAutonomy,
+        chunks: data.chunks || [],
+        status: data.status === 'awaiting_approval' ? 'awaiting_approval' : 'idle',
+        autonomousSessionId: data.sessionId // Store the vault-prefixed session ID
+      });
+    } catch (err) {
+      console.error('Failed to prepare session:', err);
+      setError(err instanceof Error ? err.message : 'Failed to prepare session');
+      setPromptEditMode(false);
+      setPromptState(null);
+    }
+  };
+
+  // Direct start session (skip prompt editing)
   const startSession = async (mode: IdleSession['mode']) => {
     if (!sessionId) return;
 
@@ -213,6 +276,42 @@ export default function IdleModePanel({ sessionId }: IdleModePanelProps) {
     } catch (err) {
       console.error('Failed to start session:', err);
       setError(err instanceof Error ? err.message : 'Failed to start session');
+    }
+  };
+
+  // Handle prompt approval
+  const handlePromptApprove = () => {
+    if (promptState) {
+      setPromptState({ ...promptState, status: 'executing' });
+      // Refresh status after a short delay
+      setTimeout(async () => {
+        try {
+          const response = await fetch(`/api/idle-mode/status?sessionId=${sessionId}`, {
+            headers: getAuthHeaders()
+          });
+          if (response.ok) {
+            const data = await response.json();
+            setStatus(data);
+          }
+        } catch (err) {
+          console.error('Failed to refresh status:', err);
+        }
+        setPromptEditMode(false);
+        setPromptState(null);
+      }, 1000);
+    }
+  };
+
+  // Handle prompt rejection
+  const handlePromptReject = () => {
+    setPromptEditMode(false);
+    setPromptState(null);
+  };
+
+  // Update prompt chunks
+  const handleChunksChange = (chunks: PromptChunk[]) => {
+    if (promptState) {
+      setPromptState({ ...promptState, chunks });
     }
   };
 
@@ -535,23 +634,93 @@ export default function IdleModePanel({ sessionId }: IdleModePanelProps) {
         )}
       </AnimatePresence>
 
+      {/* Prompt Editor Mode */}
+      <AnimatePresence>
+        {promptEditMode && promptState && (
+          <motion.div
+            initial={{ opacity: 0, height: 0 }}
+            animate={{ opacity: 1, height: 'auto' }}
+            exit={{ opacity: 0, height: 0 }}
+          >
+            <Card className="p-4">
+              <PromptEditor
+                sessionId={promptState.autonomousSessionId || sessionId || 'default'}
+                chunks={promptState.chunks}
+                onChunksChange={handleChunksChange}
+                onApprove={handlePromptApprove}
+                onReject={handlePromptReject}
+                status={promptState.status === 'awaiting_approval' ? 'awaiting_approval' :
+                        promptState.status === 'executing' ? 'executing' : 'idle'}
+              />
+            </Card>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
       {/* Manual Session Start */}
-      {!status.currentSession && status.config?.enabled && (
+      {!status.currentSession && status.config?.enabled && !promptEditMode && (
         <Card className="p-4">
           <h3 className="font-medium text-emblem-text mb-3">Start Manual Session</h3>
-          <div className="grid grid-cols-2 gap-2">
+
+          {/* Autonomy Level Selector */}
+          <div className="mb-4">
+            <label className="text-sm text-emblem-muted mb-2 block">Autonomy Level</label>
+            <div className="grid grid-cols-4 gap-1">
+              {(['restricted', 'standard', 'relaxed', 'full'] as const).map((level) => (
+                <button
+                  key={level}
+                  onClick={() => setSelectedAutonomy(level)}
+                  className={`px-2 py-1 text-xs rounded capitalize transition-colors ${
+                    selectedAutonomy === level
+                      ? 'bg-emblem-primary text-white'
+                      : 'bg-emblem-surface text-emblem-muted hover:text-emblem-text'
+                  }`}
+                >
+                  {level}
+                </button>
+              ))}
+            </div>
+            <p className="text-xs text-emblem-muted mt-1">
+              {selectedAutonomy === 'restricted' && 'Limited actions, full approval required'}
+              {selectedAutonomy === 'standard' && 'Normal operations, some approvals'}
+              {selectedAutonomy === 'relaxed' && 'Extended permissions, minimal approvals'}
+              {selectedAutonomy === 'full' && 'Maximum autonomy, no restrictions'}
+            </p>
+          </div>
+
+          {/* Session Mode Buttons */}
+          <div className="grid grid-cols-2 gap-2 mb-3">
             {(['exploration', 'research', 'creation', 'optimization'] as const).map((mode) => (
               <Button
                 key={mode}
                 variant="outline"
                 size="sm"
-                onClick={() => startSession(mode)}
+                onClick={() => prepareSession(mode)}
                 className="capitalize"
               >
-                <Brain className="w-3 h-3 mr-1" />
+                <Edit3 className="w-3 h-3 mr-1" />
                 {mode}
               </Button>
             ))}
+          </div>
+
+          {/* Quick Start (skip prompt editing) */}
+          <div className="border-t border-white/5 pt-3 mt-3">
+            <p className="text-xs text-emblem-muted mb-2">Or quick start without editing:</p>
+            <div className="flex gap-2">
+              {(['exploration', 'research'] as const).map((mode) => (
+                <Button
+                  key={mode}
+                  variant="ghost"
+                  size="sm"
+                  onClick={() => startSession(mode)}
+                  className="capitalize text-xs"
+                >
+                  <Zap className="w-3 h-3 mr-1" />
+                  {mode}
+                </Button>
+              ))}
+            </div>
           </div>
         </Card>
       )}

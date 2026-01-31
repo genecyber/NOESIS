@@ -6,6 +6,8 @@ export * from './types.js';
 export { IdleDetector } from './detector.js';
 export { EmergentGoalPromoter } from './goal-promoter.js';
 export { AutonomousEvolutionOrchestrator } from './evolution-orchestrator.js';
+export { IdleSessionExecutor, createAutonomyConfig } from './session-executor.js';
+export type { AutonomyLevel, AutonomyConfig, PromptChunk, ExecutorConfig } from './session-executor.js';
 
 import { IdleDetector } from './detector.js';
 import { EmergentGoalPromoter } from './goal-promoter.js';

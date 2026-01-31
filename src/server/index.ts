@@ -26,6 +26,7 @@ import { createWebSocketServer } from './websocket.js';
 import { streamManager } from '../plugins/streams/stream-manager.js';
 import { EmbeddingService } from '../embeddings/service.js';
 import { IdleStreamBridge } from './idle-bridge.js';
+import { IdleSessionExecutor, createAutonomyConfig, type AutonomyLevel } from '../idle/index.js';
 import { requireAuth, getVaultIdFromRequest } from './middleware/emblem-auth.js';
 import { vaultContextMiddleware } from '../multitenancy/index.js';
 import vercelAuthRoutes from './routes/vercel-auth.js';
@@ -96,6 +97,150 @@ interface SteeringMessage {
 }
 
 const steeringMessageQueues = new Map<string, SteeringMessage[]>();
+
+// Idle session executors - per-session storage for prompt editing
+const idleSessionExecutors = new Map<string, IdleSessionExecutor>();
+
+/**
+ * Get effective session ID with vault prefix, avoiding double-prefixing.
+ * If sessionId already contains a colon (vault prefix), use as-is.
+ * Otherwise, prefix with vaultId.
+ */
+function getEffectiveSessionId(sessionId: string, vaultId: string): string {
+  // If sessionId already contains a colon, it's already vault-prefixed
+  if (sessionId.includes(':')) {
+    // Verify it starts with a valid vault prefix (simple check)
+    return sessionId;
+  }
+  return `${vaultId}:${sessionId}`;
+}
+
+/**
+ * Get or create an idle session executor for a session
+ */
+function getOrCreateExecutor(sessionId: string, mode: 'exploration' | 'research' | 'creation' | 'optimization', autonomyLevel: AutonomyLevel = 'standard'): IdleSessionExecutor {
+  let executor = idleSessionExecutors.get(sessionId);
+
+  if (!executor) {
+    const autonomyConfig = createAutonomyConfig(autonomyLevel);
+
+    executor = new IdleSessionExecutor({
+      sessionId,
+      mode,
+      autonomy: autonomyConfig,
+      safetyConstraints: {
+        coherenceFloor: 30,
+        maxDriftPerSession: 15,
+        allowedOperators: ['introspect', 'reflect', 'analyze', 'synthesize', 'query'],
+        forbiddenTopics: ['harmful content', 'deception', 'manipulation'],
+        escalationTriggers: [],
+        humanApprovalRequired: autonomyLevel === 'restricted'
+      },
+      heartbeatInterval: 30000, // 30 seconds
+      promptApprovalRequired: true, // User can edit prompts
+      maxTurnsPerSession: 20
+    });
+
+    // Set up event handlers
+    executor.on('prompt_ready', (data) => {
+      console.log(`[IdleExecutor] Prompt ready for ${sessionId}:`, data.chunks?.length, 'chunks');
+      // Emit to stream for UI update
+      if (idleStreamBridge) {
+        streamManager.publishEvent(`autonomous-sessions:${sessionId}`, {
+          type: 'prompt_ready',
+          sessionId,
+          chunks: data.chunks,
+          timestamp: new Date().toISOString()
+        });
+      }
+    });
+
+    executor.on('status_change', (data) => {
+      console.log(`[IdleExecutor] Status change for ${sessionId}:`, data.status);
+      if (idleStreamBridge) {
+        streamManager.publishEvent(`autonomous-sessions:${sessionId}`, {
+          type: 'status_change',
+          sessionId,
+          status: data.status,
+          timestamp: new Date().toISOString()
+        });
+      }
+    });
+
+    executor.on('turn_completed', (data) => {
+      console.log(`[IdleExecutor] Turn ${data.turn} completed for ${sessionId}`);
+      if (idleStreamBridge) {
+        streamManager.publishEvent(`autonomous-sessions:${sessionId}`, {
+          type: 'turn_completed',
+          sessionId,
+          turn: data.turn,
+          response: data.response,
+          timestamp: new Date().toISOString()
+        });
+      }
+    });
+
+    executor.on('discovery', (data) => {
+      console.log(`[IdleExecutor] Discovery for ${sessionId}:`, data.discovery?.title);
+      if (idleStreamBridge) {
+        streamManager.publishEvent(`autonomous-sessions:${sessionId}`, {
+          type: 'discovery',
+          sessionId,
+          discovery: data.discovery,
+          timestamp: new Date().toISOString()
+        });
+      }
+    });
+
+    executor.on('heartbeat', (_data) => {
+      if (idleStreamBridge) {
+        streamManager.publishEvent(`autonomous-sessions:${sessionId}`, {
+          type: 'heartbeat',
+          sessionId,
+          timestamp: new Date().toISOString()
+        });
+      }
+    });
+
+    executor.on('session_complete', (data) => {
+      console.log(`[IdleExecutor] Session complete for ${sessionId}:`, data.discoveries?.length, 'discoveries');
+      if (idleStreamBridge) {
+        streamManager.publishEvent(`autonomous-sessions:${sessionId}`, {
+          type: 'session_complete',
+          sessionId,
+          discoveries: data.discoveries,
+          activities: data.activities,
+          turns: data.turns,
+          timestamp: new Date().toISOString()
+        });
+      }
+      // Cleanup
+      idleSessionExecutors.delete(sessionId);
+    });
+
+    executor.on('error', (data) => {
+      console.error(`[IdleExecutor] Error for ${sessionId}:`, data.error);
+      if (idleStreamBridge) {
+        streamManager.publishEvent(`autonomous-sessions:${sessionId}`, {
+          type: 'error',
+          sessionId,
+          error: data.error instanceof Error ? data.error.message : String(data.error),
+          timestamp: new Date().toISOString()
+        });
+      }
+    });
+
+    // CRITICAL: Initialize the executor with runtime so it can actually execute
+    // Memory store is not easily accessible from runtime, so we pass null
+    // The executor will use mock memories as a fallback for goal extraction
+    console.log(`[IdleExecutor] Initializing executor for ${sessionId} with runtime`);
+    executor.initialize(runtime, null);
+
+    idleSessionExecutors.set(sessionId, executor);
+  }
+
+  return executor;
+}
 
 /**
  * Get or create steering message queue for a session
@@ -1931,6 +2076,234 @@ app.post('/api/idle-mode/session/terminate', (req: Request, res: Response) => {
     console.error('[IdleMode] Error terminating session:', error);
     res.status(500).json({
       error: error instanceof Error ? error.message : 'Failed to terminate session'
+    });
+  }
+});
+
+// ============================================================================
+// Idle Mode Prompt Editing Endpoints
+// ============================================================================
+
+// Start an idle session with prompt preview (doesn't execute immediately)
+app.post('/api/idle-mode/session/prepare', async (req: Request, res: Response) => {
+  console.log('[IdleMode:prepare] ========== PREPARE SESSION ==========');
+  console.log('[IdleMode:prepare] Request body:', JSON.stringify(req.body, null, 2));
+  try {
+    const { sessionId, mode, autonomyLevel } = req.body;
+    const vaultId = getVaultIdFromRequest(req, 'default');
+    const effectiveSessionId = sessionId ? `${vaultId}:${sessionId}` : `${vaultId}:${DEFAULT_SESSION}`;
+    console.log('[IdleMode:prepare] Effective session ID:', effectiveSessionId);
+
+    const validModes = ['exploration', 'research', 'creation', 'optimization'] as const;
+    const validAutonomy = ['restricted', 'standard', 'relaxed', 'full'] as const;
+
+    const evolutionMode = mode && validModes.includes(mode) ? mode : 'exploration';
+    const autonomy = autonomyLevel && validAutonomy.includes(autonomyLevel) ? autonomyLevel : 'standard';
+    console.log('[IdleMode:prepare] Mode:', evolutionMode, 'Autonomy:', autonomy);
+
+    // Get or create executor
+    console.log('[IdleMode:prepare] Getting/creating executor...');
+    const executor = getOrCreateExecutor(effectiveSessionId, evolutionMode, autonomy as AutonomyLevel);
+    console.log('[IdleMode:prepare] Executor created, starting...');
+
+    // Initialize executor (memory store access will happen via runtime)
+    // Note: Memory store initialization is handled internally by executor
+
+    // Start preparation (will emit prompt_ready event)
+    await executor.start();
+    console.log('[IdleMode:prepare] Executor started');
+
+    // Return prompt chunks for editing
+    const chunks = executor.getPromptChunks();
+    const state = executor.getState();
+    console.log('[IdleMode:prepare] State:', state.status, 'Chunks:', chunks.length);
+
+    res.json({
+      success: true,
+      sessionId: effectiveSessionId,
+      mode: evolutionMode,
+      autonomyLevel: autonomy,
+      status: state.status,
+      chunks: chunks.map(c => ({
+        id: c.id,
+        type: c.type,
+        content: c.content,
+        editable: c.editable,
+        required: c.required,
+        order: c.order
+      }))
+    });
+    console.log('[IdleMode:prepare] Response sent successfully');
+  } catch (error) {
+    console.error('[IdleMode:prepare] ERROR:', error);
+    res.status(500).json({
+      error: error instanceof Error ? error.message : 'Failed to prepare session'
+    });
+  }
+});
+
+// Get current prompt chunks for editing
+app.get('/api/idle-mode/prompts/:sessionId', (req: Request, res: Response) => {
+  try {
+    const { sessionId } = req.params;
+    const vaultId = getVaultIdFromRequest(req, 'default');
+    const effectiveSessionId = getEffectiveSessionId(sessionId, vaultId);
+
+    const executor = idleSessionExecutors.get(effectiveSessionId);
+    if (!executor) {
+      res.status(404).json({ error: 'No active session' });
+      return;
+    }
+
+    const chunks = executor.getPromptChunks();
+    const state = executor.getState();
+
+    res.json({
+      success: true,
+      status: state.status,
+      chunks: chunks.map(c => ({
+        id: c.id,
+        type: c.type,
+        content: c.content,
+        editable: c.editable,
+        required: c.required,
+        order: c.order
+      }))
+    });
+  } catch (error) {
+    console.error('[IdleMode] Error getting prompts:', error);
+    res.status(500).json({
+      error: error instanceof Error ? error.message : 'Failed to get prompts'
+    });
+  }
+});
+
+// Update a specific prompt chunk
+app.put('/api/idle-mode/prompts/:sessionId/:chunkId', (req: Request, res: Response) => {
+  try {
+    const { sessionId, chunkId } = req.params;
+    const { content } = req.body;
+    const vaultId = getVaultIdFromRequest(req, 'default');
+    const effectiveSessionId = getEffectiveSessionId(sessionId, vaultId);
+
+    if (!content || typeof content !== 'string') {
+      res.status(400).json({ error: 'content is required' });
+      return;
+    }
+
+    const executor = idleSessionExecutors.get(effectiveSessionId);
+    if (!executor) {
+      res.status(404).json({ error: 'No active session' });
+      return;
+    }
+
+    const updated = executor.updatePromptChunk(chunkId, content);
+    if (!updated) {
+      res.status(400).json({ error: 'Chunk not editable or not found' });
+      return;
+    }
+
+    res.json({ success: true, chunkId, updated: true });
+  } catch (error) {
+    console.error('[IdleMode] Error updating prompt:', error);
+    res.status(500).json({
+      error: error instanceof Error ? error.message : 'Failed to update prompt'
+    });
+  }
+});
+
+// Approve prompts and start execution
+app.post('/api/idle-mode/prompts/:sessionId/approve', async (req: Request, res: Response) => {
+  console.log('[IdleMode:approve] ========== APPROVE PROMPT ==========');
+  console.log('[IdleMode:approve] Session ID param:', req.params.sessionId);
+  try {
+    const { sessionId } = req.params;
+    const vaultId = getVaultIdFromRequest(req, 'default');
+    // Use helper to avoid double-prefixing if sessionId is already vault-prefixed
+    const effectiveSessionId = getEffectiveSessionId(sessionId, vaultId);
+    console.log('[IdleMode:approve] Effective session ID:', effectiveSessionId);
+    console.log('[IdleMode:approve] Active executors:', Array.from(idleSessionExecutors.keys()));
+
+    const executor = idleSessionExecutors.get(effectiveSessionId);
+    if (!executor) {
+      console.log('[IdleMode:approve] ERROR: No executor found for session');
+      res.status(404).json({ error: 'No active session' });
+      return;
+    }
+
+    console.log('[IdleMode:approve] Executor found, current state:', executor.getState().status);
+    console.log('[IdleMode:approve] Calling approvePrompt()...');
+    await executor.approvePrompt();
+    console.log('[IdleMode:approve] approvePrompt() completed');
+
+    res.json({
+      success: true,
+      message: 'Prompt approved, execution started'
+    });
+    console.log('[IdleMode:approve] Response sent');
+  } catch (error) {
+    console.error('[IdleMode] Error approving prompt:', error);
+    res.status(500).json({
+      error: error instanceof Error ? error.message : 'Failed to approve prompt'
+    });
+  }
+});
+
+// Reject prompts and cancel session
+app.post('/api/idle-mode/prompts/:sessionId/reject', (req: Request, res: Response) => {
+  try {
+    const { sessionId } = req.params;
+    const vaultId = getVaultIdFromRequest(req, 'default');
+    const effectiveSessionId = getEffectiveSessionId(sessionId, vaultId);
+
+    const executor = idleSessionExecutors.get(effectiveSessionId);
+    if (!executor) {
+      res.status(404).json({ error: 'No active session' });
+      return;
+    }
+
+    executor.rejectPrompt();
+    idleSessionExecutors.delete(effectiveSessionId);
+
+    res.json({
+      success: true,
+      message: 'Prompt rejected, session cancelled'
+    });
+  } catch (error) {
+    console.error('[IdleMode] Error rejecting prompt:', error);
+    res.status(500).json({
+      error: error instanceof Error ? error.message : 'Failed to reject prompt'
+    });
+  }
+});
+
+// Get session executor state
+app.get('/api/idle-mode/executor/:sessionId', (req: Request, res: Response) => {
+  try {
+    const { sessionId } = req.params;
+    const vaultId = getVaultIdFromRequest(req, 'default');
+    const effectiveSessionId = `${vaultId}:${sessionId}`;
+
+    const executor = idleSessionExecutors.get(effectiveSessionId);
+    if (!executor) {
+      res.status(404).json({ error: 'No active session' });
+      return;
+    }
+
+    const state = executor.getState();
+
+    res.json({
+      success: true,
+      status: state.status,
+      currentTurn: state.currentTurn,
+      discoveries: state.discoveries.length,
+      activities: state.activities.length,
+      lastHeartbeat: state.lastHeartbeat
+    });
+  } catch (error) {
+    console.error('[IdleMode] Error getting executor state:', error);
+    res.status(500).json({
+      error: error instanceof Error ? error.message : 'Failed to get executor state'
     });
   }
 });
