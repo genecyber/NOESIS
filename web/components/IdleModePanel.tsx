@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
   Power,
@@ -85,9 +85,10 @@ interface PromptEditState {
 
 interface IdleModePanelProps {
   sessionId?: string;
+  onIdleResponse?: (response: string, mode: string) => void; // Callback when idle session gets a response
 }
 
-export default function IdleModePanel({ sessionId }: IdleModePanelProps) {
+export default function IdleModePanel({ sessionId, onIdleResponse }: IdleModePanelProps) {
   const [status, setStatus] = useState<IdleModeStatus | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -96,6 +97,79 @@ export default function IdleModePanel({ sessionId }: IdleModePanelProps) {
   const [promptEditMode, setPromptEditMode] = useState(false);
   const [promptState, setPromptState] = useState<PromptEditState | null>(null);
   const [selectedAutonomy, setSelectedAutonomy] = useState<AutonomyLevel>('standard');
+  const [heartbeatTimer, setHeartbeatTimer] = useState<NodeJS.Timeout | null>(null);
+  const [isRunning, setIsRunning] = useState(false);
+
+  // Heartbeat - continue the idle session
+  const sendHeartbeat = useCallback(async () => {
+    if (!sessionId || !status?.currentSession) return;
+
+    try {
+      const response = await fetch(`/api/idle-mode/session/heartbeat`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', ...getAuthHeaders() },
+        body: JSON.stringify({
+          sessionId,
+          mode: status.currentSession.mode
+        })
+      });
+
+      if (!response.ok) {
+        console.error('Heartbeat failed');
+        return;
+      }
+
+      const data = await response.json();
+
+      // Send response to chat
+      if (data.response && onIdleResponse) {
+        onIdleResponse(data.response, status.currentSession.mode);
+      }
+
+      // Update status with new activity count
+      if (status.currentSession) {
+        setStatus({
+          ...status,
+          currentSession: {
+            ...status.currentSession,
+            activities: (status.currentSession.activities || 0) + 1
+          }
+        });
+      }
+    } catch (err) {
+      console.error('Heartbeat error:', err);
+    }
+  }, [sessionId, status, onIdleResponse]);
+
+  // Start/stop heartbeat when session changes
+  useEffect(() => {
+    if (isRunning && status?.currentSession?.status === 'active') {
+      // Start heartbeat every 30 seconds
+      const timer = setInterval(sendHeartbeat, 30000);
+      setHeartbeatTimer(timer);
+      return () => clearInterval(timer);
+    }
+    return undefined;
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isRunning, status?.currentSession?.status]);
+
+  // Cleanup heartbeat on unmount
+  useEffect(() => {
+    return () => {
+      if (heartbeatTimer) {
+        clearInterval(heartbeatTimer);
+      }
+    };
+  }, [heartbeatTimer]);
+
+  // Stop the session
+  const stopSession = () => {
+    setIsRunning(false);
+    if (heartbeatTimer) {
+      clearInterval(heartbeatTimer);
+      setHeartbeatTimer(null);
+    }
+  };
 
   // WebSocket connection for real-time updates
   const { connected: wsConnected, subscribe, unsubscribe } = useStreamSubscription({
@@ -271,8 +345,14 @@ export default function IdleModePanel({ sessionId }: IdleModePanelProps) {
 
       if (!response.ok) throw new Error('Failed to start session');
 
-      const updatedStatus = await response.json();
-      setStatus(updatedStatus);
+      const data = await response.json();
+      setStatus(data);
+      setIsRunning(true); // Start heartbeat
+
+      // Send the response to chat if callback provided
+      if (data.response && onIdleResponse) {
+        onIdleResponse(data.response, mode);
+      }
     } catch (err) {
       console.error('Failed to start session:', err);
       setError(err instanceof Error ? err.message : 'Failed to start session');
