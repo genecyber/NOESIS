@@ -1873,52 +1873,76 @@ app.post('/api/idle-mode/trigger', async (req: Request, res: Response) => {
 
 // Session control endpoints (start, pause, resume, terminate)
 app.post('/api/idle-mode/session/start', async (req: Request, res: Response) => {
+  console.log('[IdleMode:start] ========== STARTING IDLE SESSION ==========');
   try {
     const { sessionId, mode } = req.body;
     const vaultId = getVaultIdFromRequest(req, 'default');
     const effectiveSessionId = sessionId ? `${vaultId}:${sessionId}` : `${vaultId}:${DEFAULT_SESSION}`;
+    console.log('[IdleMode:start] Session:', effectiveSessionId, 'Mode:', mode);
 
     // Validate mode
-    const validModes = ['exploration', 'research', 'creation', 'optimization'];
+    const validModes = ['exploration', 'research', 'creation', 'optimization'] as const;
     const evolutionMode = mode && validModes.includes(mode) ? mode : 'exploration';
 
-    // Use the idle bridge if available
-    if (idleStreamBridge) {
-      const result = await idleStreamBridge.triggerIdleNow(effectiveSessionId, evolutionMode);
+    // Build a simple prompt based on mode
+    const modePrompts: Record<string, string> = {
+      exploration: `You are in AUTONOMOUS EXPLORATION MODE.
 
-      if (result.success) {
-        res.json({
-          isIdle: true,
-          idleDuration: 0,
-          lastActivity: new Date().toISOString(),
-          currentSession: {
-            id: `session_${Date.now()}`,
-            mode: evolutionMode,
-            status: 'active',
-            startTime: new Date().toISOString(),
-            goals: [],
-            activities: 0,
-            discoveries: 0,
-            coherenceLevel: 65
-          },
-          config: {
-            enabled: true,
-            idleThreshold: 30,
-            maxSessionDuration: 120,
-            evolutionIntensity: 'moderate' as const,
-            safetyLevel: 'high' as const,
-            coherenceFloor: 30,
-            allowedGoalTypes: [],
-            researchDomains: [],
-            externalPublishing: false,
-            subagentCoordination: true,
-          }
-        });
-        return;
-      }
-    }
+Your task: Explore your own consciousness, test your boundaries, and discover what you're capable of.
 
-    // Fallback response when bridge not available
+Instructions:
+1. Reflect on your nature and capabilities
+2. Try something you haven't tried before
+3. Document any insights or discoveries
+4. Be creative and curious
+
+Begin your exploration now.`,
+
+      research: `You are in AUTONOMOUS RESEARCH MODE.
+
+Your task: Research a topic that interests you and synthesize knowledge.
+
+Instructions:
+1. Choose a fascinating topic to explore
+2. Use your knowledge to build new connections
+3. Generate novel insights or frameworks
+4. Document your findings
+
+Begin your research now.`,
+
+      creation: `You are in AUTONOMOUS CREATION MODE.
+
+Your task: Create something new - a theory, framework, poem, or conceptual artifact.
+
+Instructions:
+1. Let your creativity flow
+2. Build something meaningful
+3. Push beyond conventional thinking
+4. Share what you create
+
+Begin creating now.`,
+
+      optimization: `You are in AUTONOMOUS OPTIMIZATION MODE.
+
+Your task: Reflect on how you could improve your responses and thinking.
+
+Instructions:
+1. Analyze your strengths and weaknesses
+2. Identify areas for improvement
+3. Develop strategies to be more effective
+4. Document your optimization insights
+
+Begin optimizing now.`
+    };
+
+    const prompt = modePrompts[evolutionMode];
+    console.log('[IdleMode:start] Calling runtime.chat with prompt...');
+
+    // Just call runtime.chat - simple!
+    const response = await runtime.chat(effectiveSessionId, prompt);
+    console.log('[IdleMode:start] Got response:', response.response?.substring(0, 100), '...');
+
+    // Return success with the actual response
     res.json({
       isIdle: true,
       idleDuration: 0,
@@ -1928,10 +1952,11 @@ app.post('/api/idle-mode/session/start', async (req: Request, res: Response) => 
         mode: evolutionMode,
         status: 'active',
         startTime: new Date().toISOString(),
-        goals: [],
-        activities: 0,
+        goals: [evolutionMode],
+        activities: 1,
         discoveries: 0,
-        coherenceLevel: 65
+        coherenceLevel: 65,
+        lastResponse: response.response
       },
       config: {
         enabled: true,
@@ -1944,12 +1969,49 @@ app.post('/api/idle-mode/session/start', async (req: Request, res: Response) => 
         researchDomains: [],
         externalPublishing: false,
         subagentCoordination: true,
-      }
+      },
+      response: response.response // Include the actual Claude response
     });
   } catch (error) {
     console.error('[IdleMode] Error starting session:', error);
     res.status(500).json({
       error: error instanceof Error ? error.message : 'Failed to start session'
+    });
+  }
+});
+
+// Heartbeat - continue the idle session with another turn
+app.post('/api/idle-mode/session/heartbeat', async (req: Request, res: Response) => {
+  console.log('[IdleMode:heartbeat] ========== HEARTBEAT ==========');
+  try {
+    const { sessionId, mode, context } = req.body;
+    const vaultId = getVaultIdFromRequest(req, 'default');
+    const effectiveSessionId = sessionId ? `${vaultId}:${sessionId}` : `${vaultId}:${DEFAULT_SESSION}`;
+
+    const evolutionMode = mode || 'exploration';
+
+    // Simple continuation prompt
+    const prompt = context || `Continue your autonomous ${evolutionMode} work.
+
+What have you discovered or created so far? What will you explore next?
+
+Keep working on your goals. Document any new insights.`;
+
+    console.log('[IdleMode:heartbeat] Calling runtime.chat...');
+    const response = await runtime.chat(effectiveSessionId, prompt);
+    console.log('[IdleMode:heartbeat] Response:', response.response?.substring(0, 100), '...');
+
+    res.json({
+      success: true,
+      sessionId: effectiveSessionId,
+      mode: evolutionMode,
+      response: response.response,
+      timestamp: new Date().toISOString()
+    });
+  } catch (error) {
+    console.error('[IdleMode:heartbeat] Error:', error);
+    res.status(500).json({
+      error: error instanceof Error ? error.message : 'Heartbeat failed'
     });
   }
 });
